@@ -1,0 +1,20 @@
+[Unit]
+Description=Auto Analisa Web - Frontend (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/auto-analisa-web/frontend
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=NEXT_PUBLIC_API_BASE=https://analisa-api.example.com
+ExecStart=/usr/bin/npm run start --silent
+Restart=always
+RestartSec=5
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target
+
