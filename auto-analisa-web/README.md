@@ -35,8 +35,8 @@ Proyek contoh: Webpage analisa otomatis SPOT crypto untuk 1–4 user lokal.
    http://localhost:3000
 
 ## Endpoint Utama
-- GET http://localhost:8000/api/health
-- POST http://localhost:8000/api/analyze { symbol: "OPUSDT" }
+- GET http://localhost:8940/api/health
+- POST http://localhost:8940/api/analyze { symbol: "OPUSDT" }
 
 ## Catatan
 - Lock Redis mencegah tabrakan; ada fallback in-memory bila Redis tidak aktif.
