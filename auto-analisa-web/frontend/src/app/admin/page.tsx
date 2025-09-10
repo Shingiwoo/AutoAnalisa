@@ -18,11 +18,7 @@ export default function AdminPage(){
       setDenied(true)
     }
   }
-  useEffect(()=>{
-    const role = typeof window!=='undefined' ? localStorage.getItem('role') : null
-    if(role!=='admin'){ setDenied(true); return }
-    load()
-  },[])
+  useEffect(()=>{ load() },[])
 
   async function save(){
     await api.post('admin/settings', s)

@@ -12,7 +12,7 @@ export default function LoginPage(){
     e.preventDefault()
     setLoading(true)
     try{
-      const r = await api.post('auth/login', null, { params:{ email, password }})
+      const r = await api.post('auth/login', null, { params:{ email: email.trim(), password }})
       localStorage.setItem('token', r.data.token)
       localStorage.setItem('role', r.data.role)
       router.push('/')

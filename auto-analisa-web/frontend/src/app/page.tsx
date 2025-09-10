@@ -16,7 +16,10 @@ function scoreLabel(score:number){
 export default function Page(){
   const [cards,setCards]=useState<any[]>([])
   const [notice,setNotice]=useState<string|undefined>(undefined)
-  const isAdmin = useMemo(()=>typeof window!=='undefined' && localStorage.getItem('role')==='admin',[])
+  const [isAdmin,setIsAdmin]=useState(false)
+  useEffect(()=>{
+    if(typeof window!=='undefined') setIsAdmin(localStorage.getItem('role')==='admin')
+  },[])
 
   async function onNew(symbol:string){
     if(cards.length>=4){ alert('Maksimal 4 analisa aktif. Arsipkan salah satu dulu.'); return }

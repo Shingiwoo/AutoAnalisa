@@ -12,7 +12,7 @@ export default function AuthBar({ onAuth }: { onAuth?: () => void }) {
   }, [])
 
   async function login() {
-    const r = await api.post('auth/login', null, { params: { email, password } })
+    const r = await api.post('auth/login', null, { params: { email: email.trim(), password } })
     localStorage.setItem('token', r.data.token)
     localStorage.setItem('role', r.data.role)
     setToken(r.data.token)
