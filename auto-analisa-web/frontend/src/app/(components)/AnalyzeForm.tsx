@@ -3,7 +3,7 @@ import {useState} from 'react'
 import {api} from '../api'
 
 export default function AnalyzeForm({onDone}:{onDone:(plan:any)=>void}){
-  const [symbol,setSymbol]=useState('OPUSDT')
+  const [symbol,setSymbol]=useState('XRPUSDT')
   const [loading,setLoading]=useState(false)
   async function submit(){
     setLoading(true)

@@ -22,7 +22,7 @@ Proyek contoh: Webpage analisa otomatis SPOT crypto untuk 1–4 user lokal.
    python -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
-   uvicorn app.main:app --reload --port 8000
+   uvicorn app.main:app --reload --port 8940
 
 4) Frontend (Next.js):
    
@@ -32,7 +32,7 @@ Proyek contoh: Webpage analisa otomatis SPOT crypto untuk 1–4 user lokal.
 
 5) Buka aplikasi:
    
-   http://localhost:3000
+   http://localhost:3840
 
 ## Endpoint Utama
 - GET http://localhost:8940/api/health
