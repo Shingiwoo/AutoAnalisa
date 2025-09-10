@@ -7,6 +7,7 @@ from uuid import uuid4
 from app.auth import hash_pw, verify_pw, make_jwt, JWT_SECRET
 from app.models import User
 from app.deps import get_db
+from app.services.budget import get_or_init_settings
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -33,6 +34,9 @@ async def get_user_from_auth(
 
 @router.post("/register")
 async def register(email: str, password: str, db: AsyncSession = Depends(get_db)):
+    s = await get_or_init_settings(db)
+    if not s.registration_enabled:
+        raise HTTPException(403, "Registration disabled by admin")
     q = await db.execute(select(User).where(User.email == email))
     if q.scalar_one_or_none() is not None:
         raise HTTPException(409, "Email exists")
@@ -55,3 +59,8 @@ async def login(email: str, password: str, db: AsyncSession = Depends(get_db)):
 async def me(user=Depends(get_user_from_auth)):
     return {"id": user.id, "email": user.email, "role": user.role}
 
+
+@router.get("/register_enabled")
+async def register_enabled(db: AsyncSession = Depends(get_db)):
+    s = await get_or_init_settings(db)
+    return {"enabled": bool(s.registration_enabled)}

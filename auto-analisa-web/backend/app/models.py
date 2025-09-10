@@ -65,6 +65,7 @@ class Settings(Base):
     __tablename__ = "settings"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     use_llm: Mapped[bool] = mapped_column(Boolean, default=True)
+    registration_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     input_usd_per_1k: Mapped[float] = mapped_column(Float, default=0.005)
     output_usd_per_1k: Mapped[float] = mapped_column(Float, default=0.015)
     budget_monthly_usd: Mapped[float] = mapped_column(Float, default=20.0)

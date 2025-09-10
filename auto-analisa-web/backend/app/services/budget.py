@@ -18,6 +18,7 @@ async def get_or_init_settings(db: AsyncSession) -> Settings:
         return s
     s = Settings(
         use_llm=(os.getenv("USE_LLM", "true").lower() == "true"),
+        registration_enabled=(os.getenv("REGISTRATION_ENABLED", "true").lower() == "true"),
         input_usd_per_1k=float(os.getenv("OPENAI_INPUT_USD_PER_1K", "0.005")),
         output_usd_per_1k=float(os.getenv("OPENAI_OUTPUT_USD_PER_1K", "0.015")),
         budget_monthly_usd=float(os.getenv("LLM_BUDGET_MONTHLY_USD", "20")),
@@ -62,4 +63,3 @@ async def check_budget_and_maybe_off(db: AsyncSession) -> bool:
         await db.commit()
         return True
     return False
-

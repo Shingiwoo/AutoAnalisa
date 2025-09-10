@@ -43,6 +43,8 @@ export default function Page(){
         <h1 className="text-2xl md:text-3xl font-bold">Auto Analisa</h1>
         <div className="flex items-center gap-3">
           {isAdmin && <Link href="/admin" className="underline text-sm">Admin</Link>}
+          <Link href="/login" className="underline text-sm">Login</Link>
+          <Link href="/register" className="underline text-sm">Register</Link>
           <AuthBar onAuth={()=>location.reload()} />
         </div>
       </div>

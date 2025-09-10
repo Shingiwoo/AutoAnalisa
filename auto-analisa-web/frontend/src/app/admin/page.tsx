@@ -18,7 +18,11 @@ export default function AdminPage(){
       setDenied(true)
     }
   }
-  useEffect(()=>{ load() },[])
+  useEffect(()=>{
+    const role = typeof window!=='undefined' ? localStorage.getItem('role') : null
+    if(role!=='admin'){ setDenied(true); return }
+    load()
+  },[])
 
   async function save(){
     await api.post('/api/admin/settings', s)
@@ -31,6 +35,7 @@ export default function AdminPage(){
       <h1 className="text-2xl font-bold">Admin Settings</h1>
       <div className="grid grid-cols-2 gap-3">
         <label className="flex items-center gap-2"><input type="checkbox" checked={s.use_llm} onChange={e=>setS({...s,use_llm:e.target.checked})}/> LLM aktif</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={s.registration_enabled} onChange={e=>setS({...s,registration_enabled:e.target.checked})}/> Izinkan pendaftaran baru</label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={s.auto_off_at_budget} onChange={e=>setS({...s,auto_off_at_budget:e.target.checked})}/> Auto-off saat cap</label>
         <label>Budget USD/bln <input type="number" className="border rounded px-2 py-1 w-full" value={s.budget_monthly_usd} onChange={e=>setS({...s,budget_monthly_usd:+e.target.value})}/></label>
         <label>Harga Input /1k <input type="number" className="border rounded px-2 py-1 w-full" value={s.input_usd_per_1k} onChange={e=>setS({...s,input_usd_per_1k:+e.target.value})}/></label>
@@ -47,4 +52,3 @@ export default function AdminPage(){
     </div>
   )
 }
-

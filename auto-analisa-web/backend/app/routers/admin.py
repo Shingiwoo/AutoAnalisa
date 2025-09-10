@@ -22,6 +22,7 @@ async def get_settings(db: AsyncSession = Depends(get_db), user=Depends(require_
     s = await get_or_init_settings(db)
     return {
         "use_llm": s.use_llm,
+        "registration_enabled": s.registration_enabled,
         "budget_monthly_usd": s.budget_monthly_usd,
         "auto_off_at_budget": s.auto_off_at_budget,
         "budget_used_usd": s.budget_used_usd,
@@ -36,6 +37,7 @@ async def update_settings(payload: dict, db: AsyncSession = Depends(get_db), use
     s = await get_or_init_settings(db)
     for k in [
         "use_llm",
+        "registration_enabled",
         "budget_monthly_usd",
         "auto_off_at_budget",
         "input_usd_per_1k",
@@ -54,4 +56,3 @@ async def usage(db: AsyncSession = Depends(get_db), user=Depends(require_admin))
     rows = q.scalars().all()
     total = sum(r.usd_cost for r in rows)
     return {"month_key": mk, "count": len(rows), "total_usd": total}
-
