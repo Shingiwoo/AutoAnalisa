@@ -11,7 +11,7 @@ export default function RegisterPage(){
   const router = useRouter()
 
   useEffect(()=>{ (async()=>{
-    try{ const {data}=await api.get('/api/auth/register_enabled'); setEnabled(!!data.enabled) }
+    try{ const {data}=await api.get('auth/register_enabled'); setEnabled(!!data.enabled) }
     catch{ setEnabled(null) }
   })() },[])
 
@@ -19,7 +19,7 @@ export default function RegisterPage(){
     e.preventDefault()
     setLoading(true)
     try{
-      await api.post('/api/auth/register', null, { params:{ email, password }})
+      await api.post('auth/register', null, { params:{ email, password }})
       alert('Registrasi berhasil. Silakan login.')
       router.push('/login')
     }catch(e:any){
@@ -47,4 +47,3 @@ export default function RegisterPage(){
     </main>
   )
 }
-

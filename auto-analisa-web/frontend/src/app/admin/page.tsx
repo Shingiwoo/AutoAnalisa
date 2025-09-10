@@ -10,8 +10,8 @@ export default function AdminPage(){
   async function load(){
     try{
       const [a,b] = await Promise.all([
-        api.get('/api/admin/settings'),
-        api.get('/api/admin/usage')
+        api.get('admin/settings'),
+        api.get('admin/usage')
       ])
       setS(a.data); setUsage(b.data)
     }catch(e:any){
@@ -25,7 +25,7 @@ export default function AdminPage(){
   },[])
 
   async function save(){
-    await api.post('/api/admin/settings', s)
+    await api.post('admin/settings', s)
     await load()
   }
   if(denied) return <div className="max-w-3xl mx-auto p-4">Unauthorized</div>

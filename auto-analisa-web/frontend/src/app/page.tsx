@@ -21,7 +21,7 @@ export default function Page(){
   async function onNew(symbol:string){
     if(cards.length>=4){ alert('Maksimal 4 analisa aktif. Arsipkan salah satu dulu.'); return }
     try{
-      const {data}=await api.post('/api/analyze',{symbol})
+      const {data}=await api.post('analyze',{symbol})
       setNotice(data?.payload?.notice)
       setCards(prev=>[data, ...prev].slice(0,4))
     }catch(e:any){
@@ -32,7 +32,7 @@ export default function Page(){
 
   async function updateOne(idx:number){
     const c=cards[idx]
-    const {data}=await api.post('/api/analyze',{symbol:c.symbol})
+    const {data}=await api.post('analyze',{symbol:c.symbol})
     setNotice(data?.payload?.notice)
     const cp=[...cards]; cp[idx]=data; setCards(cp)
   }
@@ -52,7 +52,7 @@ export default function Page(){
       {notice && <div className="p-2 bg-amber-100 border border-amber-300 rounded text-amber-800">{notice}</div>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {cards.map((c,idx)=> <PlanCard key={c.id} plan={c} onUpdate={()=>updateOne(idx)} onArchive={async()=>{
-          try{ await api.post(`/api/archive/${c.id}`); setCards(cards.filter(x=>x.id!==c.id)) }catch{ alert('Gagal mengarsipkan') }
+          try{ await api.post(`archive/${c.id}`); setCards(cards.filter(x=>x.id!==c.id)) }catch{ alert('Gagal mengarsipkan') }
         }} />)}
       </div>
       <div className="text-xs opacity-60">Aturan: Edukasi, bukan saran finansial. Rate-limit aktif. Hasil per user terpisah.</div>

@@ -8,7 +8,7 @@ export default function AnalyzeForm({onDone}:{onDone:(plan:any)=>void}){
   async function submit(){
     setLoading(true)
     try{
-      const {data}=await api.post('/api/analyze',{symbol})
+      const {data}=await api.post('analyze',{symbol})
       onDone(data)
     }catch(e:any){
       if(e?.response?.status===409){ alert(e.response?.data?.detail || 'Maksimal 4 analisa aktif. Arsipkan salah satu dulu.') }
