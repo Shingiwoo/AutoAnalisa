@@ -12,6 +12,7 @@ from ..services.budget import (
     check_budget_and_maybe_off,
 )
 from ..models import Analysis, User
+from datetime import datetime
 import json
 import os
 
@@ -81,21 +82,36 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
                 ).strip()
 
     # save analysis
+    sym = symbol.upper()
     # compute next version per user+symbol
     q2 = await db.execute(
         select(func.max(Analysis.version)).where(
-            Analysis.user_id == user.id, Analysis.symbol == symbol.upper()
+            Analysis.user_id == user.id, Analysis.symbol == sym
         )
     )
     ver = (q2.scalar_one() or 0) + 1
-    a = Analysis(
-        user_id=user.id,
-        symbol=symbol.upper(),
-        version=ver,
-        payload_json=plan,
-        status="active",
+
+    # If a row already exists for this user+symbol (unique), update it; else insert
+    q_exist = await db.execute(
+        select(Analysis).where(Analysis.user_id == user.id, Analysis.symbol == sym)
     )
-    db.add(a)
+    existing = q_exist.scalar_one_or_none()
+    if existing:
+        existing.version = ver
+        existing.payload_json = plan
+        existing.status = "active"
+        # bump timestamp so FE shows fresh time
+        existing.created_at = datetime.utcnow()
+        a = existing
+    else:
+        a = Analysis(
+            user_id=user.id,
+            symbol=sym,
+            version=ver,
+            payload_json=plan,
+            status="active",
+        )
+        db.add(a)
     await db.commit()
     await db.refresh(a)
     return a
