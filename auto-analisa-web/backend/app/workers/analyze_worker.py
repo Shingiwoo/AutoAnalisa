@@ -61,7 +61,24 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
             if await check_budget_and_maybe_off(db):
                 plan["notice"] = "LLM otomatis dimatikan karena budget bulanan tercapai."
         except Exception as e:  # pragma: no cover
-            plan["narrative"] = (plan.get("narrative", "") + f"\n[LLM fallback] {e}").strip()
+            msg = str(e).lower()
+            if "insufficient_quota" in msg or " 429" in msg or "rate limit" in msg:
+                # Matikan LLM agar tidak terus error, beri notifikasi ramah pengguna
+                s.use_llm = False
+                await db.commit()
+                plan["notice"] = (
+                    "LLM dinonaktifkan sementara: kuota OpenAI habis atau kena rate limit. "
+                    "Admin dapat menambah kredit/limit lalu mengaktifkan kembali di halaman Admin."
+                )
+                # Jangan bocorkan detail error ke pengguna akhir
+                plan["narrative"] = (
+                    plan.get("narrative", "")
+                    + "\n[Narasi otomatis] LLM sementara tidak tersedia; gunakan rencana berbasis aturan."
+                ).strip()
+            else:
+                plan["narrative"] = (
+                    plan.get("narrative", "") + "\n[LLM fallback] Terjadi kendala pada LLM; gunakan hasil aturan."
+                ).strip()
 
     # save analysis
     # compute next version per user+symbol
