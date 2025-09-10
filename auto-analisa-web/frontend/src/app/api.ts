@@ -1,7 +1,14 @@
 import axios from 'axios'
 
+function resolveBaseURL(){
+  const envBase = process.env.NEXT_PUBLIC_API_BASE
+  if (envBase && envBase.trim().length>0) return envBase
+  if (typeof window !== 'undefined') return '/api' // production: relative path
+  return 'http://localhost:8940' // dev SSR fallback to backend port
+}
+
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_BASE || 'https://localhost:8000',
+  baseURL: resolveBaseURL(),
   withCredentials: false,
 })
 
