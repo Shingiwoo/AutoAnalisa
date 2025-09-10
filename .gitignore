@@ -1,1 +1,56 @@
 auto-analisa-web.zip
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+app.db
+
+# Node.js
+node_modules/
+.next/
+package-lock.json
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+.env
+.env.*.local
+**/.env
+**/.env.*
+
+# python
+backend/.venv/
+**/__pycache__/
+**/*.pyc
+backend/app.db
+app.db
+
+# node
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+npm-debug.log*
+
+# misc
+.DS_Store
+*.log
+*.pid
+*.sqlite3
+
+# local caches
+.vscode/
+.idea/
