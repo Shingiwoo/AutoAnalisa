@@ -7,7 +7,14 @@ export default function AnalyzeForm({onDone}:{onDone:(plan:any)=>void}){
   const [loading,setLoading]=useState(false)
   async function submit(){
     setLoading(true)
-    try{ const {data}=await api.post('/api/analyze',{symbol}) ; onDone(data)} finally{ setLoading(false) }
+    try{
+      const {data}=await api.post('/api/analyze',{symbol})
+      onDone(data)
+    }catch(e:any){
+      if(e?.response?.status===409){ alert(e.response?.data?.detail || 'Maksimal 4 analisa aktif. Arsipkan salah satu dulu.') }
+      else if(e?.response?.status===401){ alert('Harap login terlebih dulu') }
+      else{ alert('Gagal menganalisa') }
+    } finally{ setLoading(false) }
   }
   return (
     <div className="p-4 rounded-2xl shadow bg-white flex gap-2 items-end">
@@ -19,4 +26,3 @@ export default function AnalyzeForm({onDone}:{onDone:(plan:any)=>void}){
     </div>
   )
 }
-
