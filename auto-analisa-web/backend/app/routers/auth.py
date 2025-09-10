@@ -8,6 +8,12 @@ from app.auth import hash_pw, verify_pw, make_jwt, JWT_SECRET
 from app.models import User
 from app.deps import get_db
 from app.services.budget import get_or_init_settings
+from pydantic import BaseModel
+
+
+class AuthIn(BaseModel):
+    email: str
+    password: str
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -33,7 +39,17 @@ async def get_user_from_auth(
 
 
 @router.post("/register")
-async def register(email: str, password: str, db: AsyncSession = Depends(get_db)):
+async def register(
+    email: str | None = None,
+    password: str | None = None,
+    payload: AuthIn | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    if payload:
+        email = payload.email
+        password = payload.password
+    if not email or not password:
+        raise HTTPException(422, "email & password required")
     s = await get_or_init_settings(db)
     if not s.registration_enabled:
         raise HTTPException(403, "Registration disabled by admin")
@@ -47,7 +63,17 @@ async def register(email: str, password: str, db: AsyncSession = Depends(get_db)
 
 
 @router.post("/login")
-async def login(email: str, password: str, db: AsyncSession = Depends(get_db)):
+async def login(
+    email: str | None = None,
+    password: str | None = None,
+    payload: AuthIn | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    if payload:
+        email = payload.email
+        password = payload.password
+    if not email or not password:
+        raise HTTPException(422, "email & password required")
     q = await db.execute(select(User).where(User.email == email))
     u = q.scalar_one_or_none()
     if not u or not verify_pw(password, u.password_hash):

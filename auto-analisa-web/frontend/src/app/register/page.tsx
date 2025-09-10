@@ -19,7 +19,7 @@ export default function RegisterPage(){
     e.preventDefault()
     setLoading(true)
     try{
-      await api.post('auth/register', null, { params:{ email: email.trim(), password }})
+      await api.post('auth/register', { email: email.trim(), password })
       alert('Registrasi berhasil. Silakan login.')
       router.push('/login')
     }catch(e:any){
