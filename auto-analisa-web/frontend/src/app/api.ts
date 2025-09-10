@@ -15,7 +15,12 @@ export const api = axios.create({
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const t = localStorage.getItem('token')
-    if (t) config.headers.Authorization = `Bearer ${t}`
+    if (t) {
+      const h: any = config.headers ?? {}
+      if (typeof h.set === 'function') h.set('Authorization', `Bearer ${t}`)
+      else h.Authorization = `Bearer ${t}`
+      config.headers = h
+    }
   }
   return config
 })
