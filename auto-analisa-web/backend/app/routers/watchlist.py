@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from app.deps import get_db
 from app.auth import require_user
-from app.models import Watchlist
+from app.models import Watchlist, Plan, Analysis
 
 router = APIRouter(prefix="/api/watchlist", tags=["watchlist"])
 
@@ -34,8 +34,17 @@ async def add(symbol: str, db: AsyncSession = Depends(get_db), user=Depends(requ
 @router.delete("/{symbol}")
 async def remove(symbol: str, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     sym = symbol.upper()
+    # Hapus dari watchlist
     await db.execute(
         delete(Watchlist).where(Watchlist.user_id == user.id, Watchlist.symbol == sym)
+    )
+    # Sekaligus bersihkan arsip/snapshot terkait simbol ini milik user
+    await db.execute(
+        delete(Plan).where(Plan.user_id == user.id, Plan.symbol == sym)
+    )
+    # Jika ada Analysis yang berstatus archived untuk simbol ini, bersihkan juga
+    await db.execute(
+        delete(Analysis).where(Analysis.user_id == user.id, Analysis.symbol == sym, Analysis.status == "archived")
     )
     await db.commit()
     return {"ok": True}
