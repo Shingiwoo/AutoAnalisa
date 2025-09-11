@@ -32,6 +32,7 @@ export default function RegisterPage(){
   return (
     <main className="max-w-md mx-auto p-6 space-y-4">
       <h1 className="text-2xl font-bold">Register</h1>
+      <button onClick={()=>history.back()} className="text-sm underline">Back</button>
       {enabled===false && <div className="p-2 bg-amber-100 border border-amber-300 rounded text-amber-800">Registrasi dinonaktifkan oleh admin.</div>}
       <form onSubmit={submit} className="space-y-3">
         <div>

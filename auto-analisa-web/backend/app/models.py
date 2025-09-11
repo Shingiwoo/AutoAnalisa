@@ -72,3 +72,12 @@ class Settings(Base):
     auto_off_at_budget: Mapped[bool] = mapped_column(Boolean, default=True)
     budget_used_usd: Mapped[float] = mapped_column(Float, default=0.0)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+
+class Watchlist(Base):
+    __tablename__ = "watchlist"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, index=True)
+    symbol: Mapped[str] = mapped_column(String, index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    __table_args__ = (UniqueConstraint("user_id", "symbol", name="uniq_user_symbol_watch"),)

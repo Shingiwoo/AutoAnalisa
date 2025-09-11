@@ -18,7 +18,7 @@ export default function PlanCard({plan, onUpdate, onArchive}:{plan:any,onUpdate:
       <Glossary />
       <div className="flex gap-2">
         <button onClick={onUpdate} className="px-3 py-2 rounded bg-zinc-900 text-white">Update</button>
-        {onArchive && <button onClick={onArchive} className="px-3 py-2 rounded bg-zinc-200">Arsip</button>}
+        {onArchive && <button onClick={onArchive} className="px-3 py-2 rounded bg-zinc-200">Save</button>}
       </div>
     </div>
   )

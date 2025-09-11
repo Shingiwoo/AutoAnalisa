@@ -1,10 +1,10 @@
 'use client'
-import {useEffect, useMemo, useState} from 'react'
-import AnalyzeForm from './(components)/AnalyzeForm'
+import {useEffect, useState} from 'react'
 import PlanCard from './(components)/PlanCard'
 import {api} from './api'
 import AuthBar from '../components/AuthBar'
 import Link from 'next/link'
+import Watchlist from './(components)/Watchlist'
 
 function scoreLabel(score:number){
   if(score>=70) return {text:'Kuat', color:'bg-green-600'}
@@ -17,16 +17,41 @@ export default function Page(){
   const [cards,setCards]=useState<any[]>([])
   const [notice,setNotice]=useState<string|undefined>(undefined)
   const [isAdmin,setIsAdmin]=useState(false)
+  const [loggedIn,setLoggedIn]=useState(false)
+
   useEffect(()=>{
-    if(typeof window!=='undefined') setIsAdmin(localStorage.getItem('role')==='admin')
+    if(typeof window!=='undefined'){
+      setIsAdmin(localStorage.getItem('role')==='admin')
+      setLoggedIn(!!localStorage.getItem('token'))
+    }
+    load()
   },[])
 
-  async function onNew(symbol:string){
+  async function load(){
+    try{
+      const r = await api.get('analyses', { params:{ status: 'active' } })
+      setCards(r.data)
+      // Try admin settings; ignore if forbidden
+      try {
+        const s = await api.get('admin/settings')
+        if (s?.data?.use_llm === false) setNotice('LLM sedang OFF oleh admin / cap budget.')
+      } catch {}
+    }catch{}
+  }
+
+  async function analyze(symbol:string){
     if(cards.length>=4){ alert('Maksimal 4 analisa aktif. Arsipkan salah satu dulu.'); return }
     try{
       const {data}=await api.post('analyze',{symbol})
       setNotice(data?.payload?.notice)
-      setCards(prev=>[data, ...prev].slice(0,4))
+      setCards(prev=>{
+        const next=[data, ...prev]
+        // dedup by symbol keep first
+        const seen = new Set<string>()
+        const uniq: any[] = []
+        for (const it of next){ if(!seen.has(it.symbol)){ uniq.push(it); seen.add(it.symbol) } }
+        return uniq.slice(0,4)
+      })
     }catch(e:any){
       if(e?.response?.status===409) alert(e.response.data?.detail||'Maksimum 4 analisa aktif per user.')
       else alert('Gagal menganalisa')
@@ -46,17 +71,24 @@ export default function Page(){
         <h1 className="text-2xl md:text-3xl font-bold">Auto Analisa</h1>
         <div className="flex items-center gap-3">
           {isAdmin && <Link href="/admin" className="underline text-sm">Admin</Link>}
-          <Link href="/login" className="underline text-sm">Login</Link>
-          <Link href="/register" className="underline text-sm">Register</Link>
+          {!loggedIn && <Link href="/login" className="underline text-sm">Login</Link>}
+          {!loggedIn && <Link href="/register" className="underline text-sm">Register</Link>}
           <AuthBar onAuth={()=>location.reload()} />
         </div>
       </div>
-      <AnalyzeForm onDone={(plan:any)=>setCards(prev=>[plan,...prev].slice(0,4))} />
       {notice && <div className="p-2 bg-amber-100 border border-amber-300 rounded text-amber-800">{notice}</div>}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {cards.map((c,idx)=> <PlanCard key={c.id} plan={c} onUpdate={()=>updateOne(idx)} onArchive={async()=>{
-          try{ await api.post(`archive/${c.id}`); setCards(cards.filter(x=>x.id!==c.id)) }catch{ alert('Gagal mengarsipkan') }
-        }} />)}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="md:col-span-1">
+          <h2 className="font-semibold mb-2">Watchlist</h2>
+          <Watchlist onPick={analyze} />
+        </div>
+        <div className="md:col-span-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {cards.map((c,idx)=> <PlanCard key={c.id} plan={c} onUpdate={()=>updateOne(idx)} onArchive={async()=>{
+              try{ await api.post(`analyses/${c.id}/save`); /* keep active card */ }catch{ alert('Gagal menyimpan snapshot') }
+            }} />)}
+          </div>
+        </div>
       </div>
       <div className="text-xs opacity-60">Aturan: Edukasi, bukan saran finansial. Rate-limit aktif. Hasil per user terpisah.</div>
     </main>

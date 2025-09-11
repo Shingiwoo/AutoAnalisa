@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
+from contextlib import asynccontextmanager
 
 from .storage.db import init_db
 from .storage import repo
@@ -15,7 +16,16 @@ try:
 except Exception:  # pragma: no cover
     rcli = None
 
-app = FastAPI(title="Auto Analisa Web")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: init DB, redis etc.
+    await init_db()
+    yield
+    # Shutdown: nothing for now
+
+
+app = FastAPI(title="Auto Analisa Web", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,11 +36,6 @@ app.add_middleware(
 locks = LockService(rcli)
 
 
-@app.on_event("startup")
-async def _startup():
-    await init_db()
-
-
 @app.get("/api/health")
 async def health():
     return {"ok": True}
@@ -39,6 +44,9 @@ async def health():
 from .routers import auth as auth_router
 from .routers import analyze as analyze_router
 from .routers import admin as admin_router
+from .routers import analyses as analyses_router
+from .routers import watchlist as watchlist_router
+from .routers import market as market_router
 
 
 @app.get("/api/plan/{plan_id}")
@@ -59,3 +67,6 @@ async def get_plan(plan_id: int, db: AsyncSession = Depends(get_db)):
 app.include_router(auth_router.router)
 app.include_router(analyze_router.router)
 app.include_router(admin_router.router)
+app.include_router(analyses_router.router)
+app.include_router(watchlist_router.router)
+app.include_router(market_router.router)

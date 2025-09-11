@@ -21,15 +21,23 @@ MAX_ACTIVE_CARDS = 4
 
 
 async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
-    # enforce max 4 active analyses per user
-    q = await db.execute(
-        select(func.count()).select_from(Analysis).where(
-            Analysis.user_id == user.id, Analysis.status == "active"
-        )
+    # Check if analysis for this symbol already exists (active)
+    sym = symbol.upper()
+    q_exist = await db.execute(
+        select(Analysis).where(Analysis.user_id == user.id, Analysis.symbol == sym)
     )
-    active_cnt = q.scalar_one()
-    if active_cnt >= MAX_ACTIVE_CARDS:
-        raise HTTPException(409, "Maksimum 4 analisa aktif per user. Arsipkan salah satu dulu.")
+    existing = q_exist.scalar_one_or_none()
+
+    # Enforce max 4 active analyses only when creating new symbol
+    if not existing:
+        q = await db.execute(
+            select(func.count()).select_from(Analysis).where(
+                Analysis.user_id == user.id, Analysis.status == "active"
+            )
+        )
+        active_cnt = q.scalar_one()
+        if active_cnt >= MAX_ACTIVE_CARDS:
+            raise HTTPException(409, "Maksimum 4 analisa aktif per user. Arsipkan salah satu dulu.")
 
     # compute baseline plan using existing rules engine
     bundle = await fetch_bundle(symbol, ("4h", "1h", "15m"))
@@ -82,7 +90,6 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
                 ).strip()
 
     # save analysis
-    sym = symbol.upper()
     # compute next version per user+symbol
     q2 = await db.execute(
         select(func.max(Analysis.version)).where(
@@ -92,10 +99,6 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
     ver = (q2.scalar_one() or 0) + 1
 
     # If a row already exists for this user+symbol (unique), update it; else insert
-    q_exist = await db.execute(
-        select(Analysis).where(Analysis.user_id == user.id, Analysis.symbol == sym)
-    )
-    existing = q_exist.scalar_one_or_none()
     if existing:
         existing.version = ver
         existing.payload_json = plan

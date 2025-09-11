@@ -23,6 +23,7 @@ export default function LoginPage(){
   return (
     <main className="max-w-md mx-auto p-6 space-y-4">
       <h1 className="text-2xl font-bold">Login</h1>
+      <button onClick={()=>history.back()} className="text-sm underline">Back</button>
       <form onSubmit={submit} className="space-y-3">
         <div>
           <label className="block text-sm mb-1">Email</label>

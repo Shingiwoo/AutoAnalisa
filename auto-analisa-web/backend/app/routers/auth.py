@@ -78,6 +78,10 @@ async def login(
     u = q.scalar_one_or_none()
     if not u or not verify_pw(password, u.password_hash):
         raise HTTPException(401, "Bad credentials")
+    # Upgrade hash to Argon2 if legacy bcrypt detected
+    if u.password_hash.startswith("$2"):
+        u.password_hash = hash_pw(password)
+        await db.commit()
     return {"token": make_jwt(u.id, u.role), "role": u.role}
 
 
