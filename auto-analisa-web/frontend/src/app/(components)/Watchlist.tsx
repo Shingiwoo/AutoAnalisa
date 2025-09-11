@@ -13,9 +13,9 @@ export default function Watchlist({onPick}:{onPick:(s:string)=>void}){
     try{
       await api.post('watchlist/add', null, { params:{ symbol: sym } })
       setSym(''); setMsg(''); load()
-    }catch(e:any){ setMsg(e?.response?.data?.detail || 'Gagal menambah') }
+    }catch(e:any){ setMsg(e?.response?.data?.detail || 'Gagal menambah simbol') }
   }
-  async function del(s:string){ try{ await api.delete(`watchlist/${s}`); load() }catch{} }
+  async function del(s:string){ try{ await api.delete(`watchlist/${encodeURIComponent(s)}`); load() }catch(e:any){ setMsg(e?.response?.data?.detail || 'Gagal menghapus simbol') } }
   useEffect(()=>{ load() },[])
   return (
     <div className="space-y-2">

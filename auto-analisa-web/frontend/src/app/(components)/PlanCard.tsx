@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../app/api'
 import ChartOHLCV from './ChartOHLCV'
 
-export default function PlanCard({plan, onUpdate, onArchive}:{plan:any,onUpdate:()=>void,onArchive?:()=>void}){
+export default function PlanCard({plan, onUpdate}:{plan:any,onUpdate:()=>void}){
   const p=plan.payload
   const [tf,setTf]=useState<'5m'|'15m'|'1h'>(()=> '15m')
   const [ohlcv,setOhlcv]=useState<any[]>([])
@@ -11,7 +11,7 @@ export default function PlanCard({plan, onUpdate, onArchive}:{plan:any,onUpdate:
     try{ const {data}=await api.get('ohlcv', { params:{ symbol:plan.symbol, tf, limit:200 } }); setOhlcv(data) }catch{}
   })() },[tf, plan.symbol])
   return (
-    <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 shadow-sm p-4 md:p-6 space-y-4">
+    <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 shadow-sm p-4 md:p-6 space-y-4 text-zinc-900 dark:text-zinc-100">
       <div className="flex items-center justify-between">
         <div className="text-lg font-semibold flex items-center gap-2">
           <span>{plan.symbol} • v{plan.version}</span>
@@ -60,15 +60,14 @@ export default function PlanCard({plan, onUpdate, onArchive}:{plan:any,onUpdate:
           </div>
           <div className="sm:col-span-2">
             <dt className="text-zinc-500">Bacaan Sinyal</dt>
-            <dd className="italic text-zinc-800 dark:text-zinc-200">{p.narrative}</dd>
-          </div>
+            <dd className="italic text-zinc-700 dark:text-zinc-300">{p.narrative}</dd>
+        </div>
         </dl>
       </div>
 
       <Glossary />
       <div className="flex gap-2">
         <button onClick={onUpdate} className="px-3 py-2 rounded-md bg-zinc-900 text-white hover:bg-zinc-800">Update</button>
-        {onArchive && <button onClick={onArchive} className="px-3 py-2 rounded-md bg-zinc-200 hover:bg-zinc-300">Simpan</button>}
       </div>
     </div>
   )
@@ -87,9 +86,9 @@ function ScoreBadge({score}:{score:number}){
 
 function Glossary(){
   return (
-    <details className="mt-2 text-sm">
+    <details className="mt-2 text-sm text-zinc-900 dark:text-zinc-100">
       <summary className="cursor-pointer underline">Glosarium</summary>
-      <ul className="list-disc pl-5 mt-1">
+      <ul className="list-disc pl-5 mt-1 space-y-1">
         <li><b>TP</b>: Take Profit (harga target jual sebagian/seluruhnya)</li>
         <li><b>PB</b>: Pullback Buy (beli saat harga kembali ke area support setelah naik)</li>
         <li><b>BO</b>: Breakout Buy (beli saat menembus resistance dengan volume)</li>

@@ -4,6 +4,7 @@ import PlanCard from './(components)/PlanCard'
 import {api} from './api'
 import Link from 'next/link'
 import Watchlist from './(components)/Watchlist'
+import WatchlistRow from './(components)/WatchlistRow'
 import MacroBanner from './(components)/MacroBanner'
 import PasswordRequest from './(components)/PasswordRequest'
 import Hero from './(components)/Hero'
@@ -80,23 +81,17 @@ export default function Page(){
           </div>
         )}
       </div>
-      <div id="analisa" className="max-w-7xl mx-auto px-4 md:px-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div id="watchlist" className="md:col-span-1">
-            <h2 className="font-semibold mb-2">Watchlist</h2>
-            {loggedIn ? (
-              <Watchlist onPick={analyze} />
-            ) : (
-              <div className="text-sm text-gray-600">Login untuk mengelola watchlist dan menganalisa.</div>
-            )}
-            {loggedIn && <PasswordRequest />}
-          </div>
-          <div className="md:col-span-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {cards.map((c,idx)=> <PlanCard key={c.id} plan={c} onUpdate={()=>updateOne(idx)} onArchive={async()=>{
-                try{ await api.post(`analyses/${c.id}/save`); /* keep active card */ }catch{ alert('Gagal menyimpan snapshot') }
-              }} />)}
-            </div>
+      <div id="analisa" className="max-w-7xl mx-auto px-4 md:px-6 space-y-4">
+        {loggedIn ? (
+          <WatchlistRow onPick={analyze} />
+        ) : (
+          <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 text-sm text-gray-600">Login untuk mengelola watchlist dan menganalisa.</div>
+        )}
+        <div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {cards.map((c,idx)=> (
+              <PlanCard key={c.id} plan={c} onUpdate={()=>updateOne(idx)} />
+            ))}
           </div>
         </div>
         <div className="mt-6 text-xs opacity-60">Aturan: Edukasi, bukan saran finansial. Rate-limit aktif. Hasil per user terpisah.</div>
