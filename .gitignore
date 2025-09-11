@@ -55,4 +55,6 @@ npm-debug.log*
 .vscode/
 .idea/
 instruksi/AutoAnalisa-main.zip
+instruksi/*.pdf
+instruksi/*.md
 
