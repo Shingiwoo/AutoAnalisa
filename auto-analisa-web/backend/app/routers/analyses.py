@@ -2,14 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.deps import get_db
-from app.routers.auth import get_user_from_auth
+from app.auth import require_user
 from app.models import Analysis, Plan
 
 router = APIRouter(prefix="/api/analyses", tags=["analyses"])
 
 
 @router.get("")
-async def list_analyses(status: str = "active", db: AsyncSession = Depends(get_db), user=Depends(get_user_from_auth)):
+async def list_analyses(status: str = "active", db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     if status == "active":
         q = await db.execute(
             select(Analysis).where(Analysis.user_id == user.id, Analysis.status == "active").order_by(Analysis.created_at.desc())
@@ -43,7 +43,7 @@ async def list_analyses(status: str = "active", db: AsyncSession = Depends(get_d
 
 
 @router.post("/{aid}/save")
-async def save_snapshot(aid: int, db: AsyncSession = Depends(get_db), user=Depends(get_user_from_auth)):
+async def save_snapshot(aid: int, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     a = await db.get(Analysis, aid)
     if not a or a.user_id != user.id:
         raise HTTPException(404, "Not found")
@@ -52,4 +52,3 @@ async def save_snapshot(aid: int, db: AsyncSession = Depends(get_db), user=Depen
     db.add(snap)
     await db.commit()
     return {"ok": True, "active_id": a.id}
-

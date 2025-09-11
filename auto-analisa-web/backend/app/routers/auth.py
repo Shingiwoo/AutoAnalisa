@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from uuid import uuid4
 
-from app.auth import hash_pw, verify_pw, make_jwt, JWT_SECRET
+from app.auth import hash_pw, verify_pw, make_jwt
+from app.config import settings
 from app.models import User
 from app.deps import get_db
 from app.services.budget import get_or_init_settings
@@ -27,7 +28,7 @@ async def get_user_from_auth(
         raise HTTPException(401, "Missing token")
     token = authorization.split(" ", 1)[1]
     try:
-        data = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        data = jwt.decode(token, settings.JWT_SECRET, algorithms=["HS256"])
     except JWTError:
         raise HTTPException(401, "Invalid token")
     user_id = data.get("sub")

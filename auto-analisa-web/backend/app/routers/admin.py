@@ -4,18 +4,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.deps import get_db
-from app.routers.auth import get_user_from_auth
+from app.auth import get_current_user
 from app.models import Settings, ApiUsage, PasswordChangeRequest, User, MacroDaily
 from app.services.budget import get_or_init_settings, month_key
 from app.auth import hash_pw
-from app.services.llm import ask_llm
+from app import services
 from datetime import datetime, timezone
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-async def require_admin(user=Depends(get_user_from_auth)):
+async def require_admin(user=Depends(get_current_user)):
     if user.role != "admin":
         raise HTTPException(403, "Admin only")
     return user
@@ -142,7 +142,7 @@ async def generate_macro(db: AsyncSession = Depends(get_db), user=Depends(requir
         "Singgung DXY, yield, likuiditas, sentimen ETF, berita utama. "
         "Bahasa Indonesia, 5-8 poin, netral, tidak memberi rekomendasi investasi."
     )
-    text, _ = ask_llm(prompt)
+    text, _ = services.llm.ask_llm(prompt)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     q = await db.execute(select(MacroDaily).where(MacroDaily.date_utc == today))
     row = q.scalar_one_or_none()

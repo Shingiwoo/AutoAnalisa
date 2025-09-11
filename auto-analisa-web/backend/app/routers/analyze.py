@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db
-from app.routers.auth import get_user_from_auth
+from app.auth import require_user
 from app.schemas import AnalyzeIn
 from app.workers.analyze_worker import run_analysis
 from app.models import Analysis
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api", tags=["analyze"])
 
 
 @router.post("/analyze")
-async def analyze(payload: AnalyzeIn, db: AsyncSession = Depends(get_db), user=Depends(get_user_from_auth)):
+async def analyze(payload: AnalyzeIn, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     # rate limit sederhana: 1 permintaan/2 detik per user
     ok = await locks.acquire(f"rate:analyze:{user.id}", ttl=2)
     if not ok:
@@ -32,7 +32,7 @@ async def analyze(payload: AnalyzeIn, db: AsyncSession = Depends(get_db), user=D
 
 
 @router.post("/archive/{analysis_id}")
-async def archive(analysis_id: int, db: AsyncSession = Depends(get_db), user=Depends(get_user_from_auth)):
+async def archive(analysis_id: int, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     # set status to archived only for owner's analysis
     await db.execute(
         update(Analysis).where(Analysis.id == analysis_id, Analysis.user_id == user.id).values(status="archived")

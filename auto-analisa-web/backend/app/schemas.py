@@ -45,4 +45,5 @@ class LoginResp(BaseModel):
     access_token: str
     token_type: str = "bearer"
     role: str
-
+    # Backward-compat: also include `token`
+    token: str | None = None
