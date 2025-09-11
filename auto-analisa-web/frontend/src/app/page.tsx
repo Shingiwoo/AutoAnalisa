@@ -6,7 +6,6 @@ import Link from 'next/link'
 import Watchlist from './(components)/Watchlist'
 import MacroBanner from './(components)/MacroBanner'
 import PasswordRequest from './(components)/PasswordRequest'
-import SiteHeader from './(components)/SiteHeader'
 import Hero from './(components)/Hero'
 
 function scoreLabel(score:number){
@@ -71,7 +70,6 @@ export default function Page(){
 
   return (
     <main className="space-y-4">
-      <SiteHeader loggedIn={loggedIn} isAdmin={isAdmin} />
       <Hero loggedIn={loggedIn} isAdmin={isAdmin} />
       <div className="max-w-7xl mx-auto px-4 md:px-6">
         <MacroBanner />
@@ -94,7 +92,7 @@ export default function Page(){
             {loggedIn && <PasswordRequest />}
           </div>
           <div className="md:col-span-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {cards.map((c,idx)=> <PlanCard key={c.id} plan={c} onUpdate={()=>updateOne(idx)} onArchive={async()=>{
                 try{ await api.post(`analyses/${c.id}/save`); /* keep active card */ }catch{ alert('Gagal menyimpan snapshot') }
               }} />)}
