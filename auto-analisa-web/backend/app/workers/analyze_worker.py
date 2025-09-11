@@ -40,7 +40,7 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
             raise HTTPException(409, "Maksimum 4 analisa aktif per user. Arsipkan salah satu dulu.")
 
     # compute baseline plan using existing rules engine
-    bundle = await fetch_bundle(symbol, ("4h", "1h", "15m"))
+    bundle = await fetch_bundle(symbol, ("4h", "1h", "15m", "5m"))
     feat = Features(bundle).enrich()
     score = score_symbol(feat)
     plan = build_plan(bundle, feat, score, "auto")

@@ -1,5 +1,5 @@
 import json
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_db
@@ -8,6 +8,7 @@ from app.schemas import AnalyzeIn
 from app.workers.analyze_worker import run_analysis
 from app.models import Analysis
 from sqlalchemy import update
+from app.main import locks
 
 
 router = APIRouter(prefix="/api", tags=["analyze"])
@@ -15,6 +16,10 @@ router = APIRouter(prefix="/api", tags=["analyze"])
 
 @router.post("/analyze")
 async def analyze(payload: AnalyzeIn, db: AsyncSession = Depends(get_db), user=Depends(get_user_from_auth)):
+    # rate limit sederhana: 1 permintaan/2 detik per user
+    ok = await locks.acquire(f"rate:analyze:{user.id}", ttl=2)
+    if not ok:
+        raise HTTPException(429, "Terlalu sering, coba lagi sebentar.")
     a = await run_analysis(db, user, payload.symbol)
     return {
         "id": a.id,

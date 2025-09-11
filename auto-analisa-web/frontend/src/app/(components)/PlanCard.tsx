@@ -1,18 +1,35 @@
-'use client'
+"use client"
+import { useEffect, useState } from 'react'
+import { api } from '../../app/api'
+import ChartOHLCV from './ChartOHLCV'
+
 export default function PlanCard({plan, onUpdate, onArchive}:{plan:any,onUpdate:()=>void,onArchive?:()=>void}){
   const p=plan.payload
+  const [tf,setTf]=useState<'5m'|'15m'|'1h'>(()=> '15m')
+  const [ohlcv,setOhlcv]=useState<any[]>([])
+  useEffect(()=>{ (async()=>{
+    try{ const {data}=await api.get('ohlcv', { params:{ symbol:plan.symbol, tf, limit:200 } }); setOhlcv(data) }catch{}
+  })() },[tf, plan.symbol])
   return (
-    <div className="p-4 rounded-2xl shadow bg-white space-y-2">
+    <div className="p-4 rounded-2xl shadow bg-white space-y-3">
       <div className="text-lg font-semibold flex items-center gap-2">
         <span>{plan.symbol} • v{plan.version}</span>
         <ScoreBadge score={p.score} />
       </div>
       <div className="text-sm opacity-70">{new Date(plan.created_at).toLocaleString('id-ID')}</div>
+
+      <div className="flex items-center gap-2 text-sm">
+        <button onClick={()=>setTf('5m')} className={`px-2 py-1 rounded ${tf==='5m'?'bg-black text-white':'bg-zinc-100'}`}>5m</button>
+        <button onClick={()=>setTf('15m')} className={`px-2 py-1 rounded ${tf==='15m'?'bg-black text-white':'bg-zinc-100'}`}>15m</button>
+        <button onClick={()=>setTf('1h')} className={`px-2 py-1 rounded ${tf==='1h'?'bg-black text-white':'bg-zinc-100'}`}>1h</button>
+      </div>
+      <ChartOHLCV data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid:p.invalid, entries:p.entries||[] }} />
+
       <div className="whitespace-pre-wrap text-sm">
         <b>Bias Dominan:</b> {p.bias}
-        {'\n'}<b>Level Kunci</b>{'\n'}Support: {p.support.join(' · ')}{'\n'}Resistance: {p.resistance.join(' · ')}
-        {'\n'}<b>Rencana Eksekusi (spot)</b>{'\n'}PB: {p.entries.join(' / ')} (w={p.weights.join('/')}) • Invalid: {p.invalid}
-        {'\n'}TP: {p.tp.join(' → ')}
+        {'\n'}<b>Level Kunci</b>{'\n'}Support: {(p.support||[]).join(' · ')}{'\n'}Resistance: {(p.resistance||[]).join(' · ')}
+        {'\n'}<b>Rencana Eksekusi (spot)</b>{'\n'}PB/BO: {(p.entries||[]).join(' / ')}{p.weights?` (w=${p.weights.join('/')})`:''} • Invalid: {p.invalid}
+        {'\n'}TP: {(p.tp||[]).join(' → ')}
         {'\n'}<b>Bacaan Sinyal:</b> {p.narrative}
       </div>
       <Glossary />

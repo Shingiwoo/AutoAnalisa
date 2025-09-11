@@ -6,6 +6,7 @@ export default function AdminPage(){
   const [s,setS]=useState<any|null>(null)
   const [usage,setUsage]=useState<any|null>(null)
   const [denied,setDenied]=useState(false)
+  const [pwreqs,setPwreqs]=useState<any[]|null>(null)
 
   async function load(){
     try{
@@ -14,6 +15,7 @@ export default function AdminPage(){
         api.get('admin/usage')
       ])
       setS(a.data); setUsage(b.data)
+      try{ const r = await api.get('admin/password_requests'); setPwreqs(r.data) }catch{}
     }catch(e:any){
       setDenied(true)
     }
@@ -45,6 +47,25 @@ export default function AdminPage(){
         <div>Biaya bulan ini: <b>${usage?.total_usd?.toFixed?.(4) ?? usage?.total_usd}</b></div>
       </div>
       <p className="text-sm text-gray-500">* Biaya diestimasikan dari token usage OpenAI sesuai harga /1k token.</p>
+
+      <div className="mt-6 p-3 border rounded bg-white space-y-2">
+        <div className="font-semibold">Password Change Requests</div>
+        {!pwreqs?.length && <div className="text-sm text-gray-500">Tidak ada permintaan.</div>}
+        {pwreqs?.map(r=> (
+          <div key={r.id} className="flex items-center justify-between text-sm">
+            <div>ID: {r.id} • User: {r.user_id} • {new Date(r.requested_at).toLocaleString('id-ID')}</div>
+            <div className="flex gap-2">
+              <button className="px-2 py-1 rounded bg-green-600 text-white" onClick={async()=>{ await api.post(`admin/password_requests/${r.id}/approve`); load() }}>Approve</button>
+              <button className="px-2 py-1 rounded bg-red-600 text-white" onClick={async()=>{ await api.post(`admin/password_requests/${r.id}/reject`); load() }}>Reject</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 p-3 border rounded bg-white space-y-2">
+        <div className="font-semibold">Makro Harian</div>
+        <button className="px-3 py-1 rounded bg-blue-600 text-white" onClick={async()=>{ await api.post('admin/macro/generate'); alert('Makro harian diperbarui'); }}>Generate Hari Ini</button>
+      </div>
     </div>
   )
 }

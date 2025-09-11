@@ -81,3 +81,23 @@ class Watchlist(Base):
     symbol: Mapped[str] = mapped_column(String, index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
     __table_args__ = (UniqueConstraint("user_id", "symbol", name="uniq_user_symbol_watch"),)
+
+
+class PasswordChangeRequest(Base):
+    __tablename__ = "pwd_change_requests"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, index=True)
+    new_hash: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, default="pending")  # pending|approved|rejected
+    requested_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    processed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, default=None)
+    processed_by: Mapped[str | None] = mapped_column(String, default=None)
+
+
+class MacroDaily(Base):
+    __tablename__ = "macro_daily"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date_utc: Mapped[str] = mapped_column(String, index=True)  # YYYY-MM-DD (UTC)
+    narrative: Mapped[str] = mapped_column(Text)
+    sources: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)

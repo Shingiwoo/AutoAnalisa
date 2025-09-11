@@ -5,6 +5,8 @@ import {api} from './api'
 import AuthBar from '../components/AuthBar'
 import Link from 'next/link'
 import Watchlist from './(components)/Watchlist'
+import MacroBanner from './(components)/MacroBanner'
+import PasswordRequest from './(components)/PasswordRequest'
 
 function scoreLabel(score:number){
   if(score>=70) return {text:'Kuat', color:'bg-green-600'}
@@ -76,11 +78,13 @@ export default function Page(){
           <AuthBar onAuth={()=>location.reload()} />
         </div>
       </div>
+      <MacroBanner />
       {notice && <div className="p-2 bg-amber-100 border border-amber-300 rounded text-amber-800">{notice}</div>}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="md:col-span-1">
           <h2 className="font-semibold mb-2">Watchlist</h2>
           <Watchlist onPick={analyze} />
+          {loggedIn && <PasswordRequest />}
         </div>
         <div className="md:col-span-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

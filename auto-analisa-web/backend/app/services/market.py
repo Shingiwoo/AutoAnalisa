@@ -25,7 +25,7 @@ async def fetch_klines(symbol: str, timeframe: str, limit: int = 500) -> pd.Data
     return df
 
 
-async def fetch_bundle(symbol: str, tfs=("4h", "1h", "15m")) -> Dict[str, pd.DataFrame]:
+async def fetch_bundle(symbol: str, tfs=("4h", "1h", "15m", "5m")) -> Dict[str, pd.DataFrame]:
     out: Dict[str, pd.DataFrame] = {}
     for tf in tfs:
         out[tf] = await fetch_klines(symbol, tf, 300 if tf == "15m" else 600)

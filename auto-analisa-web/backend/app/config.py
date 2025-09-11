@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     BINANCE_SANDBOX: bool = False
     USE_LLM: bool = False
+    CORS_ORIGINS: str = "*"  # comma-separated. Use * for local
 
 
 settings = Settings()
-

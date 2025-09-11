@@ -26,9 +26,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Auto Analisa Web", lifespan=lifespan)
+# CORS: jika APP_ENV != local dan origins di-set, gunakan; selain itu izinkan semua (dev)
+cors_origins = ["*"]
+try:
+    if settings.APP_ENV != "local" and settings.CORS_ORIGINS and settings.CORS_ORIGINS.strip() != "*":
+        cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
+except Exception:
+    pass
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -47,6 +54,8 @@ from .routers import admin as admin_router
 from .routers import analyses as analyses_router
 from .routers import watchlist as watchlist_router
 from .routers import market as market_router
+from .routers import macro as macro_router
+from .routers import user as user_router
 
 
 @app.get("/api/plan/{plan_id}")
@@ -70,3 +79,5 @@ app.include_router(admin_router.router)
 app.include_router(analyses_router.router)
 app.include_router(watchlist_router.router)
 app.include_router(market_router.router)
+app.include_router(macro_router.router)
+app.include_router(user_router.router)
