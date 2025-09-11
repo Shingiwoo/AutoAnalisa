@@ -11,7 +11,7 @@ export default function PlanCard({plan, onUpdate, onArchive}:{plan:any,onUpdate:
     try{ const {data}=await api.get('ohlcv', { params:{ symbol:plan.symbol, tf, limit:200 } }); setOhlcv(data) }catch{}
   })() },[tf, plan.symbol])
   return (
-    <div className="p-4 rounded-2xl shadow bg-white space-y-3">
+    <div className="rounded-2xl border shadow-sm p-4 md:p-6 bg-white dark:bg-zinc-900 space-y-3">
       <div className="text-lg font-semibold flex items-center gap-2">
         <span>{plan.symbol} • v{plan.version}</span>
         <ScoreBadge score={p.score} />
@@ -23,7 +23,9 @@ export default function PlanCard({plan, onUpdate, onArchive}:{plan:any,onUpdate:
         <button onClick={()=>setTf('15m')} className={`px-2 py-1 rounded ${tf==='15m'?'bg-black text-white':'bg-zinc-100'}`}>15m</button>
         <button onClick={()=>setTf('1h')} className={`px-2 py-1 rounded ${tf==='1h'?'bg-black text-white':'bg-zinc-100'}`}>1h</button>
       </div>
-      <ChartOHLCV data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid:p.invalid, entries:p.entries||[] }} />
+      <div className="aspect-[16/9] md:aspect-[21/9] overflow-hidden rounded-xl">
+        <ChartOHLCV className="h-full" data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid:p.invalid, entries:p.entries||[] }} />
+      </div>
 
       <div className="whitespace-pre-wrap text-sm">
         <b>Bias Dominan:</b> {p.bias}
@@ -42,10 +44,11 @@ export default function PlanCard({plan, onUpdate, onArchive}:{plan:any,onUpdate:
 }
 
 function label(score:number){
-  if(score>=70) return {text:'Kuat', color:'bg-green-600'}
-  if(score>=50) return {text:'Menengah', color:'bg-yellow-500'}
-  if(score>=30) return {text:'Lemah', color:'bg-orange-500'}
-  return {text:'Hindari', color:'bg-red-600'}
+  if(score>=80) return {text:'Strong', color:'bg-emerald-600'}
+  if(score>=60) return {text:'Solid', color:'bg-green-600'}
+  if(score>=40) return {text:'Neutral', color:'bg-yellow-500'}
+  if(score>=20) return {text:'Weak', color:'bg-orange-500'}
+  return {text:'Very Weak', color:'bg-red-600'}
 }
 
 function ScoreBadge({score}:{score:number}){

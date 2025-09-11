@@ -6,7 +6,14 @@ export default function Watchlist({onPick}:{onPick:(s:string)=>void}){
   const [items,setItems]=useState<string[]>([])
   const [sym,setSym]=useState('')
   async function load(){ try{ const r=await api.get('watchlist'); setItems(r.data) }catch{} }
-  async function add(){ if(!sym) return; try{ await api.post('watchlist/add', null, { params:{ symbol: sym } }); setSym(''); load() }catch(e:any){ alert(e?.response?.data?.detail || 'Gagal menambah') } }
+  async function add(){
+    if(!sym) return
+    if(items.length >= 4){ alert('Limit 4 symbols per user'); return }
+    try{
+      await api.post('watchlist/add', null, { params:{ symbol: sym } })
+      setSym(''); load()
+    }catch(e:any){ alert(e?.response?.data?.detail || 'Gagal menambah') }
+  }
   async function del(s:string){ try{ await api.delete(`watchlist/${s}`); load() }catch{} }
   useEffect(()=>{ load() },[])
   return (
@@ -26,4 +33,3 @@ export default function Watchlist({onPick}:{onPick:(s:string)=>void}){
     </div>
   )
 }
-

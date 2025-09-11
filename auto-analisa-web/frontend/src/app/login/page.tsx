@@ -12,9 +12,14 @@ export default function LoginPage(){
     e.preventDefault()
     setLoading(true)
     try{
-      const r = await api.post('auth/login', { email: email.trim(), password })
-      localStorage.setItem('token', r.data.token)
+      const r = await api.post('/auth/login', { email: email.trim(), password })
+      const tok = r.data?.access_token || r.data?.token
+      if (!tok) throw new Error('No token')
+      localStorage.setItem('access_token', tok)
+      localStorage.setItem('token', tok) // backward-compat
       localStorage.setItem('role', r.data.role)
+      // Set default Authorization for api
+      api.defaults.headers.common.Authorization = `Bearer ${tok}` as any
       router.push('/')
     }catch(e:any){
       alert('Login gagal')

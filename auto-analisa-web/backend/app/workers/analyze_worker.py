@@ -5,7 +5,7 @@ from sqlalchemy import select, func
 from ..services.market import fetch_bundle
 from ..services.rules import Features, score_symbol
 from ..services.planner import build_plan
-from ..services.llm import ask_llm
+from ..services.llm import ask_llm, should_use_llm
 from ..services.budget import (
     get_or_init_settings,
     add_usage,
@@ -47,7 +47,8 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
 
     # ask LLM for narrative if enabled
     s = await get_or_init_settings(db)
-    if s.use_llm and os.getenv("OPENAI_API_KEY"):
+    use_llm, reason = await should_use_llm(db)
+    if use_llm and os.getenv("OPENAI_API_KEY"):
         try:
             prompt = (
                 "Buat narasi ringkas (2-3 kalimat) berdasarkan data berikut dalam bahasa Indonesia. "
@@ -88,6 +89,11 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
                 plan["narrative"] = (
                     plan.get("narrative", "") + "\n[LLM fallback] Terjadi kendala pada LLM; gunakan hasil aturan."
                 ).strip()
+    elif not use_llm and reason:
+        # record user-friendly notice when LLM disabled upfront
+        plan["notice"] = (
+            "LLM dinonaktifkan: " + reason.replace("LLM ", "").capitalize()
+        )
 
     # save analysis
     # compute next version per user+symbol

@@ -42,9 +42,9 @@ async def test_watchlist_crud_and_limit(monkeypatch):
         for s in ["AAAUSDT","BBBUSDT","CCCUSDT","DDDUSDT"]:
             rr = await client.post("/api/watchlist/add", params={"symbol": s}, headers=H)
             assert rr.status_code == 200
-        # 5th should be 409
+        # 5th should be 400 (limit reached)
         rr = await client.post("/api/watchlist/add", params={"symbol": "EEEUSDT"}, headers=H)
-        assert rr.status_code == 409
+        assert rr.status_code == 400
         # List and delete
         rr = await client.get("/api/watchlist", headers=H)
         assert rr.status_code == 200 and len(rr.json()) == 4

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+import os
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -23,7 +24,10 @@ async def require_admin(user=Depends(get_user_from_auth)):
 @router.get("/settings")
 async def get_settings(db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
     s = await get_or_init_settings(db)
+    # Provide both legacy and aliased fields for FE compatibility
+    llm_model = (os.getenv("OPENAI_MODEL", "gpt-5"))
     return {
+        # legacy
         "use_llm": s.use_llm,
         "registration_enabled": s.registration_enabled,
         "budget_monthly_usd": s.budget_monthly_usd,
@@ -32,24 +36,51 @@ async def get_settings(db: AsyncSession = Depends(get_db), user=Depends(require_
         "input_usd_per_1k": s.input_usd_per_1k,
         "output_usd_per_1k": s.output_usd_per_1k,
         "month_key": month_key(),
+        # new aliases
+        "llm_enabled": s.use_llm,
+        "llm_model": llm_model,
+        "llm_limit_monthly_usd": s.budget_monthly_usd,
+        "llm_spend_monthly_usd": s.budget_used_usd,
     }
+
+
+def _apply_settings_payload(s, payload: dict):
+    # Support both legacy and new keys
+    mapping = {
+        "use_llm": "use_llm",
+        "registration_enabled": "registration_enabled",
+        "budget_monthly_usd": "budget_monthly_usd",
+        "auto_off_at_budget": "auto_off_at_budget",
+        "input_usd_per_1k": "input_usd_per_1k",
+        "output_usd_per_1k": "output_usd_per_1k",
+        # new aliases
+        "llm_enabled": "use_llm",
+        "llm_limit_monthly_usd": "budget_monthly_usd",
+    }
+    for k, attr in mapping.items():
+        if k in payload:
+            setattr(s, attr, payload[k])
 
 
 @router.post("/settings")
 async def update_settings(payload: dict, db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
     s = await get_or_init_settings(db)
-    for k in [
-        "use_llm",
-        "registration_enabled",
-        "budget_monthly_usd",
-        "auto_off_at_budget",
-        "input_usd_per_1k",
-        "output_usd_per_1k",
-    ]:
-        if k in payload:
-            setattr(s, k, payload[k])
+    _apply_settings_payload(s, payload)
     await db.commit()
     return {"ok": True}
+
+
+@router.put("/settings")
+async def put_settings(payload: dict, db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
+    s = await get_or_init_settings(db)
+    _apply_settings_payload(s, payload)
+    await db.commit()
+    return {
+        "llm_enabled": s.use_llm,
+        "llm_model": os.getenv("OPENAI_MODEL", "gpt-5"),
+        "llm_limit_monthly_usd": s.budget_monthly_usd,
+        "llm_spend_monthly_usd": s.budget_used_usd,
+    }
 
 
 @router.get("/usage")

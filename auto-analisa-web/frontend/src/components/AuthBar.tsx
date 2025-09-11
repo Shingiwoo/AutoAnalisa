@@ -12,10 +12,13 @@ export default function AuthBar({ onAuth }: { onAuth?: () => void }) {
   }, [])
 
   async function login() {
-    const r = await api.post('auth/login', { email: email.trim(), password })
-    localStorage.setItem('token', r.data.token)
+    const r = await api.post('/auth/login', { email: email.trim(), password })
+    const tok = r.data?.access_token || r.data?.token
+    localStorage.setItem('access_token', tok)
+    localStorage.setItem('token', tok)
     localStorage.setItem('role', r.data.role)
-    setToken(r.data.token)
+    api.defaults.headers.common.Authorization = `Bearer ${tok}` as any
+    setToken(tok)
     onAuth?.()
   }
   function logout() {

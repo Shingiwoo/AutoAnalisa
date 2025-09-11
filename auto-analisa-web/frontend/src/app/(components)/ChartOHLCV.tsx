@@ -4,11 +4,13 @@ import { createChart, ColorType, CandlestickData } from 'lightweight-charts'
 
 type Row = { t:number,o:number,h:number,l:number,c:number,v:number }
 
-export default function ChartOHLCV({ data, overlays }:{ data: Row[], overlays?: { sr?: number[], tp?: number[], invalid?: number, entries?: number[] } }){
+export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], overlays?: { sr?: number[], tp?: number[], invalid?: number, entries?: number[] }, className?: string }){
   const ref = useRef<HTMLDivElement>(null)
   useEffect(()=>{
     if(!ref.current) return
-    const chart = createChart(ref.current, { width: ref.current.clientWidth, height: 260, layout:{ background:{ type: ColorType.Solid, color:'#fff' }}})
+    const w = ref.current.clientWidth
+    const h = ref.current.clientHeight || 260
+    const chart = createChart(ref.current, { width: w, height: h, layout:{ background:{ type: ColorType.Solid, color:'#fff' }}})
     const series = chart.addCandlestickSeries()
     const mapped: CandlestickData[] = data.map(d=>({ time: d.t/1000 as any, open:d.o, high:d.h, low:d.l, close:d.c }))
     series.setData(mapped)
@@ -26,10 +28,9 @@ export default function ChartOHLCV({ data, overlays }:{ data: Row[], overlays?: 
       for (const e of overlays.entries){ series.createPriceLine({ price: e, color: '#0ea5e9', lineWidth: 1, lineStyle: 0, title: 'Entry' }) }
     }
 
-    const ro = new ResizeObserver(()=> chart.applyOptions({ width: ref.current!.clientWidth }))
+    const ro = new ResizeObserver(()=> chart.applyOptions({ width: ref.current!.clientWidth, height: ref.current!.clientHeight || h }))
     ro.observe(ref.current)
     return ()=>{ ro.disconnect(); chart.remove() }
   },[JSON.stringify(data), JSON.stringify(overlays)])
-  return <div ref={ref} className="w-full" />
+  return <div ref={ref} className={`w-full ${className||''}`} />
 }
-

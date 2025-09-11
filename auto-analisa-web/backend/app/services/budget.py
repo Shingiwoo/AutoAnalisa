@@ -40,26 +40,41 @@ async def add_usage(
     out_usd_per_1k: float,
 ):
     usd = (prompt_toks / 1000.0) * in_usd_per_1k + (completion_toks / 1000.0) * out_usd_per_1k
-    db.add(
-        ApiUsage(
-            user_id=user_id,
-            model=model,
-            prompt_tokens=prompt_toks,
-            completion_tokens=completion_toks,
-            usd_cost=usd,
-            month_key=month_key(),
-        )
+    # record usage row
+    row = ApiUsage(
+        user_id=user_id,
+        model=model,
+        prompt_tokens=prompt_toks,
+        completion_tokens=completion_toks,
+        usd_cost=usd,
+        month_key=month_key(),
     )
+    db.add(row)
+    # update settings.budget_used_usd to current-month sum (auto-reset monthly)
+    mk = month_key()
+    from sqlalchemy import select, func
+    q = await db.execute(select(func.sum(ApiUsage.usd_cost)).where(ApiUsage.month_key == mk))
+    month_total = float(q.scalar() or 0.0)
     s = await get_or_init_settings(db)
-    s.budget_used_usd += usd
+    s.budget_used_usd = month_total
     await db.commit()
     return usd, s.budget_used_usd
 
 
 async def check_budget_and_maybe_off(db: AsyncSession) -> bool:
+    """Return True if LLM turned off due to monthly limit reached.
+    Ensures check uses current-month spend, not cumulative.
+    """
+    from sqlalchemy import select, func
     s = await get_or_init_settings(db)
-    if s.auto_off_at_budget and s.budget_used_usd >= s.budget_monthly_usd:
+    mk = month_key()
+    q = await db.execute(select(func.sum(ApiUsage.usd_cost)).where(ApiUsage.month_key == mk))
+    month_total = float(q.scalar() or 0.0)
+    # keep settings in sync for UI
+    s.budget_used_usd = month_total
+    if s.auto_off_at_budget and month_total >= s.budget_monthly_usd:
         s.use_llm = False
         await db.commit()
         return True
+    await db.commit()
     return False

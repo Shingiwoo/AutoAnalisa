@@ -26,7 +26,7 @@ export default function AdminPage(){
     await api.post('admin/settings', s)
     await load()
   }
-  if(denied) return <div className="max-w-3xl mx-auto p-4">Unauthorized</div>
+  if(denied) return <div className="max-w-3xl mx-auto p-4">Admin only</div>
   if(!s) return <div className="max-w-3xl mx-auto p-4">Loading…</div>
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-4">
@@ -41,12 +41,16 @@ export default function AdminPage(){
       </div>
       <button onClick={save} className="px-3 py-1 rounded bg-black text-white">Simpan</button>
 
-      <div className="mt-4 p-3 border rounded bg-white">
-        <div>Bulan: {usage?.month_key}</div>
-        <div>Total panggilan: {usage?.count}</div>
-        <div>Biaya bulan ini: <b>${usage?.total_usd?.toFixed?.(4) ?? usage?.total_usd}</b></div>
+      <div className="mt-4 p-3 border rounded bg-white space-y-2">
+        <div className="flex justify-between text-sm">
+          <div>Bulan: {usage?.month_key}</div>
+          <div>Total panggilan: {usage?.count}</div>
+        </div>
+        <div className="text-sm">Biaya bulan ini: <b>${usage?.total_usd?.toFixed?.(4) ?? usage?.total_usd}</b></div>
+        <div className="text-sm">Limit: <b>${s?.budget_monthly_usd}</b></div>
+        <Progress current={s?.budget_used_usd || 0} max={s?.budget_monthly_usd || 1} />
       </div>
-      <p className="text-sm text-gray-500">* Biaya diestimasikan dari token usage OpenAI sesuai harga /1k token.</p>
+      <p className="text-sm text-gray-500">* Estimasi biaya dari token usage dan harga /1k token.</p>
 
       <div className="mt-6 p-3 border rounded bg-white space-y-2">
         <div className="font-semibold">Password Change Requests</div>
@@ -66,6 +70,15 @@ export default function AdminPage(){
         <div className="font-semibold">Makro Harian</div>
         <button className="px-3 py-1 rounded bg-blue-600 text-white" onClick={async()=>{ await api.post('admin/macro/generate'); alert('Makro harian diperbarui'); }}>Generate Hari Ini</button>
       </div>
+    </div>
+  )
+}
+
+function Progress({ current, max }:{ current:number, max:number }){
+  const pct = Math.min(100, Math.round((current / (max || 1)) * 100))
+  return (
+    <div className="w-full bg-zinc-200 rounded h-2 overflow-hidden">
+      <div className="h-2 bg-green-600" style={{ width: `${pct}%` }} />
     </div>
   )
 }

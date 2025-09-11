@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import List, Tuple
 
 
@@ -33,4 +33,16 @@ class PlanOut(BaseModel):
 class AnalyzeIn(BaseModel):
     symbol: str
     options: AnalyzeOptions = AnalyzeOptions()
+
+
+# Auth schemas
+class LoginReq(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class LoginResp(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str
 

@@ -9,6 +9,7 @@ from app.models import User
 from app.deps import get_db
 from app.services.budget import get_or_init_settings
 from pydantic import BaseModel
+from app.schemas import LoginReq, LoginResp
 
 
 class AuthIn(BaseModel):
@@ -62,11 +63,11 @@ async def register(
     return {"ok": True}
 
 
-@router.post("/login")
+@router.post("/login", response_model=LoginResp)
 async def login(
     email: str | None = None,
     password: str | None = None,
-    payload: AuthIn | None = None,
+    payload: LoginReq | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     if payload:
@@ -82,7 +83,9 @@ async def login(
     if u.password_hash.startswith("$2"):
         u.password_hash = hash_pw(password)
         await db.commit()
-    return {"token": make_jwt(u.id, u.role), "role": u.role}
+    jwt_token = make_jwt(u.id, u.role)
+    # Backward + forward compatibility: provide both token and access_token
+    return {"token": jwt_token, "access_token": jwt_token, "token_type": "bearer", "role": u.role}
 
 
 @router.get("/me")

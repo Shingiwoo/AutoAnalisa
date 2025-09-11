@@ -68,8 +68,8 @@ export default function Page(){
   }
 
   return (
-    <main className="max-w-5xl mx-auto p-6 space-y-4">
-      <div className="flex items-center justify-between">
+    <main className="max-w-7xl mx-auto px-4 md:px-6 py-6 space-y-4">
+      <div className="flex items-center justify-between sticky top-0 bg-zinc-50/80 backdrop-blur z-10 py-3">
         <h1 className="text-2xl md:text-3xl font-bold">Auto Analisa</h1>
         <div className="flex items-center gap-3">
           {isAdmin && <Link href="/admin" className="underline text-sm">Admin</Link>}
@@ -87,7 +87,7 @@ export default function Page(){
           {loggedIn && <PasswordRequest />}
         </div>
         <div className="md:col-span-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
             {cards.map((c,idx)=> <PlanCard key={c.id} plan={c} onUpdate={()=>updateOne(idx)} onArchive={async()=>{
               try{ await api.post(`analyses/${c.id}/save`); /* keep active card */ }catch{ alert('Gagal menyimpan snapshot') }
             }} />)}

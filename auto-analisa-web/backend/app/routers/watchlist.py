@@ -23,7 +23,7 @@ async def add(symbol: str, db: AsyncSession = Depends(get_db), user=Depends(get_
     q = await db.execute(select(Watchlist).where(Watchlist.user_id == user.id))
     cnt = len(q.scalars().all())
     if cnt >= MAX_WATCH:
-        raise HTTPException(409, "Maksimal 4 simbol di watchlist")
+        raise HTTPException(400, "Limit 4 symbols per user")
     q2 = await db.execute(select(Watchlist).where(Watchlist.user_id == user.id, Watchlist.symbol == sym))
     if q2.scalar_one_or_none() is None:
         db.add(Watchlist(user_id=user.id, symbol=sym))
@@ -39,4 +39,3 @@ async def remove(symbol: str, db: AsyncSession = Depends(get_db), user=Depends(g
     )
     await db.commit()
     return {"ok": True}
-

@@ -3,6 +3,8 @@ import json
 from typing import Tuple, Dict
 
 from openai import OpenAI
+from sqlalchemy.ext.asyncio import AsyncSession
+from .budget import get_or_init_settings, check_budget_and_maybe_off
 
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5")
@@ -33,3 +35,16 @@ def ask_llm(prompt: str) -> Tuple[str, Dict[str, int]]:
         "total_tokens": getattr(resp.usage, "total_tokens", 0),
     }
     return text, usage
+
+
+async def should_use_llm(db: AsyncSession) -> tuple[bool, str | None]:
+    """Check admin toggle and budget, auto-disable if exceeded.
+    Returns (allowed, reason_if_denied).
+    """
+    s = await get_or_init_settings(db)
+    if not s.use_llm:
+        return False, "LLM off by admin"
+    # If already exceeded, auto-off
+    if await check_budget_and_maybe_off(db):
+        return False, "LLM auto-off: limit reached"
+    return True, None
