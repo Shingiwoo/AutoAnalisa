@@ -42,9 +42,9 @@ async def remove(symbol: str, db: AsyncSession = Depends(get_db), user=Depends(r
     await db.execute(
         delete(Plan).where(Plan.user_id == user.id, Plan.symbol == sym)
     )
-    # Jika ada Analysis yang berstatus archived untuk simbol ini, bersihkan juga
+    # Hapus Analysis untuk simbol ini (aktif maupun archived) agar kartu tidak muncul lagi
     await db.execute(
-        delete(Analysis).where(Analysis.user_id == user.id, Analysis.symbol == sym, Analysis.status == "archived")
+        delete(Analysis).where(Analysis.user_id == user.id, Analysis.symbol == sym)
     )
     await db.commit()
     return {"ok": True}
