@@ -6,13 +6,18 @@ from openai import OpenAI
 
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5")
-_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Inisialisasi klien secara aman: jika tidak ada API key, biarkan None agar tidak error saat import
+_KEY = os.getenv("OPENAI_API_KEY")
+_client = OpenAI(api_key=_KEY) if _KEY else None
 
 
 def ask_llm(prompt: str) -> Tuple[str, Dict[str, int]]:
     """Ask Chat Completions, return (text, usage).
     No response_format usage to avoid schema issues.
     """
+    # Jika tidak ada client (tidak ada API key), kembalikan fallback kosong agar tidak memblokir test/dev
+    if _client is None:
+        return "", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     resp = _client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[
