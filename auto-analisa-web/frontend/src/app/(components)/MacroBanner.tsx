@@ -11,9 +11,8 @@ export default function MacroBanner(){
   if(!txt) return null
   return (
     <div className="p-2 bg-blue-50 border border-blue-200 rounded text-blue-800 text-sm">
-      <div className="font-semibold">Makro Harian {date?`(${date})`:''}</div>
-      <div>{txt}</div>
+      <div className="font-semibold flex items-center gap-2"><span aria-hidden>ℹ</span> <span>Makro Harian {date?`(${date})`:''}</span></div>
+      <div className="mt-0.5">{txt}</div>
     </div>
   )
 }
-

@@ -24,9 +24,10 @@ export default function Page(){
   useEffect(()=>{
     if(typeof window!=='undefined'){
       setIsAdmin(localStorage.getItem('role')==='admin')
-      setLoggedIn(!!localStorage.getItem('token'))
+      const isLogged = !!(localStorage.getItem('token') || localStorage.getItem('access_token'))
+      setLoggedIn(isLogged)
+      if (isLogged) load(); else setCards([])
     }
-    load()
   },[])
 
   async function load(){
@@ -72,18 +73,27 @@ export default function Page(){
       <div className="flex items-center justify-between sticky top-0 bg-zinc-50/80 backdrop-blur z-10 py-3">
         <h1 className="text-2xl md:text-3xl font-bold">Auto Analisa</h1>
         <div className="flex items-center gap-3">
-          {isAdmin && <Link href="/admin" className="underline text-sm">Admin</Link>}
-          {!loggedIn && <Link href="/login" className="underline text-sm">Login</Link>}
-          {!loggedIn && <Link href="/register" className="underline text-sm">Register</Link>}
+          {isAdmin && <Link href="/admin" className="text-sm font-medium text-gray-600 hover:text-gray-900">Admin</Link>}
+          {!loggedIn && <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-gray-900">Login</Link>}
+          {!loggedIn && <Link href="/register" className="text-sm font-medium text-gray-600 hover:text-gray-900">Register</Link>}
           <AuthBar onAuth={()=>location.reload()} />
         </div>
       </div>
       <MacroBanner />
-      {notice && <div className="p-2 bg-amber-100 border border-amber-300 rounded text-amber-800">{notice}</div>}
+      {notice && (
+        <div className="p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 flex items-start gap-2 text-sm">
+          <span aria-hidden>⚠</span>
+          <span>{notice}</span>
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="md:col-span-1">
           <h2 className="font-semibold mb-2">Watchlist</h2>
-          <Watchlist onPick={analyze} />
+          {loggedIn ? (
+            <Watchlist onPick={analyze} />
+          ) : (
+            <div className="text-sm text-gray-600">Login untuk mengelola watchlist dan menganalisa.</div>
+          )}
           {loggedIn && <PasswordRequest />}
         </div>
         <div className="md:col-span-3">

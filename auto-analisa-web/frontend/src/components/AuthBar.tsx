@@ -8,7 +8,10 @@ export default function AuthBar({ onAuth }: { onAuth?: () => void }) {
   const [token, setToken] = useState<string | null>(null)
 
   useEffect(() => {
-    if (typeof window !== 'undefined') setToken(localStorage.getItem('token'))
+    if (typeof window !== 'undefined') {
+      const t = localStorage.getItem('token') || localStorage.getItem('access_token')
+      setToken(t)
+    }
   }, [])
 
   async function login() {
@@ -23,7 +26,9 @@ export default function AuthBar({ onAuth }: { onAuth?: () => void }) {
   }
   function logout() {
     localStorage.removeItem('token')
+    localStorage.removeItem('access_token')
     localStorage.removeItem('role')
+    try { delete (api.defaults.headers as any).common?.Authorization } catch {}
     setToken(null)
     onAuth?.()
   }
