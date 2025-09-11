@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+* { box-sizing: border-box; }
+/* Biarkan next/font (Inter) mengatur font; jangan override di sini */
+/* body font-family dihapus agar kelas Inter dari layout.tsx berlaku */

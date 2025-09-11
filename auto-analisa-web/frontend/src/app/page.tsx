@@ -2,11 +2,12 @@
 import {useEffect, useState} from 'react'
 import PlanCard from './(components)/PlanCard'
 import {api} from './api'
-import AuthBar from '../components/AuthBar'
 import Link from 'next/link'
 import Watchlist from './(components)/Watchlist'
 import MacroBanner from './(components)/MacroBanner'
 import PasswordRequest from './(components)/PasswordRequest'
+import SiteHeader from './(components)/SiteHeader'
+import Hero from './(components)/Hero'
 
 function scoreLabel(score:number){
   if(score>=70) return {text:'Kuat', color:'bg-green-600'}
@@ -69,42 +70,39 @@ export default function Page(){
   }
 
   return (
-    <main className="max-w-7xl mx-auto px-4 md:px-6 py-6 space-y-4">
-      <div className="flex items-center justify-between sticky top-0 bg-zinc-50/80 backdrop-blur z-10 py-3">
-        <h1 className="text-2xl md:text-3xl font-bold">Auto Analisa</h1>
-        <div className="flex items-center gap-3">
-          {isAdmin && <Link href="/admin" className="text-sm font-medium text-gray-600 hover:text-gray-900">Admin</Link>}
-          {!loggedIn && <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-gray-900">Login</Link>}
-          {!loggedIn && <Link href="/register" className="text-sm font-medium text-gray-600 hover:text-gray-900">Register</Link>}
-          <AuthBar onAuth={()=>location.reload()} />
-        </div>
+    <main className="space-y-4">
+      <SiteHeader loggedIn={loggedIn} isAdmin={isAdmin} />
+      <Hero loggedIn={loggedIn} isAdmin={isAdmin} />
+      <div className="max-w-7xl mx-auto px-4 md:px-6">
+        <MacroBanner />
+        {notice && (
+          <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 flex items-start gap-2 text-sm">
+            <span aria-hidden>⚠</span>
+            <span>{notice}</span>
+          </div>
+        )}
       </div>
-      <MacroBanner />
-      {notice && (
-        <div className="p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 flex items-start gap-2 text-sm">
-          <span aria-hidden>⚠</span>
-          <span>{notice}</span>
-        </div>
-      )}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="md:col-span-1">
-          <h2 className="font-semibold mb-2">Watchlist</h2>
-          {loggedIn ? (
-            <Watchlist onPick={analyze} />
-          ) : (
-            <div className="text-sm text-gray-600">Login untuk mengelola watchlist dan menganalisa.</div>
-          )}
-          {loggedIn && <PasswordRequest />}
-        </div>
-        <div className="md:col-span-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
-            {cards.map((c,idx)=> <PlanCard key={c.id} plan={c} onUpdate={()=>updateOne(idx)} onArchive={async()=>{
-              try{ await api.post(`analyses/${c.id}/save`); /* keep active card */ }catch{ alert('Gagal menyimpan snapshot') }
-            }} />)}
+      <div id="analisa" className="max-w-7xl mx-auto px-4 md:px-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div id="watchlist" className="md:col-span-1">
+            <h2 className="font-semibold mb-2">Watchlist</h2>
+            {loggedIn ? (
+              <Watchlist onPick={analyze} />
+            ) : (
+              <div className="text-sm text-gray-600">Login untuk mengelola watchlist dan menganalisa.</div>
+            )}
+            {loggedIn && <PasswordRequest />}
+          </div>
+          <div className="md:col-span-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+              {cards.map((c,idx)=> <PlanCard key={c.id} plan={c} onUpdate={()=>updateOne(idx)} onArchive={async()=>{
+                try{ await api.post(`analyses/${c.id}/save`); /* keep active card */ }catch{ alert('Gagal menyimpan snapshot') }
+              }} />)}
+            </div>
           </div>
         </div>
+        <div className="mt-6 text-xs opacity-60">Aturan: Edukasi, bukan saran finansial. Rate-limit aktif. Hasil per user terpisah.</div>
       </div>
-      <div className="text-xs opacity-60">Aturan: Edukasi, bukan saran finansial. Rate-limit aktif. Hasil per user terpisah.</div>
     </main>
   )
 }
