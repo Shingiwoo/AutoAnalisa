@@ -3,5 +3,5 @@
 @tailwind utilities;
 
 * { box-sizing: border-box; }
-body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Noto Sans, "Apple Color Emoji", "Segoe UI Emoji"; }
-
+/* Biarkan next/font (Inter) mengatur font; jangan override di sini */
+/* body font-family dihapus agar kelas Inter dari layout.tsx berlaku */
