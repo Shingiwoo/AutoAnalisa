@@ -33,32 +33,48 @@ export default function RegisterPage(){
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm p-6">
-        <div className="mb-4">
-          <h1 className="text-2xl font-bold">Buat Akun</h1>
-          <p className="text-sm text-gray-600 mt-1">Daftar untuk mulai menggunakan Auto Analisa.</p>
+    <main className="relative isolate min-h-screen flex items-center justify-center px-4 bg-slate-950 text-white">
+      {/* background accents */}
+      <div className="absolute inset-x-0 top-0 -z-10 h-px bg-gradient-to-r from-white/10 via-white/20 to-white/10" />
+      <div className="absolute inset-0 -z-20 bg-[linear-gradient(to_right,transparent_0,transparent_calc(50%-0.5px),rgba(255,255,255,.06)_50%,transparent_calc(50%+0.5px),transparent_100%)] bg-[length:40px_40px] [mask-image:radial-gradient(400px_300px_at_center,black,transparent_85%)]" />
+
+      <div className="w-full max-w-md rounded-2xl ring-1 ring-white/10 bg-white/5 backdrop-blur p-6 shadow-2xl">
+        <div className="mb-5">
+          <h1 className="text-2xl font-bold tracking-tight">Buat Akun</h1>
+          <p className="text-sm text-zinc-300 mt-1">Daftar untuk mulai menggunakan Auto Analisa.</p>
         </div>
         {enabled===false && (
-          <div className="mb-3 p-2 bg-amber-50 border border-amber-200 text-amber-800 rounded text-sm">Registrasi dinonaktifkan oleh admin.</div>
+          <div className="mb-4 rounded-lg p-2 text-sm text-amber-300 ring-1 ring-inset ring-amber-500/20 bg-amber-500/10">Registrasi dinonaktifkan oleh admin.</div>
         )}
         {msg && (
-          <div className="mb-3 p-2 bg-blue-50 border border-blue-200 text-blue-800 rounded text-sm">{msg}</div>
+          <div className="mb-4 rounded-lg p-2 text-sm text-cyan-300 ring-1 ring-inset ring-cyan-500/20 bg-cyan-500/10">{msg}</div>
         )}
-        <form onSubmit={submit} className="space-y-3">
+        <form onSubmit={submit} className="space-y-4">
           <div>
-            <label className="block text-sm mb-1">Email</label>
-            <input autoFocus value={email} onChange={e=>setEmail(e.target.value)} className="border rounded px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+            <label className="block text-sm mb-1 text-zinc-300">Email</label>
+            <input
+              autoFocus
+              value={email}
+              onChange={e=>setEmail(e.target.value)}
+              className="block w-full rounded-md bg-transparent px-3 py-2 text-white placeholder:text-zinc-400 ring-1 ring-inset ring-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              placeholder="you@example.com"
+            />
           </div>
           <div>
-            <label className="block text-sm mb-1">Password</label>
-            <input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="border rounded px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+            <label className="block text-sm mb-1 text-zinc-300">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e=>setPassword(e.target.value)}
+              className="block w-full rounded-md bg-transparent px-3 py-2 text-white placeholder:text-zinc-400 ring-1 ring-inset ring-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              placeholder="••••••••"
+            />
           </div>
-          <button disabled={loading || enabled===false} className="w-full px-4 py-2 rounded bg-blue-600 text-white font-medium hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 disabled:opacity-50">{loading?'Mendaftar…':'Daftar'}</button>
+          <button disabled={loading || enabled===false} className="w-full px-4 py-2 rounded-md bg-cyan-600 text-white font-medium hover:bg-cyan-500 focus:ring-2 focus:ring-cyan-500 disabled:opacity-50">{loading?'Mendaftar…':'Daftar'}</button>
         </form>
-        <div className="mt-4 flex items-center justify-between">
-          <button onClick={()=>history.back()} className="text-sm font-medium text-gray-600 hover:text-gray-900">Kembali</button>
-          <Link href="/login" className="text-sm font-medium text-blue-600 hover:text-blue-700">Sudah punya akun?</Link>
+        <div className="mt-5 flex items-center justify-between text-sm">
+          <button onClick={()=>history.back()} className="text-zinc-300 hover:text-white">Kembali</button>
+          <Link href="/login" className="text-cyan-400 hover:text-cyan-300">Sudah punya akun?</Link>
         </div>
       </div>
     </main>
