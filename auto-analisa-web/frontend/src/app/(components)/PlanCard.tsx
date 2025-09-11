@@ -7,8 +7,9 @@ export default function PlanCard({plan, onUpdate}:{plan:any,onUpdate:()=>void}){
   const p=plan.payload
   const [tf,setTf]=useState<'5m'|'15m'|'1h'>(()=> '15m')
   const [ohlcv,setOhlcv]=useState<any[]>([])
+  const [loading,setLoading]=useState(false)
   useEffect(()=>{ (async()=>{
-    try{ const {data}=await api.get('ohlcv', { params:{ symbol:plan.symbol, tf, limit:200 } }); setOhlcv(data) }catch{}
+    try{ setLoading(true); const {data}=await api.get('ohlcv', { params:{ symbol:plan.symbol, tf, limit:200 } }); setOhlcv(data) }catch{} finally{ setLoading(false) }
   })() },[tf, plan.symbol])
   return (
     <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 shadow-sm p-4 md:p-6 space-y-4 text-zinc-900 dark:text-zinc-100">
@@ -26,10 +27,15 @@ export default function PlanCard({plan, onUpdate}:{plan:any,onUpdate:()=>void}){
         <button role="tab" aria-selected={tf==='1h'} onClick={()=>setTf('1h')} className={`px-2.5 py-1 rounded-md transition ${tf==='1h'?'bg-cyan-600 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>1h</button>
       </div>
 
-      <div className="rounded-xl overflow-hidden ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-950">
+      <div className="rounded-xl overflow-hidden ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-950 relative">
         <div className="aspect-[16/9] md:aspect-[21/9]">
-          <ChartOHLCV className="h-full" data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid:p.invalid, entries:p.entries||[] }} />
+          <ChartOHLCV key={`${plan.symbol}-${tf}`} className="h-full" data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid:p.invalid, entries:p.entries||[] }} />
         </div>
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/5 dark:bg-white/5">
+            <div className="text-xs text-zinc-700 dark:text-zinc-200">Memuat {tf}…</div>
+          </div>
+        )}
       </div>
 
       <div className="text-sm">
