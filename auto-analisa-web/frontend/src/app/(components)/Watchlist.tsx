@@ -2,7 +2,7 @@
 import {useEffect, useState} from 'react'
 import {api} from '../api'
 
-export default function Watchlist({onPick}:{onPick:(s:string)=>void}){
+export default function Watchlist({onPick, onDelete}:{onPick:(s:string)=>void, onDelete?: (s:string)=>void}){
   const [items,setItems]=useState<string[]>([])
   const [sym,setSym]=useState('')
   const [msg,setMsg]=useState<string>('')
@@ -15,7 +15,7 @@ export default function Watchlist({onPick}:{onPick:(s:string)=>void}){
       setSym(''); setMsg(''); load()
     }catch(e:any){ setMsg(e?.response?.data?.detail || 'Gagal menambah simbol') }
   }
-  async function del(s:string){ try{ await api.delete(`watchlist/${encodeURIComponent(s)}`); load() }catch(e:any){ setMsg(e?.response?.data?.detail || 'Gagal menghapus simbol') } }
+  async function del(s:string){ try{ await api.delete(`watchlist/${encodeURIComponent(s)}`); onDelete?.(s); load() }catch(e:any){ setMsg(e?.response?.data?.detail || 'Gagal menghapus simbol') } }
   useEffect(()=>{ load() },[])
   return (
     <div className="space-y-2">

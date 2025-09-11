@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { Plus, X } from 'lucide-react'
 
-export default function WatchlistRow({ onPick }:{ onPick:(s:string)=>void }){
+export default function WatchlistRow({ onPick, onDelete }:{ onPick:(s:string)=>void, onDelete?: (s:string)=>void }){
   const [items,setItems]=useState<string[]>([])
   const [sym,setSym]=useState('')
   const [msg,setMsg]=useState<string>('')
@@ -16,7 +16,13 @@ export default function WatchlistRow({ onPick }:{ onPick:(s:string)=>void }){
       setSym(''); setMsg(''); load()
     }catch(e:any){ setMsg(e?.response?.data?.detail || 'Gagal menambah simbol') }
   }
-  async function del(s:string){ try{ await api.delete(`watchlist/${encodeURIComponent(s)}`); load() }catch(e:any){ setMsg(e?.response?.data?.detail || 'Gagal menghapus simbol') } }
+  async function del(s:string){
+    try{
+      await api.delete(`watchlist/${encodeURIComponent(s)}`)
+      onDelete?.(s)
+      load()
+    }catch(e:any){ setMsg(e?.response?.data?.detail || 'Gagal menghapus simbol') }
+  }
   useEffect(()=>{ load() },[])
   return (
     <section id="watchlist" className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 text-zinc-900 dark:text-zinc-100">
