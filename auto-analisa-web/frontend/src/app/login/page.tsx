@@ -31,7 +31,7 @@ export default function LoginPage(){
     <main className="relative isolate min-h-screen flex items-center justify-center px-4 bg-slate-950 text-white">
       {/* background accents */}
       <div className="absolute inset-x-0 top-0 -z-10 h-px bg-gradient-to-r from-white/10 via-white/20 to-white/10" />
-      <div className="absolute inset-0 -z-20 bg-[linear-gradient(to_right,transparent_0,transparent_calc(50%-0.5px),rgba(255,255,255,.06)_50%,transparent_calc(50%+0.5px),transparent_100%)] bg-[length:40px_40px] [mask-image:radial-gradient(400px_300px_at_center,black,transparent_85%)]" />
+      <div className="absolute inset-0 -z-20 bg-[linear-gradient(to_right,transparent_0,transparent_calc(50%-0.5px),rgba(255,255,255,.06)_50%,transparent_calc(50%+0.5px),transparent_100%)] bg-[length:40px_40px] [mask-image:radial-gradient(400px_300px_at_50%_50%,black,transparent_85%)]" />
 
       <div className="w-full max-w-md rounded-2xl ring-1 ring-white/10 bg-white/5 backdrop-blur p-6 shadow-2xl">
         <div className="mb-5">

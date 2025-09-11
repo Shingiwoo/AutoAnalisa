@@ -16,8 +16,7 @@ export default function Hero({ loggedIn, isAdmin }:{ loggedIn:boolean, isAdmin:b
           {!loggedIn && <Link href="/register" className="rounded px-4 py-2 bg-cyan-600 text-white hover:bg-cyan-500">Buat Akun</Link>}
         </div>
       </div>
-      <div className="absolute inset-0 -z-20 bg-[linear-gradient(to_right,transparent_0,transparent_calc(50%-0.5px),rgba(255,255,255,.06)_50%,transparent_calc(50%+0.5px),transparent_100%)] bg-[length:40px_40px] [mask-image:radial-gradient(300px_200px_at_center,black,transparent_85%)]" />
+      <div className="absolute inset-0 -z-20 bg-[linear-gradient(to_right,transparent_0,transparent_calc(50%-0.5px),rgba(255,255,255,.06)_50%,transparent_calc(50%+0.5px),transparent_100%)] bg-[length:40px_40px] [mask-image:radial-gradient(300px_200px_at_50%_50%,black,transparent_85%)]" />
     </section>
   )
 }
-

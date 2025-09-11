@@ -39,12 +39,12 @@ export default function AdminPage(){
         <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 space-y-4">
           <div className="font-semibold">Pengaturan</div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-            <label className="flex items-center gap-2"><input type="checkbox" checked={s.use_llm} onChange={e=>setS({...s,use_llm:e.target.checked})}/> LLM aktif</label>
-            <label className="flex items-center gap-2"><input type="checkbox" checked={s.registration_enabled} onChange={e=>setS({...s,registration_enabled:e.target.checked})}/> Izinkan pendaftaran baru</label>
-            <label className="flex items-center gap-2"><input type="checkbox" checked={s.auto_off_at_budget} onChange={e=>setS({...s,auto_off_at_budget:e.target.checked})}/> Auto-off saat cap</label>
-            <label>Budget USD/bln <input type="number" className="border rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-cyan-500" value={s.budget_monthly_usd} onChange={e=>setS({...s,budget_monthly_usd:+e.target.value})}/></label>
-            <label>Harga Input /1k <input type="number" className="border rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-cyan-500" value={s.input_usd_per_1k} onChange={e=>setS({...s,input_usd_per_1k:+e.target.value})}/></label>
-            <label>Harga Output /1k <input type="number" className="border rounded px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-cyan-500" value={s.output_usd_per_1k} onChange={e=>setS({...s,output_usd_per_1k:+e.target.value})}/></label>
+            <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={s.use_llm} onChange={e=>setS({...s,use_llm:e.target.checked})}/> LLM aktif</label>
+            <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={s.registration_enabled} onChange={e=>setS({...s,registration_enabled:e.target.checked})}/> Izinkan pendaftaran baru</label>
+            <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={s.auto_off_at_budget} onChange={e=>setS({...s,auto_off_at_budget:e.target.checked})}/> Auto-off saat cap</label>
+            <label>Budget USD/bln <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.budget_monthly_usd} onChange={e=>setS({...s,budget_monthly_usd:+e.target.value})}/></label>
+            <label>Harga Input /1k <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.input_usd_per_1k} onChange={e=>setS({...s,input_usd_per_1k:+e.target.value})}/></label>
+            <label>Harga Output /1k <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.output_usd_per_1k} onChange={e=>setS({...s,output_usd_per_1k:+e.target.value})}/></label>
           </div>
           <div className="flex items-center gap-3">
             <button onClick={save} className="px-3 py-2 rounded bg-cyan-600 text-white font-medium hover:bg-cyan-500">Simpan</button>

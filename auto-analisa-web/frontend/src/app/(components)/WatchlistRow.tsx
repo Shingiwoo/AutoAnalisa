@@ -19,12 +19,17 @@ export default function WatchlistRow({ onPick }:{ onPick:(s:string)=>void }){
   async function del(s:string){ try{ await api.delete(`watchlist/${encodeURIComponent(s)}`); load() }catch(e:any){ setMsg(e?.response?.data?.detail || 'Gagal menghapus simbol') } }
   useEffect(()=>{ load() },[])
   return (
-    <section id="watchlist" className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4">
+    <section id="watchlist" className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 text-zinc-900 dark:text-zinc-100">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
         <div>
           <h3 className="font-semibold mb-2">Watchlist</h3>
           <div className="flex gap-2">
-            <input value={sym} onChange={e=>setSym(e.target.value.toUpperCase())} placeholder="OPUSDT" className="border rounded px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-cyan-500"/>
+            <input
+              value={sym}
+              onChange={e=>setSym(e.target.value.toUpperCase())}
+              placeholder="OPUSDT"
+              className="rounded px-3 py-2 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white placeholder:text-zinc-400 dark:ring-white/10"
+            />
             <button onClick={add} disabled={items.length>=4} className="inline-flex items-center gap-1 px-3 py-2 rounded bg-cyan-600 text-white font-medium hover:bg-cyan-500 disabled:opacity-50"><Plus size={16}/> Tambah</button>
           </div>
           {msg && <div className="mt-2 text-xs text-rose-500">{msg}</div>}
