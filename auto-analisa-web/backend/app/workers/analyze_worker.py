@@ -61,7 +61,7 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
             await add_usage(
                 db,
                 user.id,
-                os.getenv("OPENAI_MODEL", "gpt-5"),
+                os.getenv("OPENAI_MODEL", "gpt-5-chat-latest"),
                 int(usage.get("prompt_tokens", 0)),
                 int(usage.get("completion_tokens", 0)),
                 s.input_usd_per_1k,
@@ -94,6 +94,9 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
         plan["notice"] = (
             "LLM dinonaktifkan: " + reason.replace("LLM ", "").capitalize()
         )
+    elif use_llm and not os.getenv("OPENAI_API_KEY"):
+        # LLM diizinkan tetapi belum dikonfigurasi kuncinya
+        plan["notice"] = "LLM tidak dikonfigurasi: isi OPENAI_API_KEY di server."
 
     # save analysis
     # compute next version per user+symbol

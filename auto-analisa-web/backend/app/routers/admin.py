@@ -4,9 +4,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.deps import get_db
+from app.config import settings as app_settings
 from app.auth import get_current_user
 from app.models import Settings, ApiUsage, PasswordChangeRequest, User, MacroDaily
-from app.services.budget import get_or_init_settings, month_key
+from app.services.budget import (
+    get_or_init_settings,
+    month_key,
+    add_usage,
+    check_budget_and_maybe_off,
+)
 from app.auth import hash_pw
 from app import services
 from datetime import datetime, timezone
@@ -25,7 +31,7 @@ async def require_admin(user=Depends(get_current_user)):
 async def get_settings(db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
     s = await get_or_init_settings(db)
     # Provide both legacy and aliased fields for FE compatibility
-    llm_model = (os.getenv("OPENAI_MODEL", "gpt-5"))
+    llm_model = (os.getenv("OPENAI_MODEL", "gpt-5-chat-latest"))
     return {
         # legacy
         "use_llm": s.use_llm,
@@ -77,7 +83,7 @@ async def put_settings(payload: dict, db: AsyncSession = Depends(get_db), user=D
     await db.commit()
     return {
         "llm_enabled": s.use_llm,
-        "llm_model": os.getenv("OPENAI_MODEL", "gpt-5"),
+        "llm_model": os.getenv("OPENAI_MODEL", "gpt-5-chat-latest"),
         "llm_limit_monthly_usd": s.budget_monthly_usd,
         "llm_spend_monthly_usd": s.budget_used_usd,
     }
@@ -136,13 +142,53 @@ async def reject_pwd(rid: int, db: AsyncSession = Depends(get_db), admin=Depends
 
 @router.post("/macro/generate")
 async def generate_macro(db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
+    # Hormati toggle LLM dan budget; beri pesan ramah jika OFF
+    s = await get_or_init_settings(db)
+    allowed, reason = await services.llm.should_use_llm(db)
+    if not allowed:
+        # 409 agar FE bisa tampilkan pesan tanpa 500
+        raise HTTPException(409, detail=(
+            "LLM sedang nonaktif: " + (reason or "dinonaktifkan oleh admin/budget.")
+        ))
+    # Pastikan API key tersedia
+    if not os.getenv("OPENAI_API_KEY") and getattr(app_settings, "APP_ENV", "local") != "local":
+        raise HTTPException(409, detail="LLM belum dikonfigurasi: OPENAI_API_KEY belum diisi.")
+
     # Prompt sederhana; bisa dikembangkan untuk ambil feed publik lebih dahulu
     prompt = (
         "Ringkas faktor makro relevan untuk pasar kripto 24-48 jam ke depan. "
         "Singgung DXY, yield, likuiditas, sentimen ETF, berita utama. "
         "Bahasa Indonesia, 5-8 poin, netral, tidak memberi rekomendasi investasi."
     )
-    text, _ = services.llm.ask_llm(prompt)
+
+    try:
+        text, usage = services.llm.ask_llm(prompt)
+        # Catat biaya penggunaan ke budget tracking
+        await add_usage(
+            db,
+            user.id,
+            os.getenv("OPENAI_MODEL", "gpt-5-chat-latest"),
+            int(usage.get("prompt_tokens", 0)),
+            int(usage.get("completion_tokens", 0)),
+            s.input_usd_per_1k,
+            s.output_usd_per_1k,
+        )
+        # Jika melewati limit, auto-off
+        await check_budget_and_maybe_off(db)
+    except Exception as e:  # pragma: no cover
+        msg = str(e).lower()
+        if "insufficient_quota" in msg or " 429" in msg or "rate limit" in msg:
+            s.use_llm = False
+            await db.commit()
+            raise HTTPException(
+                503,
+                detail=(
+                    "LLM dinonaktifkan sementara: kuota habis atau rate limit. "
+                    "Silakan tambah kredit/limit lalu aktifkan kembali di halaman Admin."
+                ),
+            )
+        # Error lain: tampilkan pesan generik agar tidak bocor detail
+        raise HTTPException(502, detail="Gagal mengakses LLM. Coba lagi nanti.")
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     q = await db.execute(select(MacroDaily).where(MacroDaily.date_utc == today))
     row = q.scalar_one_or_none()

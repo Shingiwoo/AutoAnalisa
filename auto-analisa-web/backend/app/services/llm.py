@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .budget import get_or_init_settings, check_budget_and_maybe_off
 
 
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5")
+# Default to a project-allowed model for Chat Completions
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-chat-latest")
 # Inisialisasi klien secara aman: jika tidak ada API key, biarkan None agar tidak error saat import
 _KEY = os.getenv("OPENAI_API_KEY")
 _client = OpenAI(api_key=_KEY) if _KEY else None
@@ -26,7 +27,6 @@ def ask_llm(prompt: str) -> Tuple[str, Dict[str, int]]:
             {"role": "system", "content": "Kamu analis kripto. Jawab dalam JSON ringkas untuk narasi saja (field narrative)."},
             {"role": "user", "content": prompt},
         ],
-        temperature=0.2,
     )
     text = resp.choices[0].message.content or ""
     usage = {
