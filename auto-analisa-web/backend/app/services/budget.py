@@ -16,12 +16,14 @@ async def get_or_init_settings(db: AsyncSession) -> Settings:
     s = q.scalar_one_or_none()
     if s:
         return s
+    # allow alias env for monthly budget (LLM_BUDGET_USD)
+    monthly_env = os.getenv("LLM_BUDGET_MONTHLY_USD") or os.getenv("LLM_BUDGET_USD") or "20"
     s = Settings(
         use_llm=(os.getenv("USE_LLM", "true").lower() == "true"),
         registration_enabled=(os.getenv("REGISTRATION_ENABLED", "true").lower() == "true"),
         input_usd_per_1k=float(os.getenv("OPENAI_INPUT_USD_PER_1K", "0.005")),
         output_usd_per_1k=float(os.getenv("OPENAI_OUTPUT_USD_PER_1K", "0.015")),
-        budget_monthly_usd=float(os.getenv("LLM_BUDGET_MONTHLY_USD", "20")),
+        budget_monthly_usd=float(monthly_env),
         auto_off_at_budget=(os.getenv("LLM_AUTO_OFF_AT_BUDGET", "true").lower() == "true"),
     )
     db.add(s)

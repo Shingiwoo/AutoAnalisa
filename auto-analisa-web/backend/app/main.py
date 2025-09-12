@@ -56,6 +56,7 @@ from .routers import watchlist as watchlist_router
 from .routers import market as market_router
 from .routers import macro as macro_router
 from .routers import user as user_router
+from .routers import llm as llm_router
 
 
 @app.get("/api/plan/{plan_id}")
@@ -81,3 +82,4 @@ app.include_router(watchlist_router.router)
 app.include_router(market_router.router)
 app.include_router(macro_router.router)
 app.include_router(user_router.router)
+app.include_router(llm_router.router)

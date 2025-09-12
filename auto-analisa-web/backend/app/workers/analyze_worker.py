@@ -127,3 +127,26 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
     await db.commit()
     await db.refresh(a)
     return a
+
+
+async def refresh_analysis_rules_only(db: AsyncSession, user: User, analysis: Analysis) -> Analysis:
+    """Recompute plan using rules engine only (no LLM), bump version and timestamp."""
+    sym = analysis.symbol.upper()
+    bundle = await fetch_bundle(sym, ("4h", "1h", "15m", "5m"))
+    feat = Features(bundle).enrich()
+    score = score_symbol(feat)
+    plan = build_plan(bundle, feat, score, "auto")
+
+    # compute next version per user+symbol and update
+    q2 = await db.execute(
+        select(func.max(Analysis.version)).where(
+            Analysis.user_id == user.id, Analysis.symbol == sym
+        )
+    )
+    ver = (q2.scalar_one() or 0) + 1
+    analysis.version = ver
+    analysis.payload_json = plan
+    analysis.created_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(analysis)
+    return analysis

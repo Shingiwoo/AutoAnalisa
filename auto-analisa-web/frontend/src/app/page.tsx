@@ -21,15 +21,23 @@ export default function Page(){
   const [notice,setNotice]=useState<string|undefined>(undefined)
   const [isAdmin,setIsAdmin]=useState(false)
   const [loggedIn,setLoggedIn]=useState(false)
+  const [quota,setQuota]=useState<{limit:number, remaining:number, calls?:number, llm_enabled:boolean}|null>(null)
 
   useEffect(()=>{
     if(typeof window!=='undefined'){
       setIsAdmin(localStorage.getItem('role')==='admin')
       const isLogged = !!(localStorage.getItem('token') || localStorage.getItem('access_token'))
       setLoggedIn(isLogged)
-      if (isLogged) load(); else setCards([])
+      if (isLogged) { load(); loadQuota() } else { setCards([]); setQuota(null) }
     }
   },[])
+
+  async function loadQuota(){
+    try{
+      const r = await api.get('llm/quota')
+      setQuota(r.data)
+    }catch{ setQuota(null) }
+  }
 
   async function load(){
     try{
@@ -64,9 +72,17 @@ export default function Page(){
 
   async function updateOne(idx:number){
     const c=cards[idx]
-    const {data}=await api.post('analyze',{symbol:c.symbol})
-    setNotice(data?.payload?.notice)
-    const cp=[...cards]; cp[idx]=data; setCards(cp)
+    try{
+      const {data}=await api.post(`analyses/${c.id}/refresh`)
+      const updated = data?.analysis
+      if(updated){
+        setNotice(updated?.payload?.notice)
+        const cp=[...cards]; cp[idx]=updated; setCards(cp)
+      }
+    }catch(e:any){
+      if(e?.response?.status===429) alert('Terlalu sering, coba lagi sebentar.')
+      else alert('Gagal update analisa')
+    }
   }
 
   return (
@@ -83,14 +99,20 @@ export default function Page(){
       </div>
       <div id="analisa" className="max-w-7xl mx-auto px-4 md:px-6 space-y-4">
         {loggedIn ? (
-          <WatchlistRow onPick={analyze} onDelete={(s)=>{ setCards(prev=> prev.filter(c=> c.symbol !== s)) }} />
+          <WatchlistRow quota={quota} onPick={analyze} onDelete={(s)=>{ setCards(prev=> prev.filter(c=> c.symbol !== s)) }} />
         ) : (
           <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 text-sm text-gray-600">Login untuk mengelola watchlist dan menganalisa.</div>
         )}
+        {quota && !quota.llm_enabled && (
+          <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 flex items-start gap-2 text-sm">
+            <span aria-hidden>⚠</span>
+            <span>LLM dinonaktifkan: {quota.remaining===0? 'limit harian tercapai' : 'budget bulanan tercapai / dimatikan admin'}</span>
+          </div>
+        )}
         <div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {cards.map((c,idx)=> (
-              <PlanCard key={c.id} plan={c} onUpdate={()=>updateOne(idx)} />
+              <PlanCard key={c.id} plan={c} onUpdate={()=>updateOne(idx)} llmEnabled={!!quota?.llm_enabled} llmRemaining={quota?.remaining ?? 0} onAfterVerify={loadQuota} />
             ))}
           </div>
         </div>

@@ -3,6 +3,7 @@ from sqlalchemy import (
     Integer,
     String,
     DateTime,
+    Date,
     JSON,
     Text,
     Boolean,
@@ -101,3 +102,37 @@ class MacroDaily(Base):
     narrative: Mapped[str] = mapped_column(Text)
     sources: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+
+# Verification records from LLM for each analysis snapshot
+class LLMVerification(Base):
+    __tablename__ = "llm_verifications"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    analysis_id: Mapped[int] = mapped_column(Integer, index=True)
+    user_id: Mapped[str] = mapped_column(String, index=True)
+    model: Mapped[str] = mapped_column(String, default="gpt-5-chat-latest")
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    verdict: Mapped[str] = mapped_column(String, default="confirm")  # confirm|tweak|warning|reject
+    summary: Mapped[str] = mapped_column(Text, default="")
+    suggestions: Mapped[dict] = mapped_column(JSON, default={})  # {entries:[], tp:[], invalid:..., notes:[]}
+    fundamentals: Mapped[dict] = mapped_column(JSON, default={})  # optional bullets for 24–48h
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    cached: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+# Aggregated per-day usage per user for LLM calls and token costs
+class LLMUsage(Base):
+    __tablename__ = "llm_usage"
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # uuid string
+    user_id: Mapped[str] = mapped_column(String, index=True)
+    day: Mapped[dt.date] = mapped_column(Date, index=True)  # UTC date
+    month: Mapped[str] = mapped_column(String, index=True)   # YYYY-MM
+    model: Mapped[str] = mapped_column(String)
+    calls: Mapped[int] = mapped_column(Integer, default=0)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, default=None)
