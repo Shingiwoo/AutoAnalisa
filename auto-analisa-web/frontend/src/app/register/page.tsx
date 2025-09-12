@@ -11,6 +11,19 @@ export default function RegisterPage(){
   const [enabled,setEnabled]=useState<boolean|null>(null)
   const [msg,setMsg]=useState('')
   const router = useRouter()
+  // Jika sudah login dan user menekan Back ke /register, redirect ke dashboard
+  useEffect(()=>{
+    const check = () => {
+      try{
+        const tok = typeof window !== 'undefined' ? (localStorage.getItem('access_token') || localStorage.getItem('token')) : null
+        if(tok){ router.replace('/') }
+      }catch{}
+    }
+    check()
+    const onShow = (e: any) => { check() }
+    window.addEventListener('pageshow', onShow)
+    return () => window.removeEventListener('pageshow', onShow)
+  },[router])
 
   useEffect(()=>{ (async()=>{
     try{ const {data}=await api.get('auth/register_enabled'); setEnabled(!!data.enabled) }

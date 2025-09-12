@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { api } from '../api'
@@ -10,6 +10,19 @@ export default function LoginPage(){
   const [loading,setLoading]=useState(false)
   const [err,setErr]=useState('')
   const router = useRouter()
+  // Jika sudah login dan user menekan Back ke /login, redirect kembali ke dashboard
+  useEffect(()=>{
+    const check = () => {
+      try{
+        const tok = typeof window !== 'undefined' ? (localStorage.getItem('access_token') || localStorage.getItem('token')) : null
+        if(tok){ router.replace('/') }
+      }catch{}
+    }
+    check()
+    const onShow = (e: any) => { check() }
+    window.addEventListener('pageshow', onShow)
+    return () => window.removeEventListener('pageshow', onShow)
+  },[router])
   async function submit(e:React.FormEvent){
     e.preventDefault()
     setErr('')
@@ -22,7 +35,7 @@ export default function LoginPage(){
       localStorage.setItem('token', tok) // backward-compat
       localStorage.setItem('role', r.data.role)
       api.defaults.headers.common.Authorization = `Bearer ${tok}` as any
-      router.push('/')
+      router.replace('/')
     }catch(e:any){
       setErr('Login gagal. Periksa email/password Anda.')
     }finally{ setLoading(false) }
