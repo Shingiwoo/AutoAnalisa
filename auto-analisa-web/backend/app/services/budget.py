@@ -12,8 +12,11 @@ def month_key(dt: datetime | None = None) -> str:
 
 
 async def get_or_init_settings(db: AsyncSession) -> Settings:
-    q = await db.execute(select(Settings))
-    s = q.scalar_one_or_none()
+    """Fetch the singleton Settings row deterministically, creating one if missing.
+    If multiple rows exist (from older bugs), always use the lowest id for stability.
+    """
+    q = await db.execute(select(Settings).order_by(Settings.id.asc()).limit(1))
+    s = q.scalars().first()
     if s:
         return s
     # allow alias env for monthly budget (LLM_BUDGET_USD)

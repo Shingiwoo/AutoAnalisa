@@ -63,9 +63,30 @@ def _apply_settings_payload(s, payload: dict):
         "llm_enabled": "use_llm",
         "llm_limit_monthly_usd": "budget_monthly_usd",
     }
+    bool_fields = {"use_llm", "registration_enabled", "auto_off_at_budget"}
+    float_fields = {"budget_monthly_usd", "input_usd_per_1k", "output_usd_per_1k"}
     for k, attr in mapping.items():
         if k in payload:
-            setattr(s, attr, payload[k])
+            v = payload[k]
+            try:
+                if attr in bool_fields:
+                    v = bool(v)
+                elif attr in float_fields:
+                    v = float(v)
+                    # guardrails: negative values don't make sense
+                    if attr == "budget_monthly_usd" and v < 0:
+                        v = 0.0
+                    if attr in {"input_usd_per_1k", "output_usd_per_1k"} and v < 0:
+                        v = 0.0
+            except Exception:
+                # ignore bad types; keep current value
+                continue
+            setattr(s, attr, v)
+    # touch updated_at
+    try:
+        s.updated_at = datetime.utcnow()
+    except Exception:
+        pass
 
 
 @router.post("/settings")
@@ -73,7 +94,19 @@ async def update_settings(payload: dict, db: AsyncSession = Depends(get_db), use
     s = await get_or_init_settings(db)
     _apply_settings_payload(s, payload)
     await db.commit()
-    return {"ok": True}
+    # Return the latest snapshot to help clients reflect instantly
+    return {
+        "ok": True,
+        "settings": {
+            "use_llm": s.use_llm,
+            "registration_enabled": s.registration_enabled,
+            "budget_monthly_usd": s.budget_monthly_usd,
+            "auto_off_at_budget": s.auto_off_at_budget,
+            "input_usd_per_1k": s.input_usd_per_1k,
+            "output_usd_per_1k": s.output_usd_per_1k,
+            "budget_used_usd": s.budget_used_usd,
+        },
+    }
 
 
 @router.put("/settings")
