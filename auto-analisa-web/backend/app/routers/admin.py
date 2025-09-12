@@ -51,37 +51,48 @@ async def get_settings(db: AsyncSession = Depends(get_db), user=Depends(require_
 
 
 def _apply_settings_payload(s, payload: dict):
-    # Support both legacy and new keys
-    mapping = {
-        "use_llm": "use_llm",
-        "registration_enabled": "registration_enabled",
-        "budget_monthly_usd": "budget_monthly_usd",
-        "auto_off_at_budget": "auto_off_at_budget",
-        "input_usd_per_1k": "input_usd_per_1k",
-        "output_usd_per_1k": "output_usd_per_1k",
-        # new aliases
-        "llm_enabled": "use_llm",
-        "llm_limit_monthly_usd": "budget_monthly_usd",
+    """Apply settings from payload.
+    Prefer canonical keys over aliases when both are present to avoid overrides.
+    """
+    # Map destination attribute -> list of accepted input keys (canonical first)
+    sources = {
+        "use_llm": ["use_llm", "llm_enabled"],
+        "registration_enabled": ["registration_enabled"],
+        "budget_monthly_usd": ["budget_monthly_usd", "llm_limit_monthly_usd"],
+        "auto_off_at_budget": ["auto_off_at_budget"],
+        "input_usd_per_1k": ["input_usd_per_1k"],
+        "output_usd_per_1k": ["output_usd_per_1k"],
     }
     bool_fields = {"use_llm", "registration_enabled", "auto_off_at_budget"}
     float_fields = {"budget_monthly_usd", "input_usd_per_1k", "output_usd_per_1k"}
-    for k, attr in mapping.items():
-        if k in payload:
-            v = payload[k]
-            try:
-                if attr in bool_fields:
+
+    for attr, keys in sources.items():
+        # pick the first present key
+        chosen = None
+        for k in keys:
+            if k in payload:
+                chosen = payload[k]
+                break
+        if chosen is None:
+            continue
+        v = chosen
+        try:
+            if attr in bool_fields:
+                # ensure proper bool for common representations
+                if isinstance(v, str):
+                    v = v.strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+                else:
                     v = bool(v)
-                elif attr in float_fields:
-                    v = float(v)
-                    # guardrails: negative values don't make sense
-                    if attr == "budget_monthly_usd" and v < 0:
-                        v = 0.0
-                    if attr in {"input_usd_per_1k", "output_usd_per_1k"} and v < 0:
-                        v = 0.0
-            except Exception:
-                # ignore bad types; keep current value
-                continue
-            setattr(s, attr, v)
+            elif attr in float_fields:
+                v = float(v)
+                if attr == "budget_monthly_usd" and v < 0:
+                    v = 0.0
+                if attr in {"input_usd_per_1k", "output_usd_per_1k"} and v < 0:
+                    v = 0.0
+        except Exception:
+            # ignore bad types; keep current value
+            continue
+        setattr(s, attr, v)
     # touch updated_at
     try:
         s.updated_at = datetime.utcnow()
