@@ -24,6 +24,9 @@ async def get_or_init_settings(db: AsyncSession) -> Settings:
     s = Settings(
         use_llm=(os.getenv("USE_LLM", "true").lower() == "true"),
         registration_enabled=(os.getenv("REGISTRATION_ENABLED", "true").lower() == "true"),
+        max_users=int(os.getenv("MAX_USERS", "4") or 4),
+        enable_fvg=(os.getenv("ENABLE_FVG", "false").lower() == "true"),
+        enable_supply_demand=(os.getenv("ENABLE_SUPPLY_DEMAND", "false").lower() == "true"),
         input_usd_per_1k=float(os.getenv("OPENAI_INPUT_USD_PER_1K", "0.005")),
         output_usd_per_1k=float(os.getenv("OPENAI_OUTPUT_USD_PER_1K", "0.015")),
         budget_monthly_usd=float(monthly_env),

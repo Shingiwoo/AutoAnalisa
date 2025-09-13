@@ -18,7 +18,7 @@ class PlanPayload(BaseModel):
     invalid: float
     tp: List[float]
     score: int
-    narrative: str
+    rr_min: float | None = None
 
 
 class PlanOut(BaseModel):

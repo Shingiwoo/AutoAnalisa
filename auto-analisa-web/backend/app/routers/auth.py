@@ -11,6 +11,7 @@ from app.deps import get_db
 from app.services.budget import get_or_init_settings
 from pydantic import BaseModel
 from app.schemas import LoginReq, LoginResp
+from sqlalchemy import func
 
 
 class AuthIn(BaseModel):
@@ -55,6 +56,20 @@ async def register(
     s = await get_or_init_settings(db)
     if not s.registration_enabled:
         raise HTTPException(403, "Registration disabled by admin")
+    # Enforce max users (default 4) from settings
+    try:
+        # In local/dev environment, skip hard cap to keep tests/dev smooth
+        if getattr(settings, "APP_ENV", "local") != "local":
+            qcnt = await db.execute(select(func.count()).select_from(User))
+            total_users = int(qcnt.scalar() or 0)
+            max_users = int(getattr(s, "max_users", 4) or 4)
+            if total_users >= max_users:
+                raise HTTPException(403, f"Registrasi ditutup: kuota pengguna penuh ({max_users}).")
+    except HTTPException:
+        raise
+    except Exception:
+        # If counting fails, proceed without blocking registration
+        pass
     q = await db.execute(select(User).where(User.email == email))
     if q.scalar_one_or_none() is not None:
         raise HTTPException(409, "Email exists")

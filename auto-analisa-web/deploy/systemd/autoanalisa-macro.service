@@ -1,0 +1,16 @@
+[Unit]
+Description=Auto Analisa Web - Macro Daily Generator
+After=network.target
+
+[Service]
+Type=oneshot
+# Ubah path sesuai lokasi proyek produksi Anda
+WorkingDirectory=/opt/auto-analisa-web/backend
+Environment=APP_ENV=prod
+ExecStart=/opt/auto-analisa-web/backend/.venv/bin/python scripts/macro_generate.py
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target
+

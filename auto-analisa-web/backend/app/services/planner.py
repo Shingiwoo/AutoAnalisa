@@ -1,4 +1,5 @@
 from .rules import make_levels, Features
+from .validator import normalize_and_validate
 
 
 def build_plan(bundle, feat: "Features", score: int, mode: str = "auto"):
@@ -11,7 +12,6 @@ def build_plan(bundle, feat: "Features", score: int, mode: str = "auto"):
     tp1, tp2 = r1, r2
     if mode == "BO" or (mode == "auto" and price > r1 * 0.995):
         trig = round(r1 * 1.001, 6)
-        # lim = round(trig * 1.0005, 6)  # not used in MVP output
         entries = [trig]
         weights = [1.0]
         out_mode = "BO"
@@ -20,8 +20,7 @@ def build_plan(bundle, feat: "Features", score: int, mode: str = "auto"):
         weights = [0.6, 0.4]
         out_mode = "PB"
     bias = "Bullish intraday selama struktur 1H bertahan di atas %.4f–%.4f." % (s1, s2)
-    narrative = f"TP1 {tp1:.4f}, TP2 {tp2:.4f}, invalid {invalid:.4f}. Score {score}."
-    return {
+    plan = {
         "bias": bias,
         "support": [s1, s2],
         "resistance": [r1, r2],
@@ -31,6 +30,7 @@ def build_plan(bundle, feat: "Features", score: int, mode: str = "auto"):
         "invalid": round(invalid, 6),
         "tp": [round(tp1, 6), round(tp2, 6)],
         "score": score,
-        "narrative": narrative,
     }
-
+    # Normalize and compute rr_min
+    plan, _warns = normalize_and_validate(plan)
+    return plan

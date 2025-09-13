@@ -18,5 +18,17 @@ async def init_db():
                 await conn.exec_driver_sql(
                     "ALTER TABLE settings ADD COLUMN registration_enabled BOOLEAN DEFAULT 1"
                 )
+            if "max_users" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN max_users INTEGER DEFAULT 4"
+                )
+            if "enable_fvg" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN enable_fvg BOOLEAN DEFAULT 0"
+                )
+            if "enable_supply_demand" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN enable_supply_demand BOOLEAN DEFAULT 0"
+                )
         except Exception:
             pass

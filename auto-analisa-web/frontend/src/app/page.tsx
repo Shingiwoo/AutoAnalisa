@@ -6,6 +6,7 @@ import Link from 'next/link'
 import Watchlist from './(components)/Watchlist'
 import WatchlistRow from './(components)/WatchlistRow'
 import MacroBanner from './(components)/MacroBanner'
+import SessionsHint from './(components)/SessionsHint'
 import PasswordRequest from './(components)/PasswordRequest'
 import Hero from './(components)/Hero'
 
@@ -90,6 +91,7 @@ export default function Page(){
       <Hero loggedIn={loggedIn} isAdmin={isAdmin} />
       <div className="max-w-7xl mx-auto px-4 md:px-6">
         <MacroBanner />
+        <SessionsHint />
         {notice && (
           <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 flex items-start gap-2 text-sm">
             <span aria-hidden>⚠</span>
@@ -110,7 +112,7 @@ export default function Page(){
           </div>
         )}
         <div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {cards.map((c,idx)=> (
               <PlanCard key={c.id} plan={c} onUpdate={()=>updateOne(idx)} llmEnabled={!!quota?.llm_enabled} llmRemaining={quota?.remaining ?? 0} onAfterVerify={loadQuota} />
             ))}

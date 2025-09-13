@@ -42,6 +42,9 @@ async def get_settings(db: AsyncSession = Depends(get_db), user=Depends(require_
         "input_usd_per_1k": s.input_usd_per_1k,
         "output_usd_per_1k": s.output_usd_per_1k,
         "month_key": month_key(),
+        "max_users": getattr(s, "max_users", 4),
+        "enable_fvg": getattr(s, "enable_fvg", False),
+        "enable_supply_demand": getattr(s, "enable_supply_demand", False),
         # new aliases
         "llm_enabled": s.use_llm,
         "llm_model": llm_model,
@@ -58,13 +61,18 @@ def _apply_settings_payload(s, payload: dict):
     sources = {
         "use_llm": ["use_llm", "llm_enabled"],
         "registration_enabled": ["registration_enabled"],
+        "max_users": ["max_users"],
+        "enable_fvg": ["enable_fvg"],
+        "enable_supply_demand": ["enable_supply_demand"],
         "budget_monthly_usd": ["budget_monthly_usd", "llm_limit_monthly_usd"],
         "auto_off_at_budget": ["auto_off_at_budget"],
         "input_usd_per_1k": ["input_usd_per_1k"],
         "output_usd_per_1k": ["output_usd_per_1k"],
     }
     bool_fields = {"use_llm", "registration_enabled", "auto_off_at_budget"}
+    bool_fields |= {"enable_fvg", "enable_supply_demand"}
     float_fields = {"budget_monthly_usd", "input_usd_per_1k", "output_usd_per_1k"}
+    int_fields = {"max_users"}
 
     for attr, keys in sources.items():
         # pick the first present key
@@ -89,6 +97,10 @@ def _apply_settings_payload(s, payload: dict):
                     v = 0.0
                 if attr in {"input_usd_per_1k", "output_usd_per_1k"} and v < 0:
                     v = 0.0
+            elif attr in int_fields:
+                v = int(v)
+                if v < 1:
+                    v = 1
         except Exception:
             # ignore bad types; keep current value
             continue
@@ -111,6 +123,9 @@ async def update_settings(payload: dict, db: AsyncSession = Depends(get_db), use
         "settings": {
             "use_llm": s.use_llm,
             "registration_enabled": s.registration_enabled,
+            "max_users": getattr(s, "max_users", 4),
+            "enable_fvg": getattr(s, "enable_fvg", False),
+            "enable_supply_demand": getattr(s, "enable_supply_demand", False),
             "budget_monthly_usd": s.budget_monthly_usd,
             "auto_off_at_budget": s.auto_off_at_budget,
             "input_usd_per_1k": s.input_usd_per_1k,
@@ -130,6 +145,9 @@ async def put_settings(payload: dict, db: AsyncSession = Depends(get_db), user=D
         "llm_model": os.getenv("OPENAI_MODEL", "gpt-5-chat-latest"),
         "llm_limit_monthly_usd": s.budget_monthly_usd,
         "llm_spend_monthly_usd": s.budget_used_usd,
+        "max_users": getattr(s, "max_users", 4),
+        "enable_fvg": getattr(s, "enable_fvg", False),
+        "enable_supply_demand": getattr(s, "enable_supply_demand", False),
     }
 
 

@@ -9,6 +9,7 @@ from app.services.llm import should_use_llm, ask_llm
 from app.services.usage import get_today_usage, inc_usage
 from app.workers.analyze_worker import refresh_analysis_rules_only
 from app.main import locks
+from app.services.validator import normalize_and_validate
 import os, json, time
 from app.config import settings
 
@@ -190,6 +191,30 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
         fundamentals = parsed.get("fundamentals") or {}
     except Exception:
         # keep summary as raw text
+        pass
+
+    # sanitize suggestions by validating a candidate plan built from current + suggestions
+    try:
+        cand = dict(snap)
+        if isinstance(suggestions, dict):
+            if isinstance(suggestions.get("entries"), list):
+                cand["entries"] = suggestions.get("entries")
+            if isinstance(suggestions.get("tp"), list):
+                cand["tp"] = suggestions.get("tp")
+            if suggestions.get("invalid") is not None:
+                cand["invalid"] = suggestions.get("invalid")
+        cand2, warns = normalize_and_validate(cand)
+        # reflect sanitized values back into suggestions so FE diff uses normalized numbers
+        suggestions = dict(suggestions or {})
+        suggestions["entries"] = cand2.get("entries", cand.get("entries"))
+        suggestions["tp"] = cand2.get("tp", cand.get("tp"))
+        if cand2.get("invalid") is not None:
+            suggestions["invalid"] = cand2.get("invalid")
+        # degrade verdict if rr_min too low
+        if float(cand2.get("rr_min", 0.0)) < 1.2 and verdict == "confirm":
+            verdict = "warning"
+            summary = (summary or "") + " (rr_min<1.2)"
+    except Exception:
         pass
 
     # record usage and insert row

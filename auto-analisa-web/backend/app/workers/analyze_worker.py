@@ -5,11 +5,8 @@ from sqlalchemy import select, func
 from ..services.market import fetch_bundle
 from ..services.rules import Features, score_symbol
 from ..services.planner import build_plan
-from ..services.llm import ask_llm, should_use_llm
 from ..services.budget import (
     get_or_init_settings,
-    add_usage,
-    check_budget_and_maybe_off,
 )
 from ..models import Analysis, User
 from datetime import datetime
@@ -45,58 +42,7 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
     score = score_symbol(feat)
     plan = build_plan(bundle, feat, score, "auto")
 
-    # ask LLM for narrative if enabled
-    s = await get_or_init_settings(db)
-    use_llm, reason = await should_use_llm(db)
-    if use_llm and os.getenv("OPENAI_API_KEY"):
-        try:
-            prompt = (
-                "Buat narasi ringkas (2-3 kalimat) berdasarkan data berikut dalam bahasa Indonesia. "
-                "Fokus pada bias, alasan utama, dan peringatan risk.\n"
-                f"DATA: {json.dumps(plan, ensure_ascii=False)}"
-            )
-            text, usage = ask_llm(prompt)
-            plan["narrative"] = (plan.get("narrative", "") + "\n" + text.strip()).strip()
-            # record cost
-            await add_usage(
-                db,
-                user.id,
-                os.getenv("OPENAI_MODEL", "gpt-5-chat-latest"),
-                int(usage.get("prompt_tokens", 0)),
-                int(usage.get("completion_tokens", 0)),
-                s.input_usd_per_1k,
-                s.output_usd_per_1k,
-            )
-            # auto-off if budget reached
-            if await check_budget_and_maybe_off(db):
-                plan["notice"] = "LLM otomatis dimatikan karena budget bulanan tercapai."
-        except Exception as e:  # pragma: no cover
-            msg = str(e).lower()
-            if "insufficient_quota" in msg or " 429" in msg or "rate limit" in msg:
-                # Matikan LLM agar tidak terus error, beri notifikasi ramah pengguna
-                s.use_llm = False
-                await db.commit()
-                plan["notice"] = (
-                    "LLM dinonaktifkan sementara: kuota OpenAI habis atau kena rate limit. "
-                    "Admin dapat menambah kredit/limit lalu mengaktifkan kembali di halaman Admin."
-                )
-                # Jangan bocorkan detail error ke pengguna akhir
-                plan["narrative"] = (
-                    plan.get("narrative", "")
-                    + "\n[Narasi otomatis] LLM sementara tidak tersedia; gunakan rencana berbasis aturan."
-                ).strip()
-            else:
-                plan["narrative"] = (
-                    plan.get("narrative", "") + "\n[LLM fallback] Terjadi kendala pada LLM; gunakan hasil aturan."
-                ).strip()
-    elif not use_llm and reason:
-        # record user-friendly notice when LLM disabled upfront
-        plan["notice"] = (
-            "LLM dinonaktifkan: " + reason.replace("LLM ", "").capitalize()
-        )
-    elif use_llm and not os.getenv("OPENAI_API_KEY"):
-        # LLM diizinkan tetapi belum dikonfigurasi kuncinya
-        plan["notice"] = "LLM tidak dikonfigurasi: isi OPENAI_API_KEY di server."
+    # No auto LLM narrative: keep rules-only plan per blueprint
 
     # save analysis
     # compute next version per user+symbol

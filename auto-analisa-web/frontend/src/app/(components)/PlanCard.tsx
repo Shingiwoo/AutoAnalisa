@@ -88,10 +88,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
             <dt className="text-zinc-500">TP</dt>
             <dd className="text-green-700">{(p.tp||[]).map(fmt).join(' → ')||'-'}</dd>
           </div>
-          <div className="sm:col-span-2">
-            <dt className="text-zinc-500">Bacaan Sinyal</dt>
-            <dd className="italic text-zinc-700 dark:text-zinc-300">{p.narrative}</dd>
-        </div>
+
         </dl>
       </div>
 

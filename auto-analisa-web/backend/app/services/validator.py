@@ -1,0 +1,115 @@
+from __future__ import annotations
+from typing import Dict, List, Tuple
+
+
+def _strict_asc(vals: List[float]) -> List[float]:
+    if not vals:
+        return vals
+    out = [float(vals[0])]
+    for v in vals[1:]:
+        v = float(v)
+        if v <= out[-1]:
+            v = out[-1] + max(abs(out[-1]) * 1e-6, 1e-6)
+        out.append(v)
+    return out
+
+
+def _round_nums(nums: List[float], digits: int = 6) -> List[float]:
+    return [round(float(x), digits) for x in nums]
+
+
+def _safe_div(a: float, b: float) -> float:
+    try:
+        return float(a) / float(b)
+    except Exception:
+        return 0.0
+
+
+def compute_rr_min(entries: List[float], invalid: float, tp1: float) -> float:
+    if not entries or invalid is None or tp1 is None:
+        return 0.0
+    rr_vals: List[float] = []
+    for e in entries:
+        if e is None:
+            continue
+        e = float(e)
+        inv = float(invalid)
+        t1 = float(tp1)
+        # guard degenerate cases
+        if e <= 0 or (e - inv) <= 0:
+            continue
+        rr = _safe_div((t1 - e), (e - inv))
+        rr_vals.append(rr)
+    return float(min(rr_vals)) if rr_vals else 0.0
+
+
+def normalize_and_validate(plan: Dict) -> Tuple[Dict, List[str]]:
+    """Normalize numeric fields, enforce basic invariants, compute rr_min.
+
+    Returns (sanitized_plan, warnings)
+    """
+    p = dict(plan or {})
+    warns: List[str] = []
+
+    # Ensure arrays
+    support = list(p.get("support") or [])
+    resistance = list(p.get("resistance") or [])
+    entries = list(p.get("entries") or [])
+    tp = list(p.get("tp") or [])
+    weights = list(p.get("weights") or [])
+    invalid = p.get("invalid")
+
+    # Normalize numbers and lengths
+    try:
+        invalid = float(invalid) if invalid is not None else None
+    except Exception:
+        invalid = None
+
+    # Enforce TP strictly ascending
+    tp = _strict_asc([float(x) for x in tp if x is not None])
+    # Rounding to 6 decimals as generic default
+    support = _round_nums([float(x) for x in support if x is not None])
+    resistance = _round_nums([float(x) for x in resistance if x is not None])
+    entries = _round_nums([float(x) for x in entries if x is not None])
+    tp = _round_nums(tp)
+    if invalid is not None:
+        invalid = round(float(invalid), 6)
+
+    # Entries/weights sanity
+    if len(weights) != len(entries):
+        if weights:
+            warns.append("weights length != entries; rebalanced equally")
+        n = max(1, len(entries))
+        weights = [1.0 / n for _ in range(n)]
+    else:
+        # Coerce to float and normalize sum to 1
+        try:
+            weights = [float(w) for w in weights]
+        except Exception:
+            n = max(1, len(entries))
+            weights = [1.0 / n for _ in range(n)]
+        s = sum(weights) or 1.0
+        if abs(s - 1.0) > 1e-6:
+            weights = [w / s for w in weights]
+
+    # Compute rr_min to TP1
+    tp1 = tp[0] if tp else None
+    rr_min = compute_rr_min(entries, invalid, tp1) if (invalid is not None and tp1 is not None) else 0.0
+    p["support"] = support
+    p["resistance"] = resistance
+    p["entries"] = entries
+    p["weights"] = weights
+    if invalid is not None:
+        p["invalid"] = invalid
+    p["tp"] = tp
+    p["rr_min"] = round(float(rr_min), 6)
+
+    # Basic logical check: invalid should be below entries for long bias; if not, warn
+    try:
+        if entries and invalid is not None and invalid >= min(entries):
+            warns.append("invalid not below entry; check levels")
+    except Exception:
+        pass
+
+    return p, warns
+
