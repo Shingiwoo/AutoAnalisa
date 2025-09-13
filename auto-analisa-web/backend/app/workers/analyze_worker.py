@@ -8,6 +8,7 @@ from ..services.planner import build_plan
 from ..services.budget import (
     get_or_init_settings,
 )
+from ..services.rounding import round_plan_prices
 from ..models import Analysis, User
 from datetime import datetime
 import json
@@ -41,6 +42,11 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
     feat = Features(bundle).enrich()
     score = score_symbol(feat)
     plan = build_plan(bundle, feat, score, "auto")
+    # Snap prices to tick size if available
+    try:
+        plan = round_plan_prices(sym, plan)
+    except Exception:
+        pass
 
     # No auto LLM narrative: keep rules-only plan per blueprint
 
@@ -82,6 +88,10 @@ async def refresh_analysis_rules_only(db: AsyncSession, user: User, analysis: An
     feat = Features(bundle).enrich()
     score = score_symbol(feat)
     plan = build_plan(bundle, feat, score, "auto")
+    try:
+        plan = round_plan_prices(sym, plan)
+    except Exception:
+        pass
 
     # compute next version per user+symbol and update
     q2 = await db.execute(

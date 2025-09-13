@@ -7,7 +7,17 @@ def build_plan(bundle, feat: "Features", score: int, mode: str = "auto"):
     s1, s2 = lv["support"]
     r1, r2 = lv["resistance"]
     price = float(bundle["15m"].iloc[-1].close)
-    pb1, pb2 = max(s1, price * 0.995), max(s2, price * 0.99)
+    # ATR-aware spacing for PB mode
+    try:
+        atr15 = float(bundle["15m"].iloc[-1].atr14)
+    except Exception:
+        atr15 = 0.0
+    # default spacing factors when ATR available
+    if atr15 and atr15 > 0:
+        pb1 = max(s1, round(price - 0.5 * atr15, 6))
+        pb2 = max(s2, round(price - 1.0 * atr15, 6))
+    else:
+        pb1, pb2 = max(s1, price * 0.995), max(s2, price * 0.99)
     invalid = min(s2, pb2 * 0.995)
     tp1, tp2 = r1, r2
     if mode == "BO" or (mode == "auto" and price > r1 * 0.995):
