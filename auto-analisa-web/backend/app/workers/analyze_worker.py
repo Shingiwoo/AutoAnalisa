@@ -4,7 +4,7 @@ from sqlalchemy import select, func
 
 from ..services.market import fetch_bundle
 from ..services.rules import Features, score_symbol
-from ..services.planner import build_plan
+from ..services.planner import build_plan_async
 from ..services.budget import (
     get_or_init_settings,
 )
@@ -41,7 +41,7 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
     bundle = await fetch_bundle(symbol, ("4h", "1h", "15m", "5m"))
     feat = Features(bundle).enrich()
     score = score_symbol(feat)
-    plan = build_plan(bundle, feat, score, "auto")
+    plan = await build_plan_async(db, bundle, feat, score, "auto")
     # Snap prices to tick size if available
     try:
         plan = round_plan_prices(sym, plan)
@@ -87,7 +87,7 @@ async def refresh_analysis_rules_only(db: AsyncSession, user: User, analysis: An
     bundle = await fetch_bundle(sym, ("4h", "1h", "15m", "5m"))
     feat = Features(bundle).enrich()
     score = score_symbol(feat)
-    plan = build_plan(bundle, feat, score, "auto")
+    plan = await build_plan_async(db, bundle, feat, score, "auto")
     try:
         plan = round_plan_prices(sym, plan)
     except Exception:

@@ -1,8 +1,11 @@
 from .rules import make_levels, Features
+from .fvg import detect_fvg
+from .supply_demand import detect_zones
+from .budget import get_or_init_settings
 from .validator import normalize_and_validate
 
 
-def build_plan(bundle, feat: "Features", score: int, mode: str = "auto"):
+async def build_plan_async(db, bundle, feat: "Features", score: int, mode: str = "auto"):
     lv = make_levels(feat)
     s1, s2 = lv["support"]
     r1, r2 = lv["resistance"]
@@ -43,4 +46,13 @@ def build_plan(bundle, feat: "Features", score: int, mode: str = "auto"):
     }
     # Normalize and compute rr_min
     plan, _warns = normalize_and_validate(plan)
+    # Optional overlays (behind feature flags)
+    try:
+        s = await get_or_init_settings(db)
+        if getattr(s, "enable_fvg", False):
+            plan["fvg"] = detect_fvg(bundle["15m"])[:10]
+        if getattr(s, "enable_supply_demand", False):
+            plan["sd_zones"] = detect_zones(bundle["1h"])[:10]
+    except Exception:
+        pass
     return plan
