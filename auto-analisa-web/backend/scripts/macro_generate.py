@@ -15,22 +15,45 @@ async def main():
     Session = async_sessionmaker(engine, expire_on_commit=False)
     async with Session() as db:
         prompt = (
-            "Ringkas faktor makro relevan untuk pasar kripto 24-48 jam ke depan. "
-            "Bahasa Indonesia, 5-8 poin, netral, tidak mengandung saran investasi."
+            "Balas dalam JSON dengan kunci: {date_utc (opsional), summary, "
+            "sections:[{title,bullets:[]}], sources}. Bahasa Indonesia, netral, ringkas. "
+            "Cakup 24-48 jam: DXY, yield riil, likuiditas kripto, ETF/flow, berita utama."
         )
         text, _ = ask_llm(prompt)
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         q = await db.execute(select(MacroDaily).where(MacroDaily.date_utc == today))
         row = q.scalar_one_or_none()
+        # Parse JSON if possible
+        narrative = text
+        sources = ""
+        sections = []
+        try:
+            import json as _json
+            parsed = _json.loads(text)
+            narrative = parsed.get("summary") or parsed.get("narrative") or narrative
+            sections = parsed.get("sections") or []
+            sources = parsed.get("sources") or ""
+            if isinstance(sections, dict):
+                sections = [sections]
+        except Exception:
+            pass
         if row:
-            row.narrative = text
+            row.narrative = narrative
+            row.sources = sources
+            try:
+                row.sections = sections
+            except Exception:
+                pass
         else:
-            row = MacroDaily(date_utc=today, narrative=text, sources="")
+            row = MacroDaily(date_utc=today, narrative=narrative, sources=sources)
+            try:
+                row.sections = sections
+            except Exception:
+                pass
             db.add(row)
         await db.commit()
-        print(f"OK MacroDaily generated for {today}")
+        print(f"OK MacroDaily generated for {today} (sections={len(sections)})")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-

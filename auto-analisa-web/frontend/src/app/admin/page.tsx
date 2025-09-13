@@ -13,6 +13,7 @@ export default function AdminPage(){
   const [macroErr,setMacroErr]=useState<string>('')
   const [busySave,setBusySave]=useState(false)
   const [busyMacro,setBusyMacro]=useState(false)
+  const [macroStatus,setMacroStatus]=useState<any|null>(null)
 
   async function load(){
     try{
@@ -22,6 +23,7 @@ export default function AdminPage(){
       ])
       setS(a.data); setUsage(b.data)
       try{ const r = await api.get('admin/password_requests'); setPwreqs(r.data) }catch{}
+      try{ const ms = await api.get('admin/macro/status'); setMacroStatus(ms.data) }catch{}
     }catch(e:any){
       setDenied(true)
     }
@@ -94,6 +96,9 @@ export default function AdminPage(){
 
         <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 space-y-2">
           <div className="font-semibold">Makro Harian</div>
+          {macroStatus?.has_data && (
+            <div className="text-xs text-zinc-400">Terakhir: {new Date(macroStatus.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB</div>
+          )}
           {macroMsg && <div className="p-2 rounded text-sm text-cyan-300 ring-1 ring-cyan-500/20 bg-cyan-500/10">{macroMsg}</div>}
           {macroErr && <div className="p-2 rounded text-sm text-rose-400 ring-1 ring-rose-500/20 bg-rose-500/10">{macroErr}</div>}
           <button disabled={busyMacro} className="px-3 py-2 rounded bg-cyan-600 text-white font-medium hover:bg-cyan-500 disabled:opacity-50" onClick={async()=>{

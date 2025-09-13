@@ -27,4 +27,4 @@ async def today(db: AsyncSession = Depends(get_db)):
         date_wib = dt_utc.astimezone(jkt).date().isoformat()
     except Exception:
         date_wib = row.date_utc
-    return {"date": row.date_utc, "date_wib": date_wib, "narrative": row.narrative, "sources": row.sources}
+    return {"date": row.date_utc, "date_wib": date_wib, "narrative": row.narrative, "sources": row.sources, "sections": getattr(row, "sections", [])}

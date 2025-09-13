@@ -104,6 +104,7 @@ class MacroDaily(Base):
     date_utc: Mapped[str] = mapped_column(String, index=True)  # YYYY-MM-DD (UTC)
     narrative: Mapped[str] = mapped_column(Text)
     sources: Mapped[str] = mapped_column(Text, default="")
+    sections: Mapped[dict] = mapped_column(JSON, default=list)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
 
 

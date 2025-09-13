@@ -216,11 +216,11 @@ async def generate_macro(db: AsyncSession = Depends(get_db), user=Depends(requir
     if not os.getenv("OPENAI_API_KEY") and getattr(app_settings, "APP_ENV", "local") != "local":
         raise HTTPException(409, detail="LLM belum dikonfigurasi: OPENAI_API_KEY belum diisi.")
 
-    # Prompt sederhana; bisa dikembangkan untuk ambil feed publik lebih dahulu
+    # Prompt: prefer JSON but accept plain text for backward-compat
     prompt = (
-        "Ringkas faktor makro relevan untuk pasar kripto 24-48 jam ke depan. "
-        "Singgung DXY, yield, likuiditas, sentimen ETF, berita utama. "
-        "Bahasa Indonesia, 5-8 poin, netral, tidak memberi rekomendasi investasi."
+        "Balas dalam JSON dengan kunci: {date_utc (opsional), summary, "
+        "sections:[{title,bullets:[]}], sources}. Bahasa Indonesia, netral, ringkas. "
+        "Cakup 24-48 jam: DXY, yield riil, likuiditas kripto, ETF/flow, berita utama."
     )
 
     try:
@@ -254,10 +254,48 @@ async def generate_macro(db: AsyncSession = Depends(get_db), user=Depends(requir
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     q = await db.execute(select(MacroDaily).where(MacroDaily.date_utc == today))
     row = q.scalar_one_or_none()
+    # Try parse structured JSON; fallback to narrative text
+    narrative = text
+    sources = ""
+    sections = []
+    try:
+        import json as _json
+        parsed = _json.loads(text)
+        narrative = parsed.get("summary") or parsed.get("narrative") or narrative
+        sections = parsed.get("sections") or []
+        sources = parsed.get("sources") or ""
+        if isinstance(sections, dict):
+            # tolerate object form -> wrap to list
+            sections = [sections]
+    except Exception:
+        pass
     if row:
-        row.narrative = text
+        row.narrative = narrative
+        row.sources = sources
+        try:
+            row.sections = sections
+        except Exception:
+            pass
     else:
-        row = MacroDaily(date_utc=today, narrative=text, sources="")
+        row = MacroDaily(date_utc=today, narrative=narrative, sources=sources)
+        try:
+            row.sections = sections
+        except Exception:
+            pass
         db.add(row)
     await db.commit()
     return {"ok": True, "date": today}
+
+
+@router.get("/macro/status")
+async def macro_status(db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
+    from sqlalchemy import desc
+    q = await db.execute(select(MacroDaily).order_by(desc(MacroDaily.created_at)).limit(1))
+    row = q.scalar_one_or_none()
+    if not row:
+        return {"has_data": False}
+    return {
+        "has_data": True,
+        "date_utc": row.date_utc,
+        "created_at": row.created_at,
+    }

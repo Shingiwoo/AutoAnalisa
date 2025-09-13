@@ -190,8 +190,8 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
         suggestions = parsed.get("suggestions") or {}
         fundamentals = parsed.get("fundamentals") or {}
     except Exception:
-        # keep summary as raw text
-        pass
+        # Enforce strict JSON contract per blueprint
+        raise HTTPException(502, detail="LLM tidak mengembalikan JSON valid")
 
     # sanitize suggestions by validating a candidate plan built from current + suggestions
     try:

@@ -32,3 +32,13 @@ async def init_db():
                 )
         except Exception:
             pass
+        try:
+            res2 = await conn.exec_driver_sql("PRAGMA table_info(macro_daily)")
+            cols_m = {row[1] for row in res2.fetchall()}
+            if "sections" not in cols_m:
+                # SQLite lacks proper JSON type; TEXT acceptable, clients treat as JSON
+                await conn.exec_driver_sql(
+                    "ALTER TABLE macro_daily ADD COLUMN sections JSON DEFAULT '[]'"
+                )
+        except Exception:
+            pass

@@ -111,5 +111,30 @@ def normalize_and_validate(plan: Dict) -> Tuple[Dict, List[str]]:
     except Exception:
         pass
 
-    return p, warns
+    # Auto-adjust: if rr_min < 1.2, tighten invalid slightly toward entries to reach threshold
+    try:
+        RR_TH = 1.2
+        if entries and tp and invalid is not None and rr_min < RR_TH:
+            min_entry = float(min(entries))
+            # For each entry e: need invalid' <= e - (tp1 - e)/RR => invalid' >= e - (tp1 - e)/RR
+            # To satisfy all entries, choose the maximum of these candidates but keep it slightly below min_entry
+            candidates = []
+            for e in entries:
+                e = float(e)
+                cand = e - (tp1 - e) / RR_TH
+                candidates.append(cand)
+            cand_invalid = max(candidates)
+            # bound invalid to be below min_entry by small epsilon
+            eps = max(abs(min_entry) * 1e-5, 1e-5)
+            cand_invalid = min(cand_invalid, min_entry - eps)
+            # only adjust upward (tighten) if it increases rr
+            if cand_invalid > invalid:
+                invalid = round(float(cand_invalid), 6)
+                rr_min = compute_rr_min(entries, invalid, tp1)
+                p["invalid"] = invalid
+                p["rr_min"] = round(float(rr_min), 6)
+                warns.append("auto-adjusted invalid to meet rr_min")
+    except Exception:
+        pass
 
+    return p, warns
