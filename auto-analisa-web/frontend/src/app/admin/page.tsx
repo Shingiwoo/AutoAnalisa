@@ -155,7 +155,7 @@ export default function AdminPage(){
           </label>
           <div className="text-xs text-zinc-400 self-center">Tempel JSON referensi di bawah (keys: fvg, zones)</div>
         </div>
-        <textarea value={expected} onChange={e=>setExpected(e.target.value)} rows={6} className="w-full rounded px-2 py-1 bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" placeholder="{ \"fvg\": [...], \"zones\": [...] }" />
+        <textarea value={expected} onChange={e=>setExpected(e.target.value)} rows={6} className="w-full rounded px-2 py-1 bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" placeholder='{"fvg": [...], "zones": [...] }' />
         <div className="flex items-center gap-3">
           <button className="px-3 py-2 rounded bg-cyan-600 text-white font-medium hover:bg-cyan-500" onClick={async()=>{
             try{
