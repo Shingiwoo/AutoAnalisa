@@ -16,7 +16,7 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
     // Derive reasonable precision from last close to better reflect notional/price scale
     const last = data && data.length ? data[data.length-1].c : 1
     const prec = last >= 1000 ? 2 : last >= 100 ? 2 : last >= 10 ? 3 : last >= 1 ? 4 : last >= 0.1 ? 5 : 6
-    const minMove = Number((1/Math.pow(10, prec)).toFixed(prec))
+    const minMove = parseFloat((1/Math.pow(10, prec)).toFixed(prec))
     const chart = createChart(ref.current, {
       width: w,
       height: h,
