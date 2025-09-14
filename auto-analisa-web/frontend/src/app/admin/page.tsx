@@ -15,7 +15,7 @@ export default function AdminPage(){
   const [busyMacro,setBusyMacro]=useState(false)
   const [macroStatus,setMacroStatus]=useState<any|null>(null)
   // Simple tabs for grouping
-  const [tab,setTab]=useState<'Settings'|'Indicator'|'Macro'|'Paritas'>('Settings')
+  const [tab,setTab]=useState<'Settings'|'Indicator'|'Macro'|'Paritas'|'Docs'>('Settings')
   const [indTab,setIndTab]=useState<'FVG'|'SupplyDemand'>('FVG')
   // Parity test UI
   const [sym,setSym]=useState('BTCUSDT')
