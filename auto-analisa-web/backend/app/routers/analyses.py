@@ -131,21 +131,41 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
         raise HTTPException(403, "Forbidden")
     # rate-limit per user and analysis
     if not await locks.acquire(f"rate:verify:{user.id}", ttl=10):
-        raise HTTPException(429, "Terlalu sering, coba lagi sebentar.")
+        raise HTTPException(429, detail={
+            "error_code": "rate_limited",
+            "message": "Terlalu sering, coba lagi sebentar.",
+            "retry_hint": "Coba lagi setelah ±10 detik."
+        })
     if not await locks.acquire(f"rate:verify:{user.id}:{aid}", ttl=15):
-        raise HTTPException(429, "Terlalu sering, coba lagi sebentar.")
+        raise HTTPException(429, detail={
+            "error_code": "rate_limited",
+            "message": "Terlalu sering untuk analisa ini, coba lagi sebentar.",
+            "retry_hint": "Coba lagi setelah ±15 detik."
+        })
 
     # check LLM toggle and budget
     allowed, reason = await should_use_llm(db)
     if not allowed:
-        raise HTTPException(409, detail=(reason or "LLM sedang nonaktif."))
+        raise HTTPException(409, detail={
+            "error_code": "llm_disabled",
+            "message": (reason or "LLM sedang nonaktif."),
+            "retry_hint": "Aktifkan LLM di Admin atau tunggu sampai budget reset."
+        })
     if not os.getenv("OPENAI_API_KEY"):
-        raise HTTPException(409, detail="LLM belum dikonfigurasi: OPENAI_API_KEY belum diisi.")
+        raise HTTPException(409, detail={
+            "error_code": "server_config",
+            "message": "LLM belum dikonfigurasi: OPENAI_API_KEY belum diisi.",
+            "retry_hint": "Set OPENAI_API_KEY dan ulangi."
+        })
 
     # Enforce daily per-user limit before using cache or calling LLM
     today = await get_today_usage(db, user_id=user.id)
     if today["remaining"] <= 0:
-        raise HTTPException(409, detail="Limit harian LLM tercapai untuk akun ini.")
+        raise HTTPException(409, detail={
+            "error_code": "quota_exceeded",
+            "message": "Limit harian LLM tercapai untuk akun ini.",
+            "retry_hint": "Coba lagi besok atau hubungi admin untuk menambah kuota."
+        })
 
     # cache: reuse last verification if within TTL (still counts a call)
     cache_ttl = int(os.getenv("LLM_CACHE_TTL_S", "900"))
@@ -213,7 +233,11 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
     try:
         text, usage = ask_llm(prompt)
     except Exception as e:  # pragma: no cover
-        raise HTTPException(502, detail="Gagal mengakses LLM. Coba lagi nanti.")
+        raise HTTPException(502, detail={
+            "error_code": "server_error",
+            "message": "Gagal mengakses LLM. Coba lagi nanti.",
+            "retry_hint": "Periksa koneksi atau konfigurasi LLM."
+        })
 
     # try parse JSON content
     verdict = "confirm"
@@ -240,7 +264,11 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
         fundamentals = parsed.get("fundamentals") or {}
     except Exception:
         # Enforce strict JSON contract per blueprint
-        raise HTTPException(502, detail="LLM tidak mengembalikan JSON valid")
+        raise HTTPException(422, detail={
+            "error_code": "schema_invalid",
+            "message": "LLM tidak mengembalikan JSON SPOT II yang valid.",
+            "retry_hint": "Ulangi verifikasi. Jika berulang, hubungi admin."
+        })
 
     # sanitize suggestions by validating a candidate plan built from current + suggestions
     try:
@@ -363,7 +391,10 @@ async def apply_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(r
     )
     last = q.scalars().first()
     if not last or not last.spot2_json:
-        raise HTTPException(409, "Belum ada hasil LLM berbentuk SPOT II")
+        raise HTTPException(409, detail={
+            "error_code": "precondition",
+            "message": "Belum ada hasil LLM berbentuk SPOT II",
+        })
     # apply spot2 to payload, keep legacy fields for FE compatibility
     p = a.payload_json or {}
     # write spot2

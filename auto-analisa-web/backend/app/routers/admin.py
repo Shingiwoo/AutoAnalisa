@@ -362,6 +362,8 @@ async def macro_status(db: AsyncSession = Depends(get_db), user=Depends(require_
         "has_data": True,
         "date_utc": row.date_utc,
         "created_at": row.created_at,
+        "slot": getattr(row, "slot", None),
+        "last_run_status": getattr(row, "last_run_status", None),
     }
 @router.post("/parity/compute")
 async def parity_compute(payload: dict, db: AsyncSession = Depends(get_db), user=Depends(require_admin)):

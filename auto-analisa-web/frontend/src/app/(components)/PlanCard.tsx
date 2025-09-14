@@ -14,6 +14,9 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
   const [verification,setVerification]=useState<any|null>(null)
   const [expanded,setExpanded]=useState(false)
   const [ghost,setGhost]=useState<any|null>(null)
+  const [err,setErr]=useState<{code?:string,message?:string,retry?:string}|null>(null)
+  const [prevOpen,setPrevOpen]=useState(false)
+  const [prevPlan,setPrevPlan]=useState<any|null>(null)
   const createdWIB = useMemo(()=>{
     try{ return new Date(plan.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB' }catch{ return new Date(plan.created_at).toLocaleString('id-ID') }
   },[plan.created_at])
@@ -69,6 +72,28 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
       {/* SPOT II View */}
       <Spot2View spot2={p.spot2} />
 
+      {/* Previous version toggle */}
+      <div className="flex items-center gap-2">
+        <button className="px-2.5 py-1.5 rounded bg-zinc-800 text-white text-xs hover:bg-zinc-700" onClick={async()=>{
+          const next = !prevOpen
+          setPrevOpen(next)
+          if(next && !prevPlan){
+            try{
+              const { data } = await api.get('analyses', { params:{ status:'archived' } })
+              const same = (data||[]).filter((x:any)=> x.symbol===plan.symbol)
+              const prev = same.find((x:any)=> new Date(x.created_at) < new Date(plan.created_at)) || same[0]
+              setPrevPlan(prev||null)
+            }catch{}
+          }
+        }}>{prevOpen? 'Sembunyikan versi sebelumnya':'Tampilkan versi sebelumnya'}</button>
+      </div>
+      {prevOpen && prevPlan?.payload && (
+        <div className="rounded-xl ring-1 ring-amber-500/20 bg-amber-500/5 p-3">
+          <div className="text-xs text-amber-400 mb-1">Versi sebelumnya • {prevPlan?.created_at ? new Date(prevPlan.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : ''} WIB</div>
+          <Spot2View spot2={prevPlan.payload.spot2 || prevPlan.payload} />
+        </div>
+      )}
+
       {/* LLM Verification (legacy diff) */}
       <LLMVerifyBlock plan={p} verification={verification || p?.llm_verification} fmt={fmt} />
       {/* LLM SPOT II report */}
@@ -83,10 +108,30 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
             const {data} = await api.post(`analyses/${plan.id}/verify`)
             setVerification(data.verification)
           }catch(e:any){
-            alert(e?.response?.data?.detail || 'Verifikasi gagal')
+            const d = e?.response?.data?.detail
+            if(d && typeof d==='object') setErr({ code:d.error_code, message:d.message, retry:d.retry_hint })
+            else setErr({ message: (e?.response?.data?.detail || 'Verifikasi gagal') })
           }finally{ setVerifying(false); onAfterVerify?.() }
         }} className="px-3 py-2 rounded-md bg-cyan-600 text-white hover:bg-cyan-500 disabled:opacity-50">{verifying?'Memverifikasi…':'Tanya GPT'}</button>
       </div>
+
+      {err && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={()=>setErr(null)}>
+          <div className="max-w-md w-full rounded-xl bg-zinc-900 text-white ring-1 ring-white/10 p-4 space-y-2" onClick={(e)=>e.stopPropagation()}>
+            <div className="text-sm font-semibold">Verifikasi Gagal</div>
+            {err.code && <div className="text-xs opacity-70">Kode: {err.code}</div>}
+            <div className="text-sm">{err.message||'Gagal memverifikasi rencana.'}</div>
+            {err.retry && <div className="text-xs opacity-70">Saran: {err.retry}</div>}
+            <div className="flex items-center gap-2 pt-1">
+              <button className="px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-sm" onClick={()=>{
+                const text = JSON.stringify(err)
+                navigator.clipboard?.writeText(text)
+              }}>Salin Log</button>
+              <button className="px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-sm" onClick={()=> setErr(null)}>Tutup</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -196,10 +196,14 @@ export default function AdminPage(){
       {/* Macro tab */}
       {tab==='Macro' && (
       <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 space-y-2">
-        <div className="font-semibold">Makro Harian</div>
-        {macroStatus?.has_data && (
-          <div className="text-xs text-zinc-400">Terakhir: {new Date(macroStatus.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB</div>
-        )}
+          <div className="font-semibold">Makro Harian</div>
+          {macroStatus?.has_data && (
+            <div className="text-xs text-zinc-400">
+              Terakhir: {new Date(macroStatus.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB
+              {macroStatus?.slot && <> • Slot: <b>{macroStatus.slot}</b></>}
+              {macroStatus?.last_run_status && <> • Status: <b>{macroStatus.last_run_status}</b></>}
+            </div>
+          )}
         {macroMsg && <div className="p-2 rounded text-sm text-cyan-300 ring-1 ring-cyan-500/20 bg-cyan-500/10">{macroMsg}</div>}
         {macroErr && <div className="p-2 rounded text-sm text-rose-400 ring-1 ring-rose-500/20 bg-rose-500/10">{macroErr}</div>}
         <button disabled={busyMacro} className="px-3 py-2 rounded bg-cyan-600 text-white font-medium hover:bg-cyan-500 disabled:opacity-50" onClick={async()=>{
@@ -239,20 +243,40 @@ export default function AdminPage(){
           }}>Hitung Paritas</button>
           {parityErr && <div className="text-sm text-rose-500">{parityErr}</div>}
         </div>
-        {parity && (
-          <div className="text-xs grid grid-cols-1 md:grid-cols-2 gap-2">
-            <div className="rounded p-2 ring-1 ring-zinc-200 dark:ring-white/10">
-              <div className="font-medium">FVG</div>
-              <div>F1: {parity?.fvg?.f1?.toFixed?.(3)} (P: {parity?.fvg?.precision?.toFixed?.(3)}, R: {parity?.fvg?.recall?.toFixed?.(3)})</div>
-              <div>TP: {parity?.fvg?.tp} • FP: {parity?.fvg?.fp} • FN: {parity?.fvg?.fn}</div>
+          {parity && (
+            <div className="space-y-2">
+              <div className="text-xs grid grid-cols-1 md:grid-cols-2 gap-2">
+                <div className="rounded p-2 ring-1 ring-zinc-200 dark:ring-white/10">
+                  <div className="font-medium">FVG</div>
+                  <div>Match: {(parity?.fvg?.match_pct*100)?.toFixed?.(1)}%</div>
+                  <div>F1: {parity?.fvg?.f1?.toFixed?.(3)} (P: {parity?.fvg?.precision?.toFixed?.(3)}, R: {parity?.fvg?.recall?.toFixed?.(3)})</div>
+                  <div>Avg offset: {parity?.fvg?.avg_offset?.toFixed?.(6)}</div>
+                  <div>TP: {parity?.fvg?.tp} • FP: {parity?.fvg?.fp} • FN: {parity?.fvg?.fn}</div>
+                </div>
+                <div className="rounded p-2 ring-1 ring-zinc-200 dark:ring-white/10">
+                  <div className="font-medium">Supply/Demand</div>
+                  <div>Match: {(parity?.zones?.match_pct*100)?.toFixed?.(1)}%</div>
+                  <div>F1: {parity?.zones?.f1?.toFixed?.(3)} (P: {parity?.zones?.precision?.toFixed?.(3)}, R: {parity?.zones?.recall?.toFixed?.(3)})</div>
+                  <div>Avg IoU: {parity?.zones?.avg_iou?.toFixed?.(3)} • Avg offset: {parity?.zones?.avg_offset?.toFixed?.(6)}</div>
+                  <div>TP: {parity?.zones?.tp} • FP: {parity?.zones?.fp} • FN: {parity?.zones?.fn}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button className="px-3 py-1.5 rounded bg-zinc-800 text-white text-sm hover:bg-zinc-700" onClick={()=>{
+                  navigator.clipboard?.writeText(JSON.stringify(parity, null, 2))
+                }}>Salin JSON</button>
+                <button className="px-3 py-1.5 rounded bg-zinc-800 text-white text-sm hover:bg-zinc-700" onClick={()=>{
+                  const blob = new Blob([JSON.stringify(parity,null,2)], { type: 'application/json' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `parity_${sym}_${tf}.json`
+                  a.click()
+                  URL.revokeObjectURL(url)
+                }}>Unduh JSON</button>
+              </div>
             </div>
-            <div className="rounded p-2 ring-1 ring-zinc-200 dark:ring-white/10">
-              <div className="font-medium">Supply/Demand</div>
-              <div>F1: {parity?.zones?.f1?.toFixed?.(3)} (P: {parity?.zones?.precision?.toFixed?.(3)}, R: {parity?.zones?.recall?.toFixed?.(3)})</div>
-              <div>TP: {parity?.zones?.tp} • FP: {parity?.zones?.fp} • FN: {parity?.zones?.fn}</div>
-            </div>
-          </div>
-        )}
+          )}
       </div>
       )}
     </div>
