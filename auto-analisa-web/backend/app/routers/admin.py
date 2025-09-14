@@ -257,7 +257,7 @@ async def reject_pwd(rid: int, db: AsyncSession = Depends(get_db), admin=Depends
 
 
 @router.post("/macro/generate")
-async def generate_macro(db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
+async def generate_macro(db: AsyncSession = Depends(get_db), user=Depends(require_admin), slot: str | None = None):
     # Hormati toggle LLM dan budget; beri pesan ramah jika OFF
     s = await get_or_init_settings(db)
     allowed, reason = await services.llm.should_use_llm(db)
@@ -306,8 +306,6 @@ async def generate_macro(db: AsyncSession = Depends(get_db), user=Depends(requir
         # Error lain: tampilkan pesan generik agar tidak bocor detail
         raise HTTPException(502, detail="Gagal mengakses LLM. Coba lagi nanti.")
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    q = await db.execute(select(MacroDaily).where(MacroDaily.date_utc == today))
-    row = q.scalar_one_or_none()
     # Try parse structured JSON; fallback to narrative text
     narrative = text
     sources = ""
@@ -323,22 +321,34 @@ async def generate_macro(db: AsyncSession = Depends(get_db), user=Depends(requir
             sections = [sections]
     except Exception:
         pass
-    if row:
-        row.narrative = narrative
-        row.sources = sources
+    # Upsert per slot (pagi/malam) idempotent
+    try:
+        from zoneinfo import ZoneInfo
+        jkt = ZoneInfo("Asia/Jakarta")
+        now_wib = datetime.now(timezone.utc).astimezone(jkt)
+        slot_val = (slot or ("pagi" if now_wib.hour < 12 else "malam")).lower()
+    except Exception:
+        slot_val = (slot or "pagi").lower()
+    qslot = await db.execute(select(MacroDaily).where(MacroDaily.date_utc == today, MacroDaily.slot == slot_val))
+    row_slot = qslot.scalar_one_or_none()
+    if row_slot:
+        row_slot.narrative = narrative
+        row_slot.sources = sources
         try:
-            row.sections = sections
+            row_slot.sections = sections
+            row_slot.last_run_status = "ok"
         except Exception:
             pass
     else:
-        row = MacroDaily(date_utc=today, narrative=narrative, sources=sources)
+        row_slot = MacroDaily(date_utc=today, slot=slot_val, narrative=narrative, sources=sources)
         try:
-            row.sections = sections
+            row_slot.sections = sections
+            row_slot.last_run_status = "ok"
         except Exception:
             pass
-        db.add(row)
+        db.add(row_slot)
     await db.commit()
-    return {"ok": True, "date": today}
+    return {"ok": True, "date": today, "slot": slot_val}
 
 
 @router.get("/macro/status")

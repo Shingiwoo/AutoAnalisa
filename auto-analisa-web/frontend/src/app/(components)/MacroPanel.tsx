@@ -11,10 +11,11 @@ export default function MacroPanel(){
   })() },[])
   if(!data && !err) return null
   const dateLabel = data?.date_wib ? `${data.date_wib} WIB` : (data?.date||'')
+  const slot = data?.slot
   return (
     <section className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-3">
       <div className="flex items-center justify-between">
-        <div className="font-semibold">Makro Harian {dateLabel? `(${dateLabel})`:''}</div>
+        <div className="font-semibold flex items-center gap-2">Makro Harian {dateLabel? `(${dateLabel})`:''} {slot && <span className="px-2 py-0.5 rounded bg-zinc-800 text-white text-xs">{slot}</span>}</div>
         <button className="text-sm underline" onClick={()=>setOpen(o=>!o)}>{open?'Tutup':'Buka'}</button>
       </div>
       {open && (
@@ -39,4 +40,3 @@ export default function MacroPanel(){
     </section>
   )
 }
-
