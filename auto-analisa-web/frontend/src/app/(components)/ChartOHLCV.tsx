@@ -4,7 +4,10 @@ import { createChart, ColorType, CandlestickData } from 'lightweight-charts'
 
 type Row = { t:number,o:number,h:number,l:number,c:number,v:number }
 
-export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], overlays?: { sr?: number[], tp?: number[], invalid?: number, entries?: number[] }, className?: string }){
+type FVG = { type:'bull'|'bear', gap_low:number, gap_high:number, mitigated?:boolean }
+type Zone = { type:'supply'|'demand', low:number, high:number }
+
+export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], overlays?: { sr?: number[], tp?: number[], invalid?: number, entries?: number[], fvg?: FVG[], zones?: Zone[] }, className?: string }){
   const ref = useRef<HTMLDivElement>(null)
   useEffect(()=>{
     if(!ref.current) return
@@ -36,6 +39,23 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
     }
     if (overlays?.entries){
       for (const e of overlays.entries){ series.createPriceLine({ price: e, color: '#0ea5e9', lineWidth: 1, lineStyle: 0, title: 'Entry' }) }
+    }
+    // FVG overlay: render band boundaries as lines (box-lite)
+    if (overlays?.fvg){
+      for (const b of overlays.fvg){
+        const color = b.type==='bull' ? '#10b981' : '#ef4444'
+        const style = b.mitigated ? 1 : 0
+        series.createPriceLine({ price: b.gap_low, color, lineWidth: 1, lineStyle: style, title: 'FVG' })
+        series.createPriceLine({ price: b.gap_high, color, lineWidth: 1, lineStyle: style, title: 'FVG' })
+      }
+    }
+    // Supply/Demand zones: render low/high boundaries
+    if (overlays?.zones){
+      for (const z of overlays.zones){
+        const color = z.type==='supply' ? '#f59e0b' : '#8b5cf6'
+        series.createPriceLine({ price: z.low, color, lineWidth: 1, lineStyle: 2, title: z.type==='supply'?'Supply':'Demand' })
+        series.createPriceLine({ price: z.high, color, lineWidth: 1, lineStyle: 2, title: z.type==='supply'?'Supply':'Demand' })
+      }
     }
 
     const ro = new ResizeObserver(()=> chart.applyOptions({ width: ref.current!.clientWidth, height: ref.current!.clientHeight || h }))
