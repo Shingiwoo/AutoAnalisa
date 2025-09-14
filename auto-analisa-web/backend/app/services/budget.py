@@ -38,6 +38,8 @@ async def get_or_init_settings(db: AsyncSession) -> Settings:
         sd_mode=os.getenv("SD_MODE", "swing"),
         sd_vol_div=int(os.getenv("SD_VOL_DIV", "20") or 20),
         sd_vol_threshold_pct=float(os.getenv("SD_VOL_THRESHOLD_PCT", "10.0") or 10.0),
+        show_sessions_hint=(os.getenv("SHOW_SESSIONS_HINT", "true").lower() == "true"),
+        default_weight_profile=os.getenv("DEFAULT_WEIGHT_PROFILE", "DCA"),
         input_usd_per_1k=float(os.getenv("OPENAI_INPUT_USD_PER_1K", "0.005")),
         output_usd_per_1k=float(os.getenv("OPENAI_OUTPUT_USD_PER_1K", "0.015")),
         budget_monthly_usd=float(monthly_env),

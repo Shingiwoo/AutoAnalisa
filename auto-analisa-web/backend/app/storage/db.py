@@ -74,6 +74,14 @@ async def init_db():
                 await conn.exec_driver_sql(
                     "ALTER TABLE settings ADD COLUMN sd_vol_threshold_pct FLOAT DEFAULT 10.0"
                 )
+            if "show_sessions_hint" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN show_sessions_hint BOOLEAN DEFAULT 1"
+                )
+            if "default_weight_profile" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN default_weight_profile TEXT DEFAULT 'DCA'"
+                )
         except Exception:
             pass
         try:
@@ -83,6 +91,14 @@ async def init_db():
                 # SQLite lacks proper JSON type; TEXT acceptable, clients treat as JSON
                 await conn.exec_driver_sql(
                     "ALTER TABLE macro_daily ADD COLUMN sections JSON DEFAULT '[]'"
+                )
+            if "slot" not in cols_m:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE macro_daily ADD COLUMN slot TEXT DEFAULT 'pagi'"
+                )
+            if "last_run_status" not in cols_m:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE macro_daily ADD COLUMN last_run_status TEXT DEFAULT 'ok'"
                 )
         except Exception:
             pass

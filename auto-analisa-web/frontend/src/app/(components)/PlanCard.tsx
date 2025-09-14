@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../app/api'
 import ChartOHLCV from './ChartOHLCV'
+import LLMReport from './LLMReport'
 
 export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAfterVerify}:{plan:any,onUpdate:()=>void, llmEnabled?:boolean, llmRemaining?:number, onAfterVerify?:()=>void}){
   const p=plan.payload
@@ -11,6 +12,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
   const [verifying,setVerifying]=useState(false)
   const [verification,setVerification]=useState<any|null>(null)
   const [expanded,setExpanded]=useState(false)
+  const [ghost,setGhost]=useState<any|null>(null)
   const createdWIB = useMemo(()=>{
     try{ return new Date(plan.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB' }catch{ return new Date(plan.created_at).toLocaleString('id-ID') }
   },[plan.created_at])
@@ -41,7 +43,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
 
       <div className="rounded-none overflow-hidden ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-950 relative">
         <div className="aspect-[16/9] md:aspect-[21/9]">
-          <ChartOHLCV key={`${plan.symbol}-${tf}-${expanded?'x':''}`} className="h-full" data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid:p.invalid, entries:p.entries||[], fvg: p.fvg||[], zones: p.sd_zones||[] }} />
+          <ChartOHLCV key={`${plan.symbol}-${tf}-${expanded?'x':''}`} className="h-full" data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid:p.invalid, entries:p.entries||[], fvg: p.fvg||[], zones: p.sd_zones||[], ghost: ghost||undefined }} />
         </div>
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/5 dark:bg-white/5">
@@ -56,7 +58,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
           <div className="w-full max-w-7xl h-[80vh] bg-zinc-950 ring-1 ring-white/10 rounded-none relative" onClick={e=>e.stopPropagation()}>
             <button onClick={()=>setExpanded(false)} className="absolute top-3 right-3 px-2 py-1 rounded bg-zinc-800 text-white text-sm">Tutup</button>
             <div className="absolute inset-0">
-              <ChartOHLCV key={`${plan.symbol}-modal-${tf}`} className="w-full h-full" data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid:p.invalid, entries:p.entries||[], fvg: p.fvg||[], zones: p.sd_zones||[] }} />
+              <ChartOHLCV key={`${plan.symbol}-modal-${tf}`} className="w-full h-full" data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid:p.invalid, entries:p.entries||[], fvg: p.fvg||[], zones: p.sd_zones||[], ghost: ghost||undefined }} />
             </div>
           </div>
         </div>
@@ -92,8 +94,10 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
         </dl>
       </div>
 
-      {/* LLM Verification block */}
+      {/* LLM Verification (legacy diff) */}
       <LLMVerifyBlock plan={p} verification={verification || p?.llm_verification} fmt={fmt} />
+      {/* LLM SPOT II report */}
+      <LLMReport analysisId={plan.id} verification={verification} onApplied={()=> onUpdate()} onPreview={setGhost} />
 
       <Glossary />
       <div className="flex gap-2">

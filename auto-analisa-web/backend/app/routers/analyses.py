@@ -9,7 +9,7 @@ from app.services.llm import should_use_llm, ask_llm
 from app.services.usage import get_today_usage, inc_usage
 from app.workers.analyze_worker import refresh_analysis_rules_only
 from app.main import locks
-from app.services.validator import normalize_and_validate
+from app.services.validator import normalize_and_validate, validate_spot2
 import os, json, time
 from app.config import settings
 
@@ -185,8 +185,20 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
     fundamentals = {}
     try:
         parsed = json.loads(text)
-        verdict = (parsed.get("verdict") or verdict).lower()
-        summary = parsed.get("summary") or summary
+        # SPOT II expected
+        if parsed.get("rencana_jual_beli") and parsed.get("tp"):
+            spot2 = parsed
+        else:
+            # backward: accept wrapper with spot2
+            spot2 = parsed.get("spot2") or {}
+        # validate spot2 and apply light fixes
+        v = validate_spot2(spot2)
+        if not v.get("ok"):
+            # still proceed but mark verdict if necessary
+            verdict = "tweak" if verdict == "confirm" else verdict
+        spot2 = v.get("fixes") or spot2
+        verdict = (parsed.get("verdict") or parsed.get("status") or verdict).lower()
+        summary = parsed.get("summary") or parsed.get("ringkas") or summary
         suggestions = parsed.get("suggestions") or {}
         fundamentals = parsed.get("fundamentals") or {}
     except Exception:
@@ -262,6 +274,7 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
         summary=summary,
         suggestions=suggestions,
         fundamentals=fundamentals,
+        spot2_json=spot2 if 'spot2' in locals() else {},
         cached=False,
     )
     db.add(vr)
@@ -298,3 +311,50 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
             "cached": False,
         }
     }
+
+
+@router.post("/{aid}/apply-llm")
+async def apply_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
+    a = await db.get(Analysis, aid)
+    if not a:
+        raise HTTPException(404, "Not found")
+    if a.user_id != user.id and getattr(user, "role", "user") != "admin":
+        raise HTTPException(403, "Forbidden")
+    # get last verification
+    q = await db.execute(
+        select(LLMVerification).where(LLMVerification.analysis_id == a.id).order_by(desc(LLMVerification.created_at))
+    )
+    last = q.scalars().first()
+    if not last or not last.spot2_json:
+        raise HTTPException(409, "Belum ada hasil LLM berbentuk SPOT II")
+    # apply spot2 to payload, keep legacy fields for FE compatibility
+    p = a.payload_json or {}
+    # write spot2
+    p["spot2"] = last.spot2_json
+    # also reflect to legacy overlays arrays to sync chart immediately
+    try:
+        rjb = (last.spot2_json or {}).get("rencana_jual_beli", {})
+        entries = [ (e.get("range") or [None])[0] for e in (rjb.get("entries") or []) ]
+        tp_arr = [ (t.get("range") or [None])[0] for t in (last.spot2_json.get("tp") or []) ]
+        invalid = rjb.get("invalid")
+        p["entries"] = [float(x) for x in entries if isinstance(x,(int,float))]
+        p["tp"] = [float(x) for x in tp_arr if isinstance(x,(int,float))]
+        if isinstance(invalid,(int,float)):
+            p["invalid"] = float(invalid)
+        # set weights if provided
+        wts = [ float(e.get("weight") or 0.0) for e in (rjb.get("entries") or []) ]
+        if wts and len(wts)==len(p["entries"]):
+            p["weights"] = wts
+    except Exception:
+        pass
+    # Mark overlays state
+    p.setdefault("overlays", {})
+    try:
+        p["overlays"]["applied"] = True
+        p["overlays"]["ghost"] = False
+    except Exception:
+        pass
+    a.payload_json = p
+    await db.commit()
+    await db.refresh(a)
+    return {"ok": True, "analysis": {"id": a.id, "version": a.version, "payload": a.payload_json}}

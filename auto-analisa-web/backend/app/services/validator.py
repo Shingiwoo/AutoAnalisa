@@ -138,3 +138,84 @@ def normalize_and_validate(plan: Dict) -> Tuple[Dict, List[str]]:
         pass
 
     return p, warns
+
+
+def validate_spot2(spot2: Dict) -> Dict:
+    """Validate and lightly fix SPOT II payload.
+    Returns { ok: bool, warnings: [], fixes: {spot2} }
+    """
+    out = {"ok": True, "warnings": [], "fixes": {}}
+    try:
+        s2 = dict(spot2 or {})
+        rjb = dict(s2.get("rencana_jual_beli") or {})
+        entries = list(rjb.get("entries") or [])
+        # Flatten representative entry prices from range (use lower bound)
+        e_prices: List[float] = []
+        weights: List[float] = []
+        for e in entries:
+            rng = e.get("range") or []
+            price = float(rng[0]) if rng else None
+            if price is None:
+                continue
+            e_prices.append(price)
+            weights.append(float(e.get("weight") or 0.0))
+        tp_nodes = list(s2.get("tp") or [])
+        tp_prices: List[float] = []
+        for t in tp_nodes:
+            rng = t.get("range") or []
+            if rng:
+                tp_prices.append(float(rng[0]))
+        invalid = rjb.get("invalid")
+        invalid = float(invalid) if invalid is not None else None
+
+        # Run baseline numeric validation
+        plan_like = {
+            "entries": e_prices,
+            "weights": weights,
+            "tp": tp_prices,
+            "invalid": invalid,
+            "support": [],
+            "resistance": [],
+        }
+        fixed, warns = normalize_and_validate(plan_like)
+        out["warnings"] = warns
+
+        # Apply fixes back into spot2 structure
+        # weights length and sum
+        if len(fixed["weights"]) != len(entries) or abs(sum(weights) - 1.0) > 1e-6:
+            out["ok"] = False
+        # TP ascending guarantee
+        if fixed["tp"] != tp_prices:
+            # rewrite tp ranges with fixed prices as lower bound
+            new_tp = []
+            for i, t in enumerate(tp_nodes):
+                base = fixed["tp"][i] if i < len(fixed["tp"]) else None
+                if base is None:
+                    continue
+                new_tp.append({"name": t.get("name") or f"TP{i+1}", "range": [base, base], **({k:v for k,v in t.items() if k not in {"range","name"}})})
+            s2["tp"] = new_tp
+        # Update entries weights/invalid
+        for i, e in enumerate(entries):
+            w = fixed["weights"][i] if i < len(fixed["weights"]) else e.get("weight")
+            e["weight"] = float(w)
+            # keep range but ensure first bound matches fixed price for consistency
+            try:
+                rng = e.get("range") or []
+                if rng:
+                    rng[0] = float(fixed["entries"][i])
+                    e["range"] = rng
+            except Exception:
+                pass
+        if invalid is not None and fixed.get("invalid") is not None and fixed["invalid"] != invalid:
+            rjb["invalid"] = fixed["invalid"]
+        s2["rencana_jual_beli"] = rjb
+        # propagate rr_min to metrics
+        s2.setdefault("metrics", {})
+        s2["metrics"]["rr_min"] = fixed.get("rr_min", 0.0)
+
+        out["fixes"] = s2
+    except Exception as e:
+        out["ok"] = False
+        out["warnings"].append(str(e))
+        out["fixes"] = spot2
+    return out

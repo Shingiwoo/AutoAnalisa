@@ -63,6 +63,14 @@ export default function AdminPage(){
             <label>Maksimum user <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.max_users ?? 4} onChange={e=>setS({...s,max_users:+e.target.value})}/></label>
             <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.enable_fvg} onChange={async e=>{ const next={...s,enable_fvg:e.target.checked}; setS(next); await save(next) }}/> Enable FVG (opsional)</label>
             <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.enable_supply_demand} onChange={async e=>{ const next={...s,enable_supply_demand:e.target.checked}; setS(next); await save(next) }}/> Enable Supply/Demand (opsional)</label>
+            <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.show_sessions_hint} onChange={async e=>{ const next={...s,show_sessions_hint:e.target.checked}; setS(next); await save(next) }}/> Tampilkan Sessions Hint (WIB)</label>
+            <label>Default Weight Profile
+              <select className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.default_weight_profile||'DCA'} onChange={async e=>{ const next={...s,default_weight_profile:e.target.value}; setS(next); await save(next) }}>
+                <option value="DCA">DCA (0.4/0.6)</option>
+                <option value="Balanced">Balanced (0.5/0.5)</option>
+                <option value="Near-Price">Near-Price (0.6/0.4)</option>
+              </select>
+            </label>
             <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.fvg_use_bodies} onChange={async e=>{ const next={...s,fvg_use_bodies:e.target.checked}; setS(next); await save(next) }}/> FVG pakai body</label>
             <label>FVG Fill Rule
               <select className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.fvg_fill_rule||'any_touch'} onChange={async e=>{ const next={...s,fvg_fill_rule:e.target.value}; setS(next); await save(next) }}>

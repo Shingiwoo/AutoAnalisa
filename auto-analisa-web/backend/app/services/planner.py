@@ -30,7 +30,15 @@ async def build_plan_async(db, bundle, feat: "Features", score: int, mode: str =
         out_mode = "BO"
     else:
         entries = [round(pb1, 6), round(pb2, 6)]
-        weights = [0.6, 0.4]
+        # use default weight profile from settings if available
+        try:
+            from .budget import get_or_init_settings
+            import asyncio
+            # This function is sync; weights will be finalized later in build_spot2_from_plan
+            # Keep a reasonable default DCA (0.4/0.6)
+            weights = [0.4, 0.6]
+        except Exception:
+            weights = [0.4, 0.6]
         out_mode = "PB"
     bias = "Bullish intraday selama struktur 1H bertahan di atas %.4f–%.4f." % (s1, s2)
     plan = {
@@ -73,3 +81,52 @@ async def build_plan_async(db, bundle, feat: "Features", score: int, mode: str =
     except Exception:
         pass
     return plan
+
+
+def _weights_for_profile(profile: str, n: int) -> list[float]:
+    if n <= 0:
+        return []
+    p = (profile or "DCA").upper()
+    if n == 1:
+        return [1.0]
+    if p == "NEAR-PRICE":
+        return [0.6, 0.4][:n]
+    if p == "BALANCED":
+        return [1.0 / n for _ in range(n)]
+    # default DCA
+    return [0.4, 0.6][:n]
+
+
+async def build_spot2_from_plan(db, symbol: str, plan: dict) -> dict:
+    from .budget import get_or_init_settings
+    s = await get_or_init_settings(db)
+    profile = getattr(s, "default_weight_profile", "DCA")
+    entries = plan.get("entries", [])
+    weights = plan.get("weights") or _weights_for_profile(profile, len(entries))
+    tp_arr = plan.get("tp", [])
+    spot2 = {
+        "symbol": symbol,
+        "timestamp": __import__("datetime").datetime.utcnow().isoformat(),
+        "ringkas_teknis": plan.get("bias") or "",
+        "rencana_jual_beli": {
+            "profile": profile,
+            "entries": [
+                {"range": [float(e), float(e)], "weight": float(weights[i] if i < len(weights) else 0.0), "type": plan.get("mode", "PB")}
+                for i, e in enumerate(entries)
+            ],
+            "invalid": plan.get("invalid"),
+            "eksekusi_hanya_jika": "Struktur 1H bertahan sesuai bias."
+        },
+        "tp": [
+            {"name": f"TP{i+1}", "range": [float(t), float(t)]}
+            for i, t in enumerate(tp_arr)
+        ],
+        "mode_breakout": {"trigger": [], "retest_add": [], "sl_cepat": None},
+        "fail_safe": [],
+        "jam_pantau_wib": [],
+        "metrics": {"rr_min": plan.get("rr_min", 0.0), "tick_check": True},
+        "sr": {"support": plan.get("support", []), "resistance": plan.get("resistance", [])},
+        "mtf_refs": {},
+        "overlays": {"applied": False, "ghost": False},
+    }
+    return spot2

@@ -58,6 +58,8 @@ async def get_settings(db: AsyncSession = Depends(get_db), user=Depends(require_
         "sd_mode": getattr(s, "sd_mode", "swing"),
         "sd_vol_div": getattr(s, "sd_vol_div", 20),
         "sd_vol_threshold_pct": getattr(s, "sd_vol_threshold_pct", 10.0),
+        "show_sessions_hint": getattr(s, "show_sessions_hint", True),
+        "default_weight_profile": getattr(s, "default_weight_profile", "DCA"),
         # new aliases
         "llm_enabled": s.use_llm,
         "llm_model": llm_model,
@@ -88,12 +90,14 @@ def _apply_settings_payload(s, payload: dict):
         "sd_mode": ["sd_mode"],
         "sd_vol_div": ["sd_vol_div"],
         "sd_vol_threshold_pct": ["sd_vol_threshold_pct"],
+        "show_sessions_hint": ["show_sessions_hint"],
+        "default_weight_profile": ["default_weight_profile"],
         "budget_monthly_usd": ["budget_monthly_usd", "llm_limit_monthly_usd"],
         "auto_off_at_budget": ["auto_off_at_budget"],
         "input_usd_per_1k": ["input_usd_per_1k"],
         "output_usd_per_1k": ["output_usd_per_1k"],
     }
-    bool_fields = {"use_llm", "registration_enabled", "auto_off_at_budget"}
+    bool_fields = {"use_llm", "registration_enabled", "auto_off_at_budget", "show_sessions_hint"}
     bool_fields |= {"enable_fvg", "enable_supply_demand", "fvg_use_bodies"}
     float_fields = {"budget_monthly_usd", "input_usd_per_1k", "output_usd_per_1k", "sd_body_ratio", "sd_min_departure", "fvg_threshold_pct", "sd_vol_threshold_pct"}
     int_fields = {"max_users", "sd_max_base", "sd_vol_div"}
@@ -161,6 +165,8 @@ async def update_settings(payload: dict, db: AsyncSession = Depends(get_db), use
             "sd_mode": getattr(s, "sd_mode", "swing"),
             "sd_vol_div": getattr(s, "sd_vol_div", 20),
             "sd_vol_threshold_pct": getattr(s, "sd_vol_threshold_pct", 10.0),
+            "show_sessions_hint": getattr(s, "show_sessions_hint", True),
+            "default_weight_profile": getattr(s, "default_weight_profile", "DCA"),
             "budget_monthly_usd": s.budget_monthly_usd,
             "auto_off_at_budget": s.auto_off_at_budget,
             "input_usd_per_1k": s.input_usd_per_1k,
@@ -194,6 +200,8 @@ async def put_settings(payload: dict, db: AsyncSession = Depends(get_db), user=D
         "sd_mode": getattr(s, "sd_mode", "swing"),
         "sd_vol_div": getattr(s, "sd_vol_div", 20),
         "sd_vol_threshold_pct": getattr(s, "sd_vol_threshold_pct", 10.0),
+        "show_sessions_hint": getattr(s, "show_sessions_hint", True),
+        "default_weight_profile": getattr(s, "default_weight_profile", "DCA"),
     }
 
 

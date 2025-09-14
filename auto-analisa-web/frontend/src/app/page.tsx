@@ -5,7 +5,7 @@ import {api} from './api'
 import Link from 'next/link'
 import Watchlist from './(components)/Watchlist'
 import WatchlistRow from './(components)/WatchlistRow'
-import MacroBanner from './(components)/MacroBanner'
+import MacroPanel from './(components)/MacroPanel'
 import SessionsHint from './(components)/SessionsHint'
 import PasswordRequest from './(components)/PasswordRequest'
 import Hero from './(components)/Hero'
@@ -90,7 +90,8 @@ export default function Page(){
     <main className="space-y-4">
       <Hero loggedIn={loggedIn} isAdmin={isAdmin} />
       <div className="max-w-7xl mx-auto px-4 md:px-6">
-        <MacroBanner />
+        <MacroPanel />
+        {/* Sembunyikan hint jika admin mematikannya; fallback tetap tampil bila tidak bisa baca settings */}
         <SessionsHint />
         {notice && (
           <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 flex items-start gap-2 text-sm">

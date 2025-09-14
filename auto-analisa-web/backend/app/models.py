@@ -70,6 +70,8 @@ class Settings(Base):
     max_users: Mapped[int] = mapped_column(Integer, default=4)
     enable_fvg: Mapped[bool] = mapped_column(Boolean, default=False)
     enable_supply_demand: Mapped[bool] = mapped_column(Boolean, default=False)
+    show_sessions_hint: Mapped[bool] = mapped_column(Boolean, default=True)
+    default_weight_profile: Mapped[str] = mapped_column(String, default="DCA")
     # Indicator tuning parameters (admin configurable)
     fvg_use_bodies: Mapped[bool] = mapped_column(Boolean, default=False)
     fvg_fill_rule: Mapped[str] = mapped_column(String, default="any_touch")  # any_touch|50pct|full
@@ -117,6 +119,8 @@ class MacroDaily(Base):
     narrative: Mapped[str] = mapped_column(Text)
     sources: Mapped[str] = mapped_column(Text, default="")
     sections: Mapped[dict] = mapped_column(JSON, default=list)
+    slot: Mapped[str] = mapped_column(String, default="pagi")  # pagi|malam
+    last_run_status: Mapped[str] = mapped_column(String, default="ok")  # ok|skip|error
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
 
 
@@ -134,6 +138,7 @@ class LLMVerification(Base):
     summary: Mapped[str] = mapped_column(Text, default="")
     suggestions: Mapped[dict] = mapped_column(JSON, default={})  # {entries:[], tp:[], invalid:..., notes:[]}
     fundamentals: Mapped[dict] = mapped_column(JSON, default={})  # optional bullets for 24–48h
+    spot2_json: Mapped[dict] = mapped_column(JSON, default={})
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
     cached: Mapped[bool] = mapped_column(Boolean, default=False)
 
