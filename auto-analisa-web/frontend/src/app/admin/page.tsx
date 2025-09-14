@@ -54,10 +54,10 @@ export default function AdminPage(){
   if(!s) return <div className="max-w-7xl mx-auto p-6">Loading…</div>
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6 text-zinc-900 dark:text-zinc-100">
-      <h1 className="text-2xl font-bold text-slate-100">Admin Dashboard</h1>
+      <h1 className="text-2xl font-bold text-zinc-900 dark:text-slate-100">Admin Dashboard</h1>
       {/* Tabs header */}
       <div className="flex items-center gap-2 text-sm">
-        {(['Settings','Indicator','Macro','Paritas'] as const).map(t=> (
+        {(['Settings','Indicator','Macro','Paritas','Docs'] as const).map(t=> (
           <button key={t} onClick={()=> setTab(t)} className={`px-3 py-1.5 rounded ${tab===t? 'bg-cyan-600 text-white':'bg-zinc-800 text-white/80 hover:bg-zinc-700'}`}>{t}</button>
         ))}
       </div>
@@ -71,8 +71,6 @@ export default function AdminPage(){
             <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={s.registration_enabled} onChange={async e=>{ const next={...s,registration_enabled:e.target.checked}; setS(next); await save(next) }}/> Izinkan pendaftaran baru</label>
             <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={s.auto_off_at_budget} onChange={async e=>{ const next={...s,auto_off_at_budget:e.target.checked}; setS(next); await save(next) }}/> Auto-off saat cap</label>
             <label>Maksimum user <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.max_users ?? 4} onChange={e=>setS({...s,max_users:+e.target.value})}/></label>
-            <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.enable_fvg} onChange={async e=>{ const next={...s,enable_fvg:e.target.checked}; setS(next); await save(next) }}/> Enable FVG (opsional)</label>
-            <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.enable_supply_demand} onChange={async e=>{ const next={...s,enable_supply_demand:e.target.checked}; setS(next); await save(next) }}/> Enable Supply/Demand (opsional)</label>
             <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.show_sessions_hint} onChange={async e=>{ const next={...s,show_sessions_hint:e.target.checked}; setS(next); await save(next) }}/> Tampilkan Sessions Hint (WIB)</label>
             <label>Default Weight Profile
               <select className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.default_weight_profile||'DCA'} onChange={async e=>{ const next={...s,default_weight_profile:e.target.value}; setS(next); await save(next) }}>
@@ -81,34 +79,6 @@ export default function AdminPage(){
                 <option value="Near-Price">Near-Price (0.6/0.4)</option>
               </select>
             </label>
-            <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.fvg_use_bodies} onChange={async e=>{ const next={...s,fvg_use_bodies:e.target.checked}; setS(next); await save(next) }}/> FVG pakai body</label>
-            <label>FVG Fill Rule
-              <select className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.fvg_fill_rule||'any_touch'} onChange={async e=>{ const next={...s,fvg_fill_rule:e.target.value}; setS(next); await save(next) }}>
-                <option value="any_touch">Any Touch</option>
-                <option value="50pct">50%</option>
-                <option value="full">Full</option>
-              </select>
-            </label>
-            <label>FVG TF
-              <select className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.fvg_tf||'15m'} onChange={async e=>{ const next={...s,fvg_tf:e.target.value}; setS(next); await save(next) }}>
-                <option value="15m">15m</option>
-                <option value="1h">1h</option>
-                <option value="4h">4h</option>
-              </select>
-            </label>
-            <label>FVG Threshold % <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.fvg_threshold_pct ?? 0} onChange={e=>setS({...s,fvg_threshold_pct:+e.target.value})}/></label>
-            <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.fvg_threshold_auto} onChange={async e=>{ const next={...s,fvg_threshold_auto:e.target.checked}; setS(next); await save(next) }}/> FVG Auto Threshold</label>
-            <label>SD Mode
-              <select className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_mode||'swing'} onChange={async e=>{ const next={...s,sd_mode:e.target.value}; setS(next); await save(next) }}>
-                <option value="swing">Swing</option>
-                <option value="volume">Volume Bins</option>
-              </select>
-            </label>
-            <label>SD Base Max <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_max_base ?? 3} onChange={e=>setS({...s,sd_max_base:+e.target.value})}/></label>
-            <label>SD Body Ratio <input type="number" step="0.01" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_body_ratio ?? 0.33} onChange={e=>setS({...s,sd_body_ratio:+e.target.value})}/></label>
-            <label>SD Min Departure <input type="number" step="0.1" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_min_departure ?? 1.5} onChange={e=>setS({...s,sd_min_departure:+e.target.value})}/></label>
-            <label>SD Vol Bins <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_vol_div ?? 20} onChange={e=>setS({...s,sd_vol_div:+e.target.value})}/></label>
-            <label>SD Vol Threshold % <input type="number" step="0.1" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_vol_threshold_pct ?? 10} onChange={e=>setS({...s,sd_vol_threshold_pct:+e.target.value})}/></label>
             <label>Budget USD/bln <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.budget_monthly_usd} onChange={e=>setS({...s,budget_monthly_usd:+e.target.value})}/></label>
             <label>Harga Input /1k <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.input_usd_per_1k} onChange={e=>setS({...s,input_usd_per_1k:+e.target.value})}/></label>
             <label>Harga Output /1k <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.output_usd_per_1k} onChange={e=>setS({...s,output_usd_per_1k:+e.target.value})}/></label>
@@ -193,6 +163,34 @@ export default function AdminPage(){
               <label>Vol Threshold (%) <input type="number" step="0.01" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_vol_threshold_pct ?? 10} onChange={async e=>{ const next={...s,sd_vol_threshold_pct:+e.target.value}; setS(next); await save(next) }}/></label>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Docs tab */}
+      {tab==='Docs' && (
+        <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 text-sm space-y-4">
+          <div>
+            <div className="text-lg font-semibold">Panduan Admin</div>
+            <ol className="list-decimal pl-5 space-y-1 mt-2">
+              <li>Settings: atur LLM on/off, pendaftaran user, limit budget, dan profil bobot default (DCA/Balanced/Near-Price).</li>
+              <li>Indicator: kelola FVG (TF, fill rule, threshold, auto-threshold) dan Supply/Demand (mode, base, ratio, departure, volume).</li>
+              <li>Macro: generate Makro Harian slot pagi/malam. Gunakan Systemd timer untuk otomatis 07:00 dan 19:00 WIB.</li>
+              <li>Paritas: uji presisi FVG/Zone terhadap referensi JSON untuk QA indikator.</li>
+              <li>Password: tinjau dan setujui/tolak permintaan ganti password.</li>
+              <li>Anggaran: pantau biaya bulanan dan harga token input/output per 1k token.</li>
+            </ol>
+          </div>
+          <div>
+            <div className="text-lg font-semibold">Panduan Pengguna</div>
+            <ol className="list-decimal pl-5 space-y-1 mt-2">
+              <li>Tambah simbol di Watchlist lalu klik Analisa untuk membuat kartu analisa (maks 4 aktif).</li>
+              <li>PlanCard menampilkan rencana SPOT II (Rules). Klik Update untuk penyegaran. Jika harga tembus invalid, sistem membuat versi baru dan memberi tanda “Updated”.</li>
+              <li>LLM Verifikasi opsional: klik Tanya GPT untuk verifikasi SPOT II; gunakan Pratinjau (ghost) untuk melihat overlay saran; Terapkan Saran untuk menyimpan.</li>
+              <li>Chart: garis Entry, TP, Invalid, S/R akan tampil. Ghost overlay ditampilkan dengan garis putus-putus.</li>
+              <li>Macro Harian dan Sessions Hint: ringkasan makro dan jam WIB signifikan tampil otomatis bila tersedia.</li>
+              <li>Aturan: Edukasi, bukan saran finansial. Terdapat rate-limit dan batas harian LLM per pengguna.</li>
+            </ol>
+          </div>
         </div>
       )}
       {/* Macro tab */}
