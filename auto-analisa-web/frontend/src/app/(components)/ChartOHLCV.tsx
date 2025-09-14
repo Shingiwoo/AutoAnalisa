@@ -78,7 +78,8 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
       const wpx: number = (ref.current?.clientWidth ?? 0) as number
 
       // FVG boxes (extend to right)
-      (overlays?.fvg||[]).forEach(b=>{
+      const fvgList: FVG[] = (overlays && overlays.fvg) ? overlays.fvg : []
+      fvgList.forEach((b: FVG)=>{
         if(typeof b.gap_low!=='number' || typeof b.gap_high!=='number') return
         const y1: number = priceToY(b.gap_high)
         const y2: number = priceToY(b.gap_low)
@@ -98,7 +99,8 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
       })
 
       // Supply/Demand zones (extend to right)
-      (overlays?.zones||[]).forEach(z=>{
+      const zoneList: Zone[] = (overlays && overlays.zones) ? overlays.zones : []
+      zoneList.forEach((z: Zone)=>{
         if(typeof z.low!=='number' || typeof z.high!=='number') return
         const y1: number = priceToY(z.high)
         const y2: number = priceToY(z.low)
