@@ -30,6 +30,50 @@ async def init_db():
                 await conn.exec_driver_sql(
                     "ALTER TABLE settings ADD COLUMN enable_supply_demand BOOLEAN DEFAULT 0"
                 )
+            if "fvg_use_bodies" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN fvg_use_bodies BOOLEAN DEFAULT 0"
+                )
+            if "fvg_fill_rule" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN fvg_fill_rule TEXT DEFAULT 'any_touch'"
+                )
+            if "sd_max_base" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN sd_max_base INTEGER DEFAULT 3"
+                )
+            if "sd_body_ratio" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN sd_body_ratio FLOAT DEFAULT 0.33"
+                )
+            if "sd_min_departure" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN sd_min_departure FLOAT DEFAULT 1.5"
+                )
+            if "fvg_threshold_pct" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN fvg_threshold_pct FLOAT DEFAULT 0.0"
+                )
+            if "fvg_threshold_auto" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN fvg_threshold_auto BOOLEAN DEFAULT 0"
+                )
+            if "fvg_tf" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN fvg_tf TEXT DEFAULT '15m'"
+                )
+            if "sd_mode" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN sd_mode TEXT DEFAULT 'swing'"
+                )
+            if "sd_vol_div" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN sd_vol_div INTEGER DEFAULT 20"
+                )
+            if "sd_vol_threshold_pct" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN sd_vol_threshold_pct FLOAT DEFAULT 10.0"
+                )
         except Exception:
             pass
         try:

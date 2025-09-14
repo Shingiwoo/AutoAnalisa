@@ -50,9 +50,26 @@ async def build_plan_async(db, bundle, feat: "Features", score: int, mode: str =
     try:
         s = await get_or_init_settings(db)
         if getattr(s, "enable_fvg", False):
-            plan["fvg"] = detect_fvg(bundle["15m"])[:10]
+            fvg_tf = str(getattr(s, "fvg_tf", "15m"))
+            df_fvg = bundle.get(fvg_tf) or bundle.get("15m") or list(bundle.values())[0]
+            plan["fvg"] = detect_fvg(
+                df_fvg,
+                use_bodies=bool(getattr(s, "fvg_use_bodies", False)),
+                fill_rule=str(getattr(s, "fvg_fill_rule", "any_touch")),
+                threshold_pct=float(getattr(s, "fvg_threshold_pct", 0.0) or 0.0),
+                threshold_auto=bool(getattr(s, "fvg_threshold_auto", False)),
+            )[:10]
         if getattr(s, "enable_supply_demand", False):
-            plan["sd_zones"] = detect_zones(bundle["1h"])[:10]
+            df_sd = bundle.get("1h") or bundle.get("15m") or list(bundle.values())[0]
+            plan["sd_zones"] = detect_zones(
+                df_sd,
+                max_base=int(getattr(s, "sd_max_base", 3) or 3),
+                body_ratio=float(getattr(s, "sd_body_ratio", 0.33) or 0.33),
+                min_departure=float(getattr(s, "sd_min_departure", 1.5) or 1.5),
+                mode=str(getattr(s, "sd_mode", "swing")),
+                vol_div=int(getattr(s, "sd_vol_div", 20) or 20),
+                vol_threshold_pct=float(getattr(s, "sd_vol_threshold_pct", 10.0) or 10.0),
+            )[:10]
     except Exception:
         pass
     return plan

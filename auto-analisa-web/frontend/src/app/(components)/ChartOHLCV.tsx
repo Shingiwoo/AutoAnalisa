@@ -58,9 +58,63 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
       }
     }
 
-    const ro = new ResizeObserver(()=> chart.applyOptions({ width: ref.current!.clientWidth, height: ref.current!.clientHeight || h }))
+    // Overlay rectangles for FVG & Zones (approximate TradingView boxes)
+    const overlay = document.createElement('div')
+    overlay.style.position = 'absolute'
+    overlay.style.inset = '0'
+    overlay.style.pointerEvents = 'none'
+    ref.current.appendChild(overlay)
+
+    function drawBoxes(){
+      overlay.innerHTML=''
+      const priceToY = (price:number)=> series.priceToCoordinate(price) ?? 0
+      const timeToX = (ms:number)=> chart.timeScale().timeToCoordinate((ms/1000) as any) ?? 0
+      const wpx = ref.current!.clientWidth
+
+      // FVG boxes (extend to right)
+      (overlays?.fvg||[]).forEach(b=>{
+        if(typeof b.gap_low!=='number' || typeof b.gap_high!=='number') return
+        const y1 = priceToY(b.gap_high), y2 = priceToY(b.gap_low)
+        if(!isFinite(y1)||!isFinite(y2)) return
+        const left = typeof (b as any).ts_start==='number' ? timeToX((b as any).ts_start) : 0
+        const right = wpx
+        const div = document.createElement('div')
+        div.style.position='absolute'
+        div.style.left = `${Math.max(0,left)}px`
+        div.style.right = `0px`
+        div.style.top = `${Math.min(y1,y2)}px`
+        div.style.height = `${Math.abs(y2-y1)}px`
+        div.style.background = (b.type==='bull' ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)')
+        div.style.borderTop = `1px dashed ${b.type==='bull' ? '#10b981' : '#ef4444'}`
+        div.style.borderBottom = `1px dashed ${b.type==='bull' ? '#10b981' : '#ef4444'}`
+        overlay.appendChild(div)
+      })
+
+      // Supply/Demand zones (extend to right)
+      (overlays?.zones||[]).forEach(z=>{
+        if(typeof z.low!=='number' || typeof z.high!=='number') return
+        const y1 = priceToY(z.high), y2 = priceToY(z.low)
+        if(!isFinite(y1)||!isFinite(y2)) return
+        const left = typeof (z as any).ts_start==='number' ? timeToX((z as any).ts_start) : 0
+        const div = document.createElement('div')
+        div.style.position='absolute'
+        div.style.left = `${Math.max(0,left)}px`
+        div.style.right = `0px`
+        div.style.top = `${Math.min(y1,y2)}px`
+        div.style.height = `${Math.abs(y2-y1)}px`
+        div.style.background = (z.type==='supply' ? 'rgba(245,158,11,0.10)' : 'rgba(139,92,246,0.10)')
+        div.style.borderTop = `1px dotted ${z.type==='supply' ? '#f59e0b' : '#8b5cf6'}`
+        div.style.borderBottom = `1px dotted ${z.type==='supply' ? '#f59e0b' : '#8b5cf6'}`
+        overlay.appendChild(div)
+      })
+    }
+
+    drawBoxes()
+
+    chart.timeScale().subscribeVisibleTimeRangeChange(()=> drawBoxes())
+    const ro = new ResizeObserver(()=> { chart.applyOptions({ width: ref.current!.clientWidth, height: ref.current!.clientHeight || h }); drawBoxes() })
     ro.observe(ref.current)
-    return ()=>{ ro.disconnect(); chart.remove() }
+    return ()=>{ ro.disconnect(); chart.remove(); try{ overlay.remove() }catch{} }
   },[JSON.stringify(data), JSON.stringify(overlays)])
   return <div ref={ref} className={`w-full ${className||''}`} />
 }

@@ -70,6 +70,18 @@ class Settings(Base):
     max_users: Mapped[int] = mapped_column(Integer, default=4)
     enable_fvg: Mapped[bool] = mapped_column(Boolean, default=False)
     enable_supply_demand: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Indicator tuning parameters (admin configurable)
+    fvg_use_bodies: Mapped[bool] = mapped_column(Boolean, default=False)
+    fvg_fill_rule: Mapped[str] = mapped_column(String, default="any_touch")  # any_touch|50pct|full
+    fvg_threshold_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    fvg_threshold_auto: Mapped[bool] = mapped_column(Boolean, default=False)
+    fvg_tf: Mapped[str] = mapped_column(String, default="15m")
+    sd_max_base: Mapped[int] = mapped_column(Integer, default=3)
+    sd_body_ratio: Mapped[float] = mapped_column(Float, default=0.33)
+    sd_min_departure: Mapped[float] = mapped_column(Float, default=1.5)
+    sd_mode: Mapped[str] = mapped_column(String, default="swing")  # swing|volume
+    sd_vol_div: Mapped[int] = mapped_column(Integer, default=20)
+    sd_vol_threshold_pct: Mapped[float] = mapped_column(Float, default=10.0)
     input_usd_per_1k: Mapped[float] = mapped_column(Float, default=0.005)
     output_usd_per_1k: Mapped[float] = mapped_column(Float, default=0.015)
     budget_monthly_usd: Mapped[float] = mapped_column(Float, default=20.0)

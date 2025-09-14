@@ -16,6 +16,8 @@ from app.services.budget import (
 from app.auth import hash_pw
 from app import services
 from datetime import datetime, timezone
+from app.services.parity import fvg_parity_stats, zones_parity_stats
+import pandas as pd
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -45,6 +47,17 @@ async def get_settings(db: AsyncSession = Depends(get_db), user=Depends(require_
         "max_users": getattr(s, "max_users", 4),
         "enable_fvg": getattr(s, "enable_fvg", False),
         "enable_supply_demand": getattr(s, "enable_supply_demand", False),
+        "fvg_use_bodies": getattr(s, "fvg_use_bodies", False),
+        "fvg_fill_rule": getattr(s, "fvg_fill_rule", "any_touch"),
+        "sd_max_base": getattr(s, "sd_max_base", 3),
+        "sd_body_ratio": getattr(s, "sd_body_ratio", 0.33),
+        "sd_min_departure": getattr(s, "sd_min_departure", 1.5),
+        "fvg_threshold_pct": getattr(s, "fvg_threshold_pct", 0.0),
+        "fvg_threshold_auto": getattr(s, "fvg_threshold_auto", False),
+        "fvg_tf": getattr(s, "fvg_tf", "15m"),
+        "sd_mode": getattr(s, "sd_mode", "swing"),
+        "sd_vol_div": getattr(s, "sd_vol_div", 20),
+        "sd_vol_threshold_pct": getattr(s, "sd_vol_threshold_pct", 10.0),
         # new aliases
         "llm_enabled": s.use_llm,
         "llm_model": llm_model,
@@ -64,15 +77,26 @@ def _apply_settings_payload(s, payload: dict):
         "max_users": ["max_users"],
         "enable_fvg": ["enable_fvg"],
         "enable_supply_demand": ["enable_supply_demand"],
+        "fvg_use_bodies": ["fvg_use_bodies"],
+        "fvg_fill_rule": ["fvg_fill_rule"],
+        "fvg_threshold_pct": ["fvg_threshold_pct"],
+        "fvg_threshold_auto": ["fvg_threshold_auto"],
+        "fvg_tf": ["fvg_tf"],
+        "sd_max_base": ["sd_max_base"],
+        "sd_body_ratio": ["sd_body_ratio"],
+        "sd_min_departure": ["sd_min_departure"],
+        "sd_mode": ["sd_mode"],
+        "sd_vol_div": ["sd_vol_div"],
+        "sd_vol_threshold_pct": ["sd_vol_threshold_pct"],
         "budget_monthly_usd": ["budget_monthly_usd", "llm_limit_monthly_usd"],
         "auto_off_at_budget": ["auto_off_at_budget"],
         "input_usd_per_1k": ["input_usd_per_1k"],
         "output_usd_per_1k": ["output_usd_per_1k"],
     }
     bool_fields = {"use_llm", "registration_enabled", "auto_off_at_budget"}
-    bool_fields |= {"enable_fvg", "enable_supply_demand"}
-    float_fields = {"budget_monthly_usd", "input_usd_per_1k", "output_usd_per_1k"}
-    int_fields = {"max_users"}
+    bool_fields |= {"enable_fvg", "enable_supply_demand", "fvg_use_bodies"}
+    float_fields = {"budget_monthly_usd", "input_usd_per_1k", "output_usd_per_1k", "sd_body_ratio", "sd_min_departure", "fvg_threshold_pct", "sd_vol_threshold_pct"}
+    int_fields = {"max_users", "sd_max_base", "sd_vol_div"}
 
     for attr, keys in sources.items():
         # pick the first present key
@@ -126,6 +150,17 @@ async def update_settings(payload: dict, db: AsyncSession = Depends(get_db), use
             "max_users": getattr(s, "max_users", 4),
             "enable_fvg": getattr(s, "enable_fvg", False),
             "enable_supply_demand": getattr(s, "enable_supply_demand", False),
+            "fvg_use_bodies": getattr(s, "fvg_use_bodies", False),
+            "fvg_fill_rule": getattr(s, "fvg_fill_rule", "any_touch"),
+            "sd_max_base": getattr(s, "sd_max_base", 3),
+            "sd_body_ratio": getattr(s, "sd_body_ratio", 0.33),
+            "sd_min_departure": getattr(s, "sd_min_departure", 1.5),
+            "fvg_threshold_pct": getattr(s, "fvg_threshold_pct", 0.0),
+            "fvg_threshold_auto": getattr(s, "fvg_threshold_auto", False),
+            "fvg_tf": getattr(s, "fvg_tf", "15m"),
+            "sd_mode": getattr(s, "sd_mode", "swing"),
+            "sd_vol_div": getattr(s, "sd_vol_div", 20),
+            "sd_vol_threshold_pct": getattr(s, "sd_vol_threshold_pct", 10.0),
             "budget_monthly_usd": s.budget_monthly_usd,
             "auto_off_at_budget": s.auto_off_at_budget,
             "input_usd_per_1k": s.input_usd_per_1k,
@@ -148,6 +183,17 @@ async def put_settings(payload: dict, db: AsyncSession = Depends(get_db), user=D
         "max_users": getattr(s, "max_users", 4),
         "enable_fvg": getattr(s, "enable_fvg", False),
         "enable_supply_demand": getattr(s, "enable_supply_demand", False),
+        "fvg_use_bodies": getattr(s, "fvg_use_bodies", False),
+        "fvg_fill_rule": getattr(s, "fvg_fill_rule", "any_touch"),
+        "sd_max_base": getattr(s, "sd_max_base", 3),
+        "sd_body_ratio": getattr(s, "sd_body_ratio", 0.33),
+        "sd_min_departure": getattr(s, "sd_min_departure", 1.5),
+        "fvg_threshold_pct": getattr(s, "fvg_threshold_pct", 0.0),
+        "fvg_threshold_auto": getattr(s, "fvg_threshold_auto", False),
+        "fvg_tf": getattr(s, "fvg_tf", "15m"),
+        "sd_mode": getattr(s, "sd_mode", "swing"),
+        "sd_vol_div": getattr(s, "sd_vol_div", 20),
+        "sd_vol_threshold_pct": getattr(s, "sd_vol_threshold_pct", 10.0),
     }
 
 
@@ -299,3 +345,36 @@ async def macro_status(db: AsyncSession = Depends(get_db), user=Depends(require_
         "date_utc": row.date_utc,
         "created_at": row.created_at,
     }
+@router.post("/parity/compute")
+async def parity_compute(payload: dict, db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
+    """Hitung paritas indikator terhadap referensi.
+    payload: { ohlcv: [{ts,open,high,low,close,volume},...], expected: {fvg:[], zones:[]},
+               tol_price?: float, tol_idx?: int, min_iou?: float,
+               fvg_use_bodies?: bool, fvg_fill_rule?: str,
+               sd_max_base?: int, sd_body_ratio?: float, sd_min_departure?: float }
+    """
+    rows = payload.get("ohlcv") or []
+    if not rows:
+        raise HTTPException(422, "ohlcv kosong")
+    df = pd.DataFrame(rows)
+    df = df[["ts","open","high","low","close","volume"]]
+    exp = payload.get("expected") or {}
+    tol_price = float(payload.get("tol_price", 1e-4))
+    tol_idx = int(payload.get("tol_idx", 1))
+    min_iou = float(payload.get("min_iou", 0.6))
+
+    # gunakan setting payload override atau dari DB
+    s = await get_or_init_settings(db)
+    fvg_use_bodies = bool(payload.get("fvg_use_bodies", getattr(s, "fvg_use_bodies", False)))
+    fvg_fill_rule = str(payload.get("fvg_fill_rule", getattr(s, "fvg_fill_rule", "any_touch")))
+    sd_max_base = int(payload.get("sd_max_base", getattr(s, "sd_max_base", 3)))
+    sd_body_ratio = float(payload.get("sd_body_ratio", getattr(s, "sd_body_ratio", 0.33)))
+    sd_min_departure = float(payload.get("sd_min_departure", getattr(s, "sd_min_departure", 1.5)))
+
+    # jalankan deteksi
+    fvg_got = services.fvg.detect_fvg(df, use_bodies=fvg_use_bodies, fill_rule=fvg_fill_rule)
+    zones_got = services.supply_demand.detect_zones(df, max_base=sd_max_base, body_ratio=sd_body_ratio, min_departure=sd_min_departure)
+    # hitung skor
+    fvg_stats = fvg_parity_stats(exp.get("fvg", []), fvg_got, tol_price=tol_price, tol_idx=tol_idx)
+    z_stats = zones_parity_stats(exp.get("zones", []), zones_got, tol_idx=tol_idx, min_iou=min_iou)
+    return {"fvg": fvg_stats, "zones": z_stats, "counts": {"fvg_ref": len(exp.get("fvg", [])), "fvg_got": len(fvg_got), "zones_ref": len(exp.get("zones", [])), "zones_got": len(zones_got)}}

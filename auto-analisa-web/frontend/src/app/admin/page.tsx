@@ -14,6 +14,12 @@ export default function AdminPage(){
   const [busySave,setBusySave]=useState(false)
   const [busyMacro,setBusyMacro]=useState(false)
   const [macroStatus,setMacroStatus]=useState<any|null>(null)
+  // Parity test UI
+  const [sym,setSym]=useState('BTCUSDT')
+  const [tf,setTf]=useState<'15m'|'1h'>('15m')
+  const [expected,setExpected]=useState<string>('')
+  const [parity,setParity]=useState<any|null>(null)
+  const [parityErr,setParityErr]=useState<string>('')
 
   async function load(){
     try{
@@ -57,6 +63,34 @@ export default function AdminPage(){
             <label>Maksimum user <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.max_users ?? 4} onChange={e=>setS({...s,max_users:+e.target.value})}/></label>
             <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.enable_fvg} onChange={async e=>{ const next={...s,enable_fvg:e.target.checked}; setS(next); await save(next) }}/> Enable FVG (opsional)</label>
             <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.enable_supply_demand} onChange={async e=>{ const next={...s,enable_supply_demand:e.target.checked}; setS(next); await save(next) }}/> Enable Supply/Demand (opsional)</label>
+            <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.fvg_use_bodies} onChange={async e=>{ const next={...s,fvg_use_bodies:e.target.checked}; setS(next); await save(next) }}/> FVG pakai body</label>
+            <label>FVG Fill Rule
+              <select className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.fvg_fill_rule||'any_touch'} onChange={async e=>{ const next={...s,fvg_fill_rule:e.target.value}; setS(next); await save(next) }}>
+                <option value="any_touch">Any Touch</option>
+                <option value="50pct">50%</option>
+                <option value="full">Full</option>
+              </select>
+            </label>
+            <label>FVG TF
+              <select className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.fvg_tf||'15m'} onChange={async e=>{ const next={...s,fvg_tf:e.target.value}; setS(next); await save(next) }}>
+                <option value="15m">15m</option>
+                <option value="1h">1h</option>
+                <option value="4h">4h</option>
+              </select>
+            </label>
+            <label>FVG Threshold % <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.fvg_threshold_pct ?? 0} onChange={e=>setS({...s,fvg_threshold_pct:+e.target.value})}/></label>
+            <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.fvg_threshold_auto} onChange={async e=>{ const next={...s,fvg_threshold_auto:e.target.checked}; setS(next); await save(next) }}/> FVG Auto Threshold</label>
+            <label>SD Mode
+              <select className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_mode||'swing'} onChange={async e=>{ const next={...s,sd_mode:e.target.value}; setS(next); await save(next) }}>
+                <option value="swing">Swing</option>
+                <option value="volume">Volume Bins</option>
+              </select>
+            </label>
+            <label>SD Base Max <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_max_base ?? 3} onChange={e=>setS({...s,sd_max_base:+e.target.value})}/></label>
+            <label>SD Body Ratio <input type="number" step="0.01" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_body_ratio ?? 0.33} onChange={e=>setS({...s,sd_body_ratio:+e.target.value})}/></label>
+            <label>SD Min Departure <input type="number" step="0.1" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_min_departure ?? 1.5} onChange={e=>setS({...s,sd_min_departure:+e.target.value})}/></label>
+            <label>SD Vol Bins <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_vol_div ?? 20} onChange={e=>setS({...s,sd_vol_div:+e.target.value})}/></label>
+            <label>SD Vol Threshold % <input type="number" step="0.1" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_vol_threshold_pct ?? 10} onChange={e=>setS({...s,sd_vol_threshold_pct:+e.target.value})}/></label>
             <label>Budget USD/bln <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.budget_monthly_usd} onChange={e=>setS({...s,budget_monthly_usd:+e.target.value})}/></label>
             <label>Harga Input /1k <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.input_usd_per_1k} onChange={e=>setS({...s,input_usd_per_1k:+e.target.value})}/></label>
             <label>Harga Output /1k <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.output_usd_per_1k} onChange={e=>setS({...s,output_usd_per_1k:+e.target.value})}/></label>
@@ -107,6 +141,49 @@ export default function AdminPage(){
             finally{ setBusyMacro(false) }
           }}>{busyMacro?'Memproses…':'Generate Hari Ini'}</button>
         </div>
+      </div>
+      {/* Parity Test */}
+      <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 space-y-2">
+        <div className="font-semibold">Uji Paritas Indikator (FVG / Supply-Demand)</div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+          <label>Symbol <input value={sym} onChange={e=>setSym(e.target.value)} className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10"/></label>
+          <label>Timeframe
+            <select value={tf} onChange={e=>setTf(e.target.value as any)} className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10">
+              <option value="15m">15m</option>
+              <option value="1h">1h</option>
+            </select>
+          </label>
+          <div className="text-xs text-zinc-400 self-center">Tempel JSON referensi di bawah (keys: fvg, zones)</div>
+        </div>
+        <textarea value={expected} onChange={e=>setExpected(e.target.value)} rows={6} className="w-full rounded px-2 py-1 bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" placeholder="{ \"fvg\": [...], \"zones\": [...] }" />
+        <div className="flex items-center gap-3">
+          <button className="px-3 py-2 rounded bg-cyan-600 text-white font-medium hover:bg-cyan-500" onClick={async()=>{
+            try{
+              setParityErr(''); setParity(null)
+              const limit = tf==='15m' ? 500 : 600
+              const { data:ohlcv } = await api.get('ohlcv', { params:{ symbol: sym, tf, limit } })
+              let exp:any={}
+              try{ exp = JSON.parse(expected) }catch{ throw new Error('JSON referensi tidak valid') }
+              const { data } = await api.post('admin/parity/compute', { ohlcv, expected: exp })
+              setParity(data)
+            }catch(e:any){ setParityErr(e?.response?.data?.detail||e?.message||'Gagal menghitung paritas') }
+          }}>Hitung Paritas</button>
+          {parityErr && <div className="text-sm text-rose-500">{parityErr}</div>}
+        </div>
+        {parity && (
+          <div className="text-xs grid grid-cols-1 md:grid-cols-2 gap-2">
+            <div className="rounded p-2 ring-1 ring-zinc-200 dark:ring-white/10">
+              <div className="font-medium">FVG</div>
+              <div>F1: {parity?.fvg?.f1?.toFixed?.(3)} (P: {parity?.fvg?.precision?.toFixed?.(3)}, R: {parity?.fvg?.recall?.toFixed?.(3)})</div>
+              <div>TP: {parity?.fvg?.tp} • FP: {parity?.fvg?.fp} • FN: {parity?.fvg?.fn}</div>
+            </div>
+            <div className="rounded p-2 ring-1 ring-zinc-200 dark:ring-white/10">
+              <div className="font-medium">Supply/Demand</div>
+              <div>F1: {parity?.zones?.f1?.toFixed?.(3)} (P: {parity?.zones?.precision?.toFixed?.(3)}, R: {parity?.zones?.recall?.toFixed?.(3)})</div>
+              <div>TP: {parity?.zones?.tp} • FP: {parity?.zones?.fp} • FN: {parity?.zones?.fn}</div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
