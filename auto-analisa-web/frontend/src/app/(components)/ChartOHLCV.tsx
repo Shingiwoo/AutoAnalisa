@@ -67,15 +67,22 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
 
     function drawBoxes(){
       overlay.innerHTML=''
-      const priceToY = (price:number)=> series.priceToCoordinate(price) ?? 0
-      const timeToX = (ms:number)=> chart.timeScale().timeToCoordinate((ms/1000) as any) ?? 0
-      const wpx = ref.current!.clientWidth
+      const priceToY = (price:number): number => {
+        const v = series.priceToCoordinate(price)
+        return typeof v === 'number' ? v : 0
+      }
+      const timeToX = (ms:number): number => {
+        const v = chart.timeScale().timeToCoordinate((ms/1000) as any)
+        return typeof v === 'number' ? v : 0
+      }
+      const wpx: number = (ref.current?.clientWidth ?? 0) as number
 
       // FVG boxes (extend to right)
       (overlays?.fvg||[]).forEach(b=>{
         if(typeof b.gap_low!=='number' || typeof b.gap_high!=='number') return
-        const y1 = priceToY(b.gap_high), y2 = priceToY(b.gap_low)
-        if(!isFinite(y1)||!isFinite(y2)) return
+        const y1: number = priceToY(b.gap_high)
+        const y2: number = priceToY(b.gap_low)
+        if(typeof y1 !== 'number' || typeof y2 !== 'number') return
         const left = typeof (b as any).ts_start==='number' ? timeToX((b as any).ts_start) : 0
         const right = wpx
         const div = document.createElement('div')
@@ -93,8 +100,9 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
       // Supply/Demand zones (extend to right)
       (overlays?.zones||[]).forEach(z=>{
         if(typeof z.low!=='number' || typeof z.high!=='number') return
-        const y1 = priceToY(z.high), y2 = priceToY(z.low)
-        if(!isFinite(y1)||!isFinite(y2)) return
+        const y1: number = priceToY(z.high)
+        const y2: number = priceToY(z.low)
+        if(typeof y1 !== 'number' || typeof y2 !== 'number') return
         const left = typeof (z as any).ts_start==='number' ? timeToX((z as any).ts_start) : 0
         const div = document.createElement('div')
         div.style.position='absolute'
