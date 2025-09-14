@@ -1,0 +1,55 @@
+"use client"
+export default function Spot2View({ spot2 }:{ spot2:any }){
+  if(!spot2) return null
+  const rjb = spot2.rencana_jual_beli || {}
+  const tp = spot2.tp || []
+  const sr = spot2.sr || {}
+  const m = spot2.metrics || {}
+  return (
+    <section className="rounded-xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white/5 p-3 text-sm">
+      {spot2.ringkas_teknis && (
+        <div className="mb-2">
+          <div className="text-zinc-500">Ringkas Teknis</div>
+          <div>{spot2.ringkas_teknis}</div>
+        </div>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <div className="text-zinc-500">Rencana Jual–Beli ({rjb.profile||'-'})</div>
+          <ul className="list-disc pl-5">
+            {(rjb.entries||[]).map((e:any,i:number)=> (
+              <li key={i}>Range: {(e.range||[]).join(' – ')} • w={e.weight} • {e.type||'PB'}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <div className="text-zinc-500">Invalid</div>
+          <div className="text-rose-500 font-medium">{rjb.invalid}</div>
+        </div>
+        <div className="md:col-span-2">
+          <div className="text-zinc-500">TP</div>
+          <div className="text-emerald-600">{tp.map((t:any)=> `${t.name||''}: ${(t.range||[]).join(' – ')}`).join(' • ')}</div>
+        </div>
+        <div>
+          <div className="text-zinc-500">Support</div>
+          <div>{(sr.support||[]).join(' · ')||'-'}</div>
+        </div>
+        <div>
+          <div className="text-zinc-500">Resistance</div>
+          <div>{(sr.resistance||[]).join(' · ')||'-'}</div>
+        </div>
+        <div>
+          <div className="text-zinc-500">RR Min</div>
+          <div className="text-cyan-600">{typeof m.rr_min==='number'? m.rr_min.toFixed(2):'-'}</div>
+        </div>
+      </div>
+      {spot2.fail_safe && spot2.fail_safe.length>0 && (
+        <div className="mt-2">
+          <div className="text-zinc-500">Fail-safe</div>
+          <ul className="list-disc pl-5">{spot2.fail_safe.map((f:string,i:number)=> <li key={i}>{f}</li>)}</ul>
+        </div>
+      )}
+    </section>
+  )
+}
+

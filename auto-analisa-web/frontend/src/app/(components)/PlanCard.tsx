@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../app/api'
 import ChartOHLCV from './ChartOHLCV'
 import LLMReport from './LLMReport'
+import Spot2View from './Spot2View'
 
 export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAfterVerify}:{plan:any,onUpdate:()=>void, llmEnabled?:boolean, llmRemaining?:number, onAfterVerify?:()=>void}){
   const p=plan.payload
@@ -64,35 +65,8 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
         </div>
       )}
 
-      <div className="text-sm">
-        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-          <div>
-            <dt className="text-zinc-500">Bias Dominan</dt>
-            <dd className="text-zinc-900 dark:text-zinc-100">{p.bias}</dd>
-          </div>
-          <div>
-            <dt className="text-zinc-500">Invalid</dt>
-            <dd className="text-red-600 font-semibold">{fmt(p.invalid)}</dd>
-          </div>
-          <div>
-            <dt className="text-zinc-500">Support</dt>
-            <dd className="text-zinc-900 dark:text-zinc-100">{(p.support||[]).map(fmt).join(' · ')||'-'}</dd>
-          </div>
-          <div>
-            <dt className="text-zinc-500">Resistance</dt>
-            <dd className="text-zinc-900 dark:text-zinc-100">{(p.resistance||[]).map(fmt).join(' · ')||'-'}</dd>
-          </div>
-          <div className="sm:col-span-2">
-            <dt className="text-zinc-500">Entry (PB/BO)</dt>
-            <dd className="text-sky-600">{(p.entries||[]).map(fmt).join(' / ')||'-'}{p.weights? <span className="text-zinc-500"> {` (w=${p.weights.join('/')})`}</span> : null}</dd>
-          </div>
-          <div className="sm:col-span-2">
-            <dt className="text-zinc-500">TP</dt>
-            <dd className="text-green-700">{(p.tp||[]).map(fmt).join(' → ')||'-'}</dd>
-          </div>
-
-        </dl>
-      </div>
+      {/* SPOT II View */}
+      <Spot2View spot2={p.spot2} />
 
       {/* LLM Verification (legacy diff) */}
       <LLMVerifyBlock plan={p} verification={verification || p?.llm_verification} fmt={fmt} />

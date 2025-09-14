@@ -6,9 +6,12 @@ type Bucket = { hour:number, n:number, mean:number, hit_rate:number, ci_low:numb
 
 export default function SessionsHint(){
   const [buckets,setBuckets]=useState<Bucket[]|null>(null)
+  const [show,setShow]=useState<boolean>(true)
   useEffect(()=>{ (async()=>{
+    try{ const s = await api.get('public/settings'); if(s?.data && s.data.show_sessions_hint===false){ setShow(false); return } }catch{}
     try{ const {data}=await api.get('sessions/btc/wib'); setBuckets(data||[]) }catch{ setBuckets([]) }
   })() },[])
+  if(!show) return null
   if(!buckets || buckets.length===0) return null
   return (
     <div className="p-2 bg-emerald-50 border border-emerald-200 rounded text-emerald-800 text-sm">
@@ -23,4 +26,3 @@ export default function SessionsHint(){
     </div>
   )
 }
-
