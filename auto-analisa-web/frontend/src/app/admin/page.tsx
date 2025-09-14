@@ -14,6 +14,9 @@ export default function AdminPage(){
   const [busySave,setBusySave]=useState(false)
   const [busyMacro,setBusyMacro]=useState(false)
   const [macroStatus,setMacroStatus]=useState<any|null>(null)
+  // Simple tabs for grouping
+  const [tab,setTab]=useState<'Settings'|'Indicator'|'Macro'|'Paritas'>('Settings')
+  const [indTab,setIndTab]=useState<'FVG'|'SupplyDemand'>('FVG')
   // Parity test UI
   const [sym,setSym]=useState('BTCUSDT')
   const [tf,setTf]=useState<'15m'|'1h'>('15m')
@@ -51,8 +54,15 @@ export default function AdminPage(){
   if(!s) return <div className="max-w-7xl mx-auto p-6">Loading…</div>
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6 text-zinc-900 dark:text-zinc-100">
-      <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+      <h1 className="text-2xl font-bold text-slate-100">Admin Dashboard</h1>
+      {/* Tabs header */}
+      <div className="flex items-center gap-2 text-sm">
+        {(['Settings','Indicator','Macro','Paritas'] as const).map(t=> (
+          <button key={t} onClick={()=> setTab(t)} className={`px-3 py-1.5 rounded ${tab===t? 'bg-cyan-600 text-white':'bg-zinc-800 text-white/80 hover:bg-zinc-700'}`}>{t}</button>
+        ))}
+      </div>
 
+      {tab==='Settings' && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 space-y-4">
           <div className="font-semibold">Pengaturan</div>
@@ -136,21 +146,74 @@ export default function AdminPage(){
           ))}
         </div>
 
-        <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 space-y-2">
-          <div className="font-semibold">Makro Harian</div>
-          {macroStatus?.has_data && (
-            <div className="text-xs text-zinc-400">Terakhir: {new Date(macroStatus.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB</div>
-          )}
-          {macroMsg && <div className="p-2 rounded text-sm text-cyan-300 ring-1 ring-cyan-500/20 bg-cyan-500/10">{macroMsg}</div>}
-          {macroErr && <div className="p-2 rounded text-sm text-rose-400 ring-1 ring-rose-500/20 bg-rose-500/10">{macroErr}</div>}
-          <button disabled={busyMacro} className="px-3 py-2 rounded bg-cyan-600 text-white font-medium hover:bg-cyan-500 disabled:opacity-50" onClick={async()=>{
-            try{ setMacroErr(''); setMacroMsg(''); setBusyMacro(true); await api.post('admin/macro/generate'); setMacroMsg('Makro harian diperbarui.'); }
-            catch(e:any){ setMacroErr(e?.response?.data?.detail || 'Gagal generate makro (500). Cek backend log).') }
-            finally{ setBusyMacro(false) }
-          }}>{busyMacro?'Memproses…':'Generate Hari Ini'}</button>
-        </div>
       </div>
+      )}
+      {/* Indicator tab content */}
+      {tab==='Indicator' && (
+        <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 space-y-4">
+          <div className="flex items-center gap-2">
+            {(['FVG','SupplyDemand'] as const).map(t=> (
+              <button key={t} onClick={()=> setIndTab(t)} className={`px-3 py-1.5 rounded ${indTab===t? 'bg-cyan-600 text-white':'bg-zinc-800 text-white/80 hover:bg-zinc-700'}`}>{t==='FVG'?'FVG':'Supply/Demand'}</button>
+            ))}
+          </div>
+          {indTab==='FVG' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+              <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.enable_fvg} onChange={async e=>{ const next={...s,enable_fvg:e.target.checked}; setS(next); await save(next) }}/> Enable FVG</label>
+              <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.fvg_use_bodies} onChange={async e=>{ const next={...s,fvg_use_bodies:e.target.checked}; setS(next); await save(next) }}/> Gunakan body candle</label>
+              <label>Timeframe
+                <select className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.fvg_tf||'15m'} onChange={async e=>{ const next={...s,fvg_tf:e.target.value}; setS(next); await save(next) }}>
+                  <option value="15m">15m</option>
+                  <option value="1h">1h</option>
+                </select>
+              </label>
+              <label>Fill Rule
+                <select className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.fvg_fill_rule||'any_touch'} onChange={async e=>{ const next={...s,fvg_fill_rule:e.target.value}; setS(next); await save(next) }}>
+                  <option value="any_touch">any_touch</option>
+                  <option value="50pct">50pct</option>
+                  <option value="full">full</option>
+                </select>
+              </label>
+              <label>Threshold (%) <input type="number" step="0.01" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.fvg_threshold_pct ?? 0} onChange={async e=>{ const next={...s,fvg_threshold_pct:+e.target.value}; setS(next); await save(next) }}/></label>
+              <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.fvg_threshold_auto} onChange={async e=>{ const next={...s,fvg_threshold_auto:e.target.checked}; setS(next); await save(next) }}/> Auto-Threshold</label>
+            </div>
+          )}
+          {indTab==='SupplyDemand' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+              <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.enable_supply_demand} onChange={async e=>{ const next={...s,enable_supply_demand:e.target.checked}; setS(next); await save(next) }}/> Enable Supply/Demand</label>
+              <label>Mode
+                <select className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_mode||'swing'} onChange={async e=>{ const next={...s,sd_mode:e.target.value}; setS(next); await save(next) }}>
+                  <option value="swing">swing</option>
+                  <option value="volume">volume</option>
+                </select>
+              </label>
+              <label>Max Base <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_max_base ?? 3} onChange={async e=>{ const next={...s,sd_max_base:+e.target.value}; setS(next); await save(next) }}/></label>
+              <label>Body Ratio <input type="number" step="0.01" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_body_ratio ?? 0.33} onChange={async e=>{ const next={...s,sd_body_ratio:+e.target.value}; setS(next); await save(next) }}/></label>
+              <label>Min Departure <input type="number" step="0.01" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_min_departure ?? 1.5} onChange={async e=>{ const next={...s,sd_min_departure:+e.target.value}; setS(next); await save(next) }}/></label>
+              <label>Vol Div <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_vol_div ?? 20} onChange={async e=>{ const next={...s,sd_vol_div:+e.target.value}; setS(next); await save(next) }}/></label>
+              <label>Vol Threshold (%) <input type="number" step="0.01" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_vol_threshold_pct ?? 10} onChange={async e=>{ const next={...s,sd_vol_threshold_pct:+e.target.value}; setS(next); await save(next) }}/></label>
+            </div>
+          )}
+        </div>
+      )}
+      {/* Macro tab */}
+      {tab==='Macro' && (
+      <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 space-y-2">
+        <div className="font-semibold">Makro Harian</div>
+        {macroStatus?.has_data && (
+          <div className="text-xs text-zinc-400">Terakhir: {new Date(macroStatus.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB</div>
+        )}
+        {macroMsg && <div className="p-2 rounded text-sm text-cyan-300 ring-1 ring-cyan-500/20 bg-cyan-500/10">{macroMsg}</div>}
+        {macroErr && <div className="p-2 rounded text-sm text-rose-400 ring-1 ring-rose-500/20 bg-rose-500/10">{macroErr}</div>}
+        <button disabled={busyMacro} className="px-3 py-2 rounded bg-cyan-600 text-white font-medium hover:bg-cyan-500 disabled:opacity-50" onClick={async()=>{
+          try{ setMacroErr(''); setMacroMsg(''); setBusyMacro(true); await api.post('admin/macro/generate'); setMacroMsg('Makro harian diperbarui.'); }
+          catch(e:any){ setMacroErr(e?.response?.data?.detail || 'Gagal generate makro (500). Cek backend log).') }
+          finally{ setBusyMacro(false) }
+        }}>{busyMacro?'Memproses…':'Generate Hari Ini'}</button>
+      </div>
+      )}
+
       {/* Parity Test */}
+      {tab==='Paritas' && (
       <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 space-y-2">
         <div className="font-semibold">Uji Paritas Indikator (FVG / Supply-Demand)</div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
@@ -193,6 +256,7 @@ export default function AdminPage(){
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }

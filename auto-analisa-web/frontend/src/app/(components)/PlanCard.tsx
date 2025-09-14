@@ -32,6 +32,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
         <div className="text-lg font-semibold flex items-center gap-2">
           <span>{plan.symbol} • v{plan.version}</span>
           <ScoreBadge score={p.score} />
+          {p?.notice && <span className="px-2 py-0.5 rounded bg-amber-600 text-white text-xs" title={p.notice}>Updated</span>}
         </div>
       </div>
 

@@ -8,6 +8,7 @@ from app.services.budget import get_or_init_settings, add_usage, check_budget_an
 from app.services.llm import should_use_llm, ask_llm
 from app.services.usage import get_today_usage, inc_usage
 from app.workers.analyze_worker import refresh_analysis_rules_only
+from app.services.market import fetch_bundle
 from app.main import locks
 from app.services.validator import normalize_and_validate, validate_spot2
 import os, json, time
@@ -73,8 +74,44 @@ async def refresh_rules(aid: int, db: AsyncSession = Depends(get_db), user=Depen
     ok = await locks.acquire(f"rate:refresh:{user.id}:{aid}", ttl=5)
     if not ok:
         raise HTTPException(429, "Terlalu sering, coba lagi sebentar.")
+    # Check invalid-breach against latest price before refreshing
+    prev_payload = dict(a.payload_json or {})
+    prev_invalidated = False
+    try:
+        prev_invalid = prev_payload.get("invalid")
+        if isinstance(prev_invalid, (int, float)):
+            # use latest close on 1h if available, fallback to 15m
+            bundle = await fetch_bundle(a.symbol, ("1h", "15m"))
+            last_close = None
+            try:
+                last_close = float(bundle["1h"].iloc[-1].close)
+            except Exception:
+                last_close = float(bundle["15m"].iloc[-1].close)
+            if isinstance(last_close, float) and last_close < float(prev_invalid):
+                prev_invalidated = True
+                # Archive previous plan as snapshot for reference
+                try:
+                    snap = Plan(user_id=a.user_id, symbol=a.symbol, version=a.version, payload_json=prev_payload)
+                    db.add(snap)
+                    await db.commit()
+                except Exception:
+                    # best-effort; do not block refresh
+                    pass
+    except Exception:
+        pass
+
     a = await refresh_analysis_rules_only(db, user, a)
+    # Attach a brief notice if prior setup was invalidated
+    if prev_invalidated:
+        try:
+            p = dict(a.payload_json or {})
+            p["notice"] = "Setup sebelumnya invalid; rencana baru dibuat (v%d)." % int(a.version)
+            a.payload_json = p
+            await db.commit()
+        except Exception:
+            pass
     return {
+        "prev_invalidated": prev_invalidated,
         "analysis": {
             "id": a.id,
             "symbol": a.symbol,
