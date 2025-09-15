@@ -16,17 +16,24 @@ _client = OpenAI(api_key=_KEY) if _KEY else None
 
 def ask_llm(prompt: str) -> Tuple[str, Dict[str, int]]:
     """Ask Chat Completions, return (text, usage).
-    No response_format usage to avoid schema issues.
+    If OPENAI_JSON_STRICT is truthy, request JSON-only output via response_format.
     """
-    # Jika tidak ada client (tidak ada API key), kembalikan fallback kosong agar tidak memblokir test/dev
     if _client is None:
         return "", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+    strict = os.getenv("OPENAI_JSON_STRICT", "").strip().lower() in {"1", "true", "yes", "on"}
+    kwargs = {}
+    if strict:
+        # Require valid JSON object response
+        kwargs["response_format"] = {"type": "json_object"}
+
     resp = _client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[
-            {"role": "system", "content": "Kamu analis kripto. Jawab dalam JSON ringkas untuk narasi saja (field narrative)."},
+            {"role": "system", "content": "Kamu analis kripto. Jawab dalam JSON valid (object) tanpa teks lain."},
             {"role": "user", "content": prompt},
         ],
+        **kwargs,
     )
     text = resp.choices[0].message.content or ""
     usage = {

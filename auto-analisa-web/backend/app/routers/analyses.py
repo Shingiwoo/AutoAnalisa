@@ -5,6 +5,7 @@ from app.deps import get_db
 from app.auth import require_user
 from app.models import Analysis, Plan, LLMVerification, Settings
 from app.services.budget import get_or_init_settings, add_usage, check_budget_and_maybe_off
+from app.services.planner import build_spot2_from_plan
 from app.services.llm import should_use_llm, ask_llm
 from app.services.usage import get_today_usage, inc_usage
 from app.workers.analyze_worker import refresh_analysis_rules_only
@@ -218,17 +219,24 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
         "support": p.get("support", []),
         "resistance": p.get("resistance", []),
     }
+    # Build SPOT II basis (from existing payload or rules)
+    spot2_base = (p.get("spot2") if isinstance(p, dict) else None) or {}
+    if not spot2_base:
+        try:
+            spot2_base = await build_spot2_from_plan(db, a.symbol, p)
+        except Exception:
+            spot2_base = {}
+
+    # Instruct LLM to respond with valid SPOT II JSON + meta
     prompt = (
-        "Validasi rencana trading berikut, balas JSON dengan kunci: "
-        "verdict (confirm|tweak|warning|reject), summary (1-2 kalimat), "
-        "suggestions {entries:[], tp:[], invalid: <number|null>, notes:[]}, fundamentals: {bullets: []}.\n"
-        f"DATA: {json.dumps(snap, ensure_ascii=False)}"
+        "Validasi dan perbaiki (jika perlu) rencana berikut. Kembalikan JSON SPOT II valid (object) "
+        "dengan kunci utama: rencana_jual_beli{profile, entries:[{range:[low,high], weight, type}], invalid, eksekusi_hanya_jika}, "
+        "tp:[{name, range:[low,high]}], ringkas_teknis(optional), sr(optional), metrics(optional). Juga sertakan: verdict, summary, fundamentals{bullets:[]}. "
+        "Pastikan TP ascending dan rr_min>=1.2 bila mungkin.\n"
+        f"SPOT2_INPUT: {json.dumps(spot2_base, ensure_ascii=False)}\n"
+        f"SNAPSHOT: {json.dumps(snap, ensure_ascii=False)}"
     )
     s = await get_or_init_settings(db)
-    # Enforce daily per-user limit before calling LLM
-    today = await get_today_usage(db, user_id=user.id)
-    if today["remaining"] <= 0:
-        raise HTTPException(409, detail="Limit harian LLM tercapai untuk akun ini.")
 
     try:
         text, usage = ask_llm(prompt)
@@ -263,12 +271,42 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
         suggestions = parsed.get("suggestions") or {}
         fundamentals = parsed.get("fundamentals") or {}
     except Exception:
-        # Enforce strict JSON contract per blueprint
-        raise HTTPException(422, detail={
-            "error_code": "schema_invalid",
-            "message": "LLM tidak mengembalikan JSON SPOT II yang valid.",
-            "retry_hint": "Ulangi verifikasi. Jika berulang, hubungi admin."
-        })
+        # Fallback: jika hanya suggestions tersedia dalam teks plain/JSON, coba terapkan ke SPOT2_INPUT
+        spot2 = {}
+        try:
+            parsed = json.loads(text)
+            suggestions = parsed.get("suggestions") or {}
+        except Exception:
+            suggestions = {}
+        if spot2_base and isinstance(suggestions, dict) and (suggestions.get("entries") or suggestions.get("tp") or (suggestions.get("invalid") is not None)):
+            # apply suggestions onto base spot2
+            try:
+                s2 = json.loads(json.dumps(spot2_base))  # deep copy
+                rjb = dict(s2.get("rencana_jual_beli") or {})
+                if isinstance(suggestions.get("entries"), list):
+                    # map entries to range lower/upper equal
+                    rjb["entries"] = [
+                        {"range": [float(x), float(x)], "weight": (rjb.get("entries", [{}]*0)[i].get("weight") if i < len(rjb.get("entries", [])) else 0.0), "type": rjb.get("entries", [{}]*0)[i].get("type") if i < len(rjb.get("entries", [])) else "PB"}
+                        for i, x in enumerate(suggestions["entries"])
+                    ]
+                if suggestions.get("invalid") is not None:
+                    rjb["invalid"] = float(suggestions.get("invalid"))
+                s2["rencana_jual_beli"] = rjb
+                if isinstance(suggestions.get("tp"), list):
+                    s2["tp"] = [{"name": f"TP{i+1}", "range": [float(t), float(t)]} for i, t in enumerate(suggestions["tp"])]
+                v = validate_spot2(s2)
+                spot2 = v.get("fixes") or s2
+                verdict = "tweak"
+                summary = (summary or "") + " (fallback dari suggestions)"
+            except Exception:
+                pass
+        if not spot2:
+            # Enforce strict JSON contract
+            raise HTTPException(422, detail={
+                "error_code": "schema_invalid",
+                "message": "LLM tidak mengembalikan JSON SPOT II yang valid.",
+                "retry_hint": "Ulangi verifikasi. Jika berulang, hubungi admin."
+            })
 
     # sanitize suggestions by validating a candidate plan built from current + suggestions
     try:

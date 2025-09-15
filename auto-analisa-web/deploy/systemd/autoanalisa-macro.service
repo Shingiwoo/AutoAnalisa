@@ -11,7 +11,7 @@ Environment=APP_ENV=prod
 Environment=PYBIN=/opt/auto-analisa-web/backend/.venv/bin/python
 Environment=SLOT=
 # Gunakan bash untuk fallback ke python3 jika VENV tidak ada
-ExecStart=/bin/bash -lc 'PY=${PYBIN}; if [ ! -x "$PY" ]; then PY=$(command -v python3); fi; exec "$PY" scripts/macro_generate.py ${SLOT:+--slot ${SLOT}}'
+ExecStart=/bin/bash -lc 'PY=${PYBIN}; if [ ! -x "$PY" ]; then PY=$(command -v python3); fi; export PYTHONPATH=$PWD; exec "$PY" scripts/macro_generate.py ${SLOT:+--slot ${SLOT}}'
 User=www-data
 Group=www-data
 
