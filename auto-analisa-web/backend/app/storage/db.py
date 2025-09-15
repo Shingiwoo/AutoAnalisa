@@ -84,6 +84,28 @@ async def init_db():
                 )
         except Exception:
             pass
+        # llm_verifications: add JSON fields if missing
+        try:
+            res3 = await conn.exec_driver_sql("PRAGMA table_info(llm_verifications)")
+            cols_v = {row[1] for row in res3.fetchall()}
+            if "suggestions" not in cols_v:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE llm_verifications ADD COLUMN suggestions JSON DEFAULT '{}'"
+                )
+            if "fundamentals" not in cols_v:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE llm_verifications ADD COLUMN fundamentals JSON DEFAULT '{}'"
+                )
+            if "spot2_json" not in cols_v:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE llm_verifications ADD COLUMN spot2_json JSON DEFAULT '{}'"
+                )
+            if "cached" not in cols_v:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE llm_verifications ADD COLUMN cached BOOLEAN DEFAULT 0"
+                )
+        except Exception:
+            pass
         try:
             res2 = await conn.exec_driver_sql("PRAGMA table_info(macro_daily)")
             cols_m = {row[1] for row in res2.fetchall()}
