@@ -4,13 +4,16 @@ After=network.target
 
 [Service]
 Type=oneshot
-# Ubah path sesuai lokasi proyek produksi Anda
+# Sesuaikan path sesuai lokasi proyek produksi Anda
 WorkingDirectory=/opt/auto-analisa-web/backend
 Environment=APP_ENV=prod
-ExecStart=/opt/auto-analisa-web/backend/.venv/bin/python scripts/macro_generate.py
+# Opsional: override via Environment=PYBIN=/path/to/venv/bin/python dan SLOT=pagi|malam
+Environment=PYBIN=/opt/auto-analisa-web/backend/.venv/bin/python
+Environment=SLOT=
+# Gunakan bash untuk fallback ke python3 jika VENV tidak ada
+ExecStart=/bin/bash -lc 'PY=${PYBIN}; if [ ! -x "$PY" ]; then PY=$(command -v python3); fi; exec "$PY" scripts/macro_generate.py ${SLOT:+--slot ${SLOT}}'
 User=www-data
 Group=www-data
 
 [Install]
 WantedBy=multi-user.target
-

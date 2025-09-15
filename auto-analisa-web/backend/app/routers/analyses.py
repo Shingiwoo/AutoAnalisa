@@ -105,7 +105,7 @@ async def refresh_rules(aid: int, db: AsyncSession = Depends(get_db), user=Depen
     if prev_invalidated:
         try:
             p = dict(a.payload_json or {})
-            p["notice"] = "Setup sebelumnya invalid; rencana baru dibuat (v%d)." % int(a.version)
+            p["notice"] = f"Setup {a.symbol} sebelumnya invalid; rencana baru dibuat (v{int(a.version)})."
             a.payload_json = p
             await db.commit()
         except Exception:

@@ -46,6 +46,11 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
         <div className="text-xs text-zinc-500" title={new Date(plan.created_at).toISOString()}>{createdWIB}</div>
       </div>
 
+      {/* Notice banner per coin when invalidated & refreshed */}
+      {p?.notice && (
+        <div className="p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 text-sm">{p.notice}</div>
+      )}
+
       <div className="rounded-none overflow-hidden ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-950 relative">
         <div className="aspect-[16/9] md:aspect-[21/9]">
           <ChartOHLCV key={`${plan.symbol}-${tf}-${expanded?'x':''}`} className="h-full" data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid:p.invalid, entries:p.entries||[], fvg: p.fvg||[], zones: p.sd_zones||[], ghost: ghost||undefined }} />

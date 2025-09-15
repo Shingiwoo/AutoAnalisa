@@ -9,6 +9,7 @@ import MacroPanel from './(components)/MacroPanel'
 import SessionsHint from './(components)/SessionsHint'
 import PasswordRequest from './(components)/PasswordRequest'
 import Hero from './(components)/Hero'
+import UserGuide from './(components)/UserGuide'
 
 function scoreLabel(score:number){
   if(score>=70) return {text:'Kuat', color:'bg-green-600'}
@@ -105,6 +106,11 @@ export default function Page(){
           <WatchlistRow quota={quota} onPick={analyze} onDelete={(s)=>{ setCards(prev=> prev.filter(c=> c.symbol !== s)) }} />
         ) : (
           <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 text-sm text-gray-600">Login untuk mengelola watchlist dan menganalisa.</div>
+        )}
+        {loggedIn && (
+          <div className="mt-3">
+            <UserGuide />
+          </div>
         )}
         {quota && !quota.llm_enabled && (
           <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 flex items-start gap-2 text-sm">
