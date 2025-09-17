@@ -66,11 +66,59 @@ async def fetch_open_interest(symbol: str) -> float | None:
         return None
 
 
+async def fetch_long_short_ratio(symbol: str, interval: str = "5m") -> dict | None:
+    """Ambil global long/short account ratio (approx). Returns {accounts, positions} if available.
+    Catatan: endpoint bisa berubah; jika gagal, kembalikan None.
+    """
+    if os.getenv("MARKET_OFFLINE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return None
+    sym = _norm_symbol(symbol)
+    # Accounts ratio
+    url_acc = f"{BINANCE_FAPI}/futures/data/globalLongShortAccountRatio"
+    acc = await _http_get_json(url_acc, params={"symbol": sym, "period": interval, "limit": 1})
+    # Positions ratio
+    url_pos = f"{BINANCE_FAPI}/futures/data/globalLongShortPositionRatio"
+    pos = await _http_get_json(url_pos, params={"symbol": sym, "period": interval, "limit": 1})
+    try:
+        a = float(acc[0]["longShortRatio"]) if isinstance(acc, list) and acc else None
+    except Exception:
+        a = None
+    try:
+        p = float(pos[0]["longShortRatio"]) if isinstance(pos, list) and pos else None
+    except Exception:
+        p = None
+    if a is None and p is None:
+        return None
+    return {"accounts": a, "positions": p}
+
+
+async def fetch_taker_delta(symbol: str, interval: str = "5m") -> float | None:
+    """Ambil taker buy/sell volume ratio lalu turunkan delta sederhana (buy - sell)/(buy+sell)."""
+    if os.getenv("MARKET_OFFLINE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return None
+    sym = _norm_symbol(symbol)
+    url = f"{BINANCE_FAPI}/futures/data/takerlongshortRatio"
+    data = await _http_get_json(url, params={"symbol": sym, "interval": interval, "limit": 1})
+    try:
+        if isinstance(data, list) and data:
+            last = data[0]
+            buy = float(last.get("buyVol", 0.0))
+            sell = float(last.get("sellVol", 0.0))
+            tot = buy + sell
+            return ((buy - sell) / tot) if tot > 0 else 0.0
+    except Exception:
+        pass
+    return None
+
+
 async def refresh_signals_cache(db: AsyncSession, symbol: str) -> FuturesSignalsCache:
     sym = symbol.upper()
     fb = await fetch_funding_basis(sym) or {}
     oi = await fetch_open_interest(sym)
-    # Note: long/short ratio & taker delta not fetched (kept None in skeleton)
+    lsr = await fetch_long_short_ratio(sym) or {}
+    td5 = await fetch_taker_delta(sym, "5m")
+    td15 = await fetch_taker_delta(sym, "15m")
+    tdh1 = await fetch_taker_delta(sym, "1h")
     row = FuturesSignalsCache(
         symbol=sym,
         funding_now=fb.get("funding_now"),
@@ -78,12 +126,12 @@ async def refresh_signals_cache(db: AsyncSession, symbol: str) -> FuturesSignals
         next_funding_time=fb.get("next_funding_time"),
         oi_now=oi,
         oi_d1=None,
-        lsr_accounts=None,
-        lsr_positions=None,
+        lsr_accounts=lsr.get("accounts"),
+        lsr_positions=lsr.get("positions"),
         basis_now=fb.get("basis_now"),
-        taker_delta_m5=None,
-        taker_delta_m15=None,
-        taker_delta_h1=None,
+        taker_delta_m5=td5,
+        taker_delta_m15=td15,
+        taker_delta_h1=tdh1,
     )
     db.add(row)
     await db.commit()
@@ -107,4 +155,3 @@ async def latest_signals(db: AsyncSession, symbol: str) -> dict:
         "taker_delta": {"m5": r.taker_delta_m5, "m15": r.taker_delta_m15, "h1": r.taker_delta_h1},
         "created_at": r.created_at,
     }
-

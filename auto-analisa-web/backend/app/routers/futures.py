@@ -8,6 +8,7 @@ from app.services.market import fetch_bundle
 from app.services.rules import Features, score_symbol
 from app.services.planner import build_plan_async, build_spot2_from_plan
 from app.services.futures import latest_signals
+from app.services.sessions import btc_wib_buckets
 
 router = APIRouter(prefix="/api/analyses", tags=["futures"])
 
@@ -53,6 +54,7 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
     lev_max = int(getattr(s, "futures_leverage_max", 10) or 10)
     risk_pct = float(getattr(s, "futures_risk_per_trade_pct", 0.5) or 0.5)
     liq_buf_k = float(getattr(s, "futures_liq_buffer_k_atr15m", 0.5) or 0.5)
+    lev = max(lev_min, min(lev_max, 5))
 
     # Signals cache (best-effort, empty in this skeleton)
     q = await db.execute(select(FuturesSignalsCache).where(FuturesSignalsCache.symbol == symbol.upper()).order_by(FuturesSignalsCache.created_at.desc()))
@@ -65,11 +67,40 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
         "taker_delta": {"m5": getattr(sig, "taker_delta_m5", None), "m15": getattr(sig, "taker_delta_m15", None), "h1": getattr(sig, "taker_delta_h1", None)},
     }
 
+    # Side heuristic sederhana (trend 1H): LONG bila ema5>ema20>ema50; else SHORT
+    side = "LONG"
+    try:
+        df1h = bundle.get("1h")
+        last = df1h.iloc[-1]
+        if not (float(getattr(last, "ema5", 0)) > float(getattr(last, "ema20", 0)) > float(getattr(last, "ema50", 0))):
+            side = "SHORT"
+    except Exception:
+        side = "LONG"
+
+    # Perkiraan harga likuidasi (linear perp, isolated): approx entry*(1 - 0.97/lev) untuk LONG dan entry*(1 + 0.97/lev) untuk SHORT
+    try:
+        e0 = entries[0][0] if entries and entries[0][0] is not None else None
+        liq_est = None
+        if e0 is not None and lev:
+            if side == "LONG":
+                liq_est = float(e0) * (1.0 - 0.97/float(lev))
+            else:
+                liq_est = float(e0) * (1.0 + 0.97/float(lev))
+    except Exception:
+        liq_est = None
+
+    # Jam pantau WIB dari buckets signifikan
+    try:
+        buckets = await btc_wib_buckets(days=120, timeframe="1h")
+        jam_pantau = [b["hour"] for b in (buckets or [])]
+    except Exception:
+        jam_pantau = []
+
     fut = {
         "version": 1,
         "symbol": symbol.upper(),
         "contract": "PERP",
-        "side": "LONG" if (base_plan.get("mode") or "PB").upper() == "PB" else "LONG",
+        "side": side,
         "tf_base": "1h",
         "bias": base_plan.get("bias", ""),
         "support": base_plan.get("support", [])[:2],
@@ -78,11 +109,11 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
         "entries": [ {"range": [e or None, e or None], "weight": w, "type": t} for (e,w,t) in entries ],
         "tp": [ {"name": name, "range": [val, val], "reduce_only_pct": (40 if i == 0 else 60)} for i,(name,val) in enumerate(tp_nodes) if val is not None ],
         "invalids": invalids,
-        "leverage_suggested": {"isolated": True, "x": max(lev_min, min(lev_max, 5))},
-        "risk": {"risk_per_trade_pct": risk_pct, "rr_min": ">=1.5", "fee_bp": 3, "slippage_bp": 2, "liq_price_est": None, "liq_buffer_pct": f">={liq_buf_k} * ATR15m", "max_addons": 1, "pyramiding": "on_retest", "funding_window_min": int(getattr(s, "futures_funding_avoid_minutes", 10) or 10)},
+        "leverage_suggested": {"isolated": True, "x": lev},
+        "risk": {"risk_per_trade_pct": risk_pct, "rr_min": ">=1.5", "fee_bp": 3, "slippage_bp": 2, "liq_price_est": liq_est, "liq_buffer_pct": f">={liq_buf_k} * ATR15m", "max_addons": 1, "pyramiding": "on_retest", "funding_window_min": int(getattr(s, "futures_funding_avoid_minutes", 10) or 10), "funding_threshold_bp": float(getattr(s, "futures_funding_threshold_bp", 3.0) or 3.0)},
         "futures_signals": futures_signals,
         "mtf_summary": spot2.get("mtf_summary") or {},
-        "jam_pantau_wib": [],
+        "jam_pantau_wib": jam_pantau,
         "notes": [],
     }
     return fut

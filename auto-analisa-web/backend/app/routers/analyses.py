@@ -550,3 +550,18 @@ async def apply_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(r
     await db.commit()
     await db.refresh(a)
     return {"ok": True, "analysis": {"id": a.id, "version": a.version, "payload": a.payload_json}}
+@router.get("/{symbol}/spot")
+async def get_spot(symbol: str, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
+    q = await db.execute(
+        select(Analysis).where(Analysis.user_id == user.id, Analysis.symbol == symbol.upper(), Analysis.status == "active").order_by(desc(Analysis.created_at))
+    )
+    a = q.scalars().first()
+    if not a:
+        raise HTTPException(404, "Not found")
+    return {
+        "id": a.id,
+        "symbol": a.symbol,
+        "version": a.version,
+        "payload": a.payload_json,
+        "created_at": a.created_at,
+    }

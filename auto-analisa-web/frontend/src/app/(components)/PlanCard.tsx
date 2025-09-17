@@ -63,10 +63,12 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
   const lastClose = (ohlcv && ohlcv.length>0) ? ohlcv[ohlcv.length-1].c : undefined
   const breach = useMemo(()=>{
     if(typeof lastClose !== 'number') return null
-    if(typeof invalids.h1 === 'number' && lastClose <= invalids.h1){ return { type:'hard', text:'Invalidated — rencana baru dibuat (v+1)' } }
-    if(typeof invalids.m15 === 'number' && lastClose <= invalids.m15){ return { type:'soft', text:'Rawan — cek ulang 15m' } }
+    const invH1 = mode==='futures' ? (typeof fut?.invalids?.hard_1h==='number'? fut.invalids.hard_1h : invalids.h1) : invalids.h1
+    const invM15 = mode==='futures' ? (typeof fut?.invalids?.soft_15m==='number'? fut.invalids.soft_15m : invalids.m15) : invalids.m15
+    if(typeof invH1 === 'number' && lastClose <= invH1){ return { type:'hard', text:'Invalidated — rencana baru dibuat (v+1)' } }
+    if(typeof invM15 === 'number' && lastClose <= invM15){ return { type:'soft', text:'Rawan — cek ulang 15m' } }
     return null
-  },[lastClose, invalids])
+  },[lastClose, invalids, fut, mode])
   const srExtra = useSRExtra(tab, ohlcv)
   const computeSRCombined = () => ([...(p.support||[]), ...(p.resistance||[]), ...srExtra])
   return (
@@ -161,6 +163,20 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
         <button onClick={()=>setExpanded(true)} className="absolute top-2 right-2 text-xs px-2 py-1 rounded bg-zinc-900/80 text-white hover:bg-zinc-900">Perbesar</button>
       </div>
 
+      {/* Funding soon banner (Futures) */}
+      {mode==='futures' && (()=>{
+        try{
+          const thr = Number(fut?.risk?.funding_threshold_bp)||3
+          const rate = Math.abs(Number(fut?.futures_signals?.funding?.now)||0)*10000 // convert to bp if %
+          const t = fut?.futures_signals?.funding?.time ? Date.parse(fut.futures_signals.funding.time) : null
+          const mins = t ? Math.abs((t - Date.now())/60000) : null
+          if(t && mins!==null && mins < 30 && rate > thr){
+            return <div className="p-2 rounded text-sm bg-blue-50 border border-blue-200 text-blue-800">Funding soon — pertimbangkan hindari entry ±{Math.round(Number(fut?.risk?.funding_window_min)||10)} menit</div>
+          }
+        }catch{}
+        return null
+      })()}
+
       {expanded && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={()=>setExpanded(false)}>
           <div className="w-full max-w-7xl h-[80vh] bg-zinc-950 ring-1 ring-white/10 rounded-none relative" onClick={e=>e.stopPropagation()}>
@@ -192,20 +208,22 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
         </div>
       )}
 
-      {tab==='tren' ? (
-        <div className="space-y-2">
-          {/* Badge invalid bertingkat */}
-          <div className="flex flex-wrap gap-2 text-xs">
-            {typeof invalids.m5==='number' && <span className="px-2 py-0.5 rounded bg-amber-600 text-white" title="Invalid tactical 5m">5m: {fmt(invalids.m5)}</span>}
-            {typeof invalids.m15==='number' && <span className="px-2 py-0.5 rounded bg-yellow-600 text-white" title="Invalid soft 15m">15m: {fmt(invalids.m15)}</span>}
-            {typeof invalids.h1==='number' && <span className="px-2 py-0.5 rounded bg-rose-600 text-white" title="Invalid hard 1h">1h: {fmt(invalids.h1)}</span>}
-            {typeof invalids.h4==='number' && <span className="px-2 py-0.5 rounded bg-violet-600 text-white" title="Invalid struct 4h">4h: {fmt(invalids.h4)}</span>}
-          </div>
-          {/* SPOT II View */}
-          <Spot2View spot2={p.spot2} />
-        </div>
+      {mode==='futures' ? (
+        <FuturesSummary fut={fut} />
       ) : (
-        <MTFDesc mtf={mtfData || {}} tf={tab} />
+        (tab==='tren' ? (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2 text-xs">
+              {typeof invalids.m5==='number' && <span className="px-2 py-0.5 rounded bg-amber-600 text-white" title="Invalid tactical 5m">5m: {fmt(invalids.m5)}</span>}
+              {typeof invalids.m15==='number' && <span className="px-2 py-0.5 rounded bg-yellow-600 text-white" title="Invalid soft 15m">15m: {fmt(invalids.m15)}</span>}
+              {typeof invalids.h1==='number' && <span className="px-2 py-0.5 rounded bg-rose-600 text-white" title="Invalid hard 1h">1h: {fmt(invalids.h1)}</span>}
+              {typeof invalids.h4==='number' && <span className="px-2 py-0.5 rounded bg-violet-600 text-white" title="Invalid struct 4h">4h: {fmt(invalids.h4)}</span>}
+            </div>
+            <Spot2View spot2={p.spot2} />
+          </div>
+        ) : (
+          <MTFDesc mtf={mtfData || {}} tf={tab} />
+        ))
       )}
 
       {/* Previous version toggle */}
@@ -409,4 +427,69 @@ function useSRExtra(tab:'tren'|'5m'|'15m'|'1h'|'4h', rows:any[]){
     const { highs, lows } = computePivots(rows, 15, 15)
     return [...highs, ...lows]
   },[tab, JSON.stringify(rows?.slice(-220))])
+}
+
+function FuturesSummary({ fut }:{ fut:any }){
+  if(!fut) return <div className="text-sm text-zinc-500">Futures tidak tersedia.</div>
+  const s = fut || {}
+  const rr = s?.risk||{}
+  const sig = s?.futures_signals||{}
+  const tp = s?.tp||[]
+  const ents = s?.entries||[]
+  return (
+    <section className="rounded-xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white/5 p-3 text-sm space-y-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <div className="text-zinc-500">Side • Leverage</div>
+          <div>{s?.side||'-'} • isolated x={s?.leverage_suggested?.x ?? '-'}</div>
+        </div>
+        <div>
+          <div className="text-zinc-500">Risk</div>
+          <div>risk/trade: {rr?.risk_per_trade_pct ?? '-'}% • rr_min: {rr?.rr_min||'-'}</div>
+          <div>liq est: {typeof rr?.liq_price_est==='number' ? rr.liq_price_est : '-'}</div>
+        </div>
+        <div>
+          <div className="text-zinc-500">Entries</div>
+          <div>{ents.map((e:any)=> (Array.isArray(e.range)? e.range[0]: '-')).join(' · ')||'-'}</div>
+        </div>
+        <div>
+          <div className="text-zinc-500">Invalid (tiers)</div>
+          <div>{['tactical_5m','soft_15m','hard_1h','struct_4h'].map((k)=> s?.invalids?.[k]).filter((x:any)=> typeof x==='number').join(' · ')||'-'}</div>
+        </div>
+        <div className="md:col-span-2">
+          <div className="text-zinc-500">TP (reduce-only)</div>
+          <div className="text-emerald-600">{tp.map((t:any)=> (t?.range||[]).join('–')).join(' → ')||'-'}</div>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div>
+          <div className="text-zinc-500">Funding</div>
+          <div>now: {sig?.funding?.now ?? '-'} • next: {sig?.funding?.next ?? '-'}</div>
+          <div>time: {sig?.funding?.time ?? '-'}</div>
+        </div>
+        <div>
+          <div className="text-zinc-500">Open Interest</div>
+          <div>now: {sig?.oi?.now ?? '-'} • Δ1d: {sig?.oi?.d1 ?? '-'}</div>
+        </div>
+        <div>
+          <div className="text-zinc-500">Basis</div>
+          <div>now: {sig?.basis?.now ?? '-'}</div>
+        </div>
+        <div>
+          <div className="text-zinc-500">LSR</div>
+          <div>acc: {sig?.lsr?.accounts ?? '-'} • pos: {sig?.lsr?.positions ?? '-'}</div>
+        </div>
+        <div className="md:col-span-2">
+          <div className="text-zinc-500">Taker Δ</div>
+          <div>m5: {sig?.taker_delta?.m5 ?? '-'} • m15: {sig?.taker_delta?.m15 ?? '-'} • h1: {sig?.taker_delta?.h1 ?? '-'}</div>
+        </div>
+      </div>
+      {Array.isArray(s?.jam_pantau_wib) && s.jam_pantau_wib.length>0 && (
+        <div>
+          <div className="text-zinc-500">Jam pantau WIB (signifikan)</div>
+          <div className="flex flex-wrap gap-1 text-xs">{s.jam_pantau_wib.map((h:number)=> <span key={h} className="px-2 py-0.5 rounded bg-emerald-600 text-white">{String(h).padStart(2,'0')}:00</span>)}</div>
+        </div>
+      )}
+    </section>
+  )
 }
