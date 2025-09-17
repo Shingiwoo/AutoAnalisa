@@ -8,6 +8,12 @@ BACKEND_DIR = os.path.abspath(os.path.join(THIS_DIR, "..", ".."))  # points to: 
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+"""Pytest bootstrap.
+- Set DB ke lokasi writable (bukan app.db produksi) agar test tidak terkena readonly.
+"""
+# Set sebelum import modul DB
+os.environ.setdefault("SQLITE_URL", "sqlite+aiosqlite:////tmp/autoanalisa_test.db")
+
 # Pastikan DB terinisialisasi sebelum test berjalan
 from app.storage.db import init_db
 

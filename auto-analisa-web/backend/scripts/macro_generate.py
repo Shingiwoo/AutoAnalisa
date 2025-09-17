@@ -49,13 +49,18 @@ async def main():
 
             # Parse JSON if possible
             narrative = text
-            sources = ""
-            sections = []
+            sources: str | list | None = ""
+            sections: list | dict | str | None = []
             try:
                 parsed = json.loads(text)
                 narrative = parsed.get("summary") or parsed.get("narrative") or narrative
                 sections = parsed.get("sections") or []
                 sources = parsed.get("sources") or ""
+                if isinstance(sections, str):
+                    try:
+                        sections = json.loads(sections)
+                    except Exception:
+                        sections = []
                 if isinstance(sections, dict):
                     sections = [sections]
             except Exception:
@@ -64,18 +69,26 @@ async def main():
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             q = await db.execute(select(MacroDaily).where(MacroDaily.date_utc == today, MacroDaily.slot == slot))
             row = q.scalar_one_or_none()
+            def _src_to_text(src):
+                if isinstance(src, list):
+                    try:
+                        return "\n".join(map(str, src))
+                    except Exception:
+                        return "\n".join([str(x) for x in src])
+                return str(src or "")
+
             if row:
                 row.narrative = narrative
-                row.sources = sources
+                row.sources = _src_to_text(sources)
                 try:
-                    row.sections = sections
+                    row.sections = sections if isinstance(sections, list) else []
                     row.last_run_status = "ok"
                 except Exception:
                     pass
             else:
-                row = MacroDaily(date_utc=today, slot=slot, narrative=narrative, sources=sources)
+                row = MacroDaily(date_utc=today, slot=slot, narrative=narrative, sources=_src_to_text(sources))
                 try:
-                    row.sections = sections
+                    row.sections = sections if isinstance(sections, list) else []
                     row.last_run_status = "ok"
                 except Exception:
                     pass

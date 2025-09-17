@@ -118,7 +118,7 @@ class MacroDaily(Base):
     date_utc: Mapped[str] = mapped_column(String, index=True)  # YYYY-MM-DD (UTC)
     narrative: Mapped[str] = mapped_column(Text)
     sources: Mapped[str] = mapped_column(Text, default="")
-    sections: Mapped[dict] = mapped_column(JSON, default=list)
+    sections: Mapped[list] = mapped_column(JSON, default=list)
     slot: Mapped[str] = mapped_column(String, default="pagi")  # pagi|malam
     last_run_status: Mapped[str] = mapped_column(String, default="ok")  # ok|skip|error
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)

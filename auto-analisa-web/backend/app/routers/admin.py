@@ -308,16 +308,21 @@ async def generate_macro(db: AsyncSession = Depends(get_db), user=Depends(requir
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     # Try parse structured JSON; fallback to narrative text
     narrative = text
-    sources = ""
-    sections = []
+    sources: str | list | None = ""
+    sections: list | dict | str | None = []
     try:
         import json as _json
         parsed = _json.loads(text)
         narrative = parsed.get("summary") or parsed.get("narrative") or narrative
         sections = parsed.get("sections") or []
         sources = parsed.get("sources") or ""
+        # Normalize sections into list
+        if isinstance(sections, str):
+            try:
+                sections = _json.loads(sections)
+            except Exception:
+                sections = []
         if isinstance(sections, dict):
-            # tolerate object form -> wrap to list
             sections = [sections]
     except Exception:
         pass
@@ -331,18 +336,27 @@ async def generate_macro(db: AsyncSession = Depends(get_db), user=Depends(requir
         slot_val = (slot or "pagi").lower()
     qslot = await db.execute(select(MacroDaily).where(MacroDaily.date_utc == today, MacroDaily.slot == slot_val))
     row_slot = qslot.scalar_one_or_none()
+    # Coerce sources to text
+    def _src_to_text(src):
+        if isinstance(src, list):
+            try:
+                return "\n".join(map(str, src))
+            except Exception:
+                return "\n".join([str(x) for x in src])
+        return str(src or "")
+
     if row_slot:
         row_slot.narrative = narrative
-        row_slot.sources = sources
+        row_slot.sources = _src_to_text(sources)
         try:
-            row_slot.sections = sections
+            row_slot.sections = sections if isinstance(sections, list) else []
             row_slot.last_run_status = "ok"
         except Exception:
             pass
     else:
-        row_slot = MacroDaily(date_utc=today, slot=slot_val, narrative=narrative, sources=sources)
+        row_slot = MacroDaily(date_utc=today, slot=slot_val, narrative=narrative, sources=_src_to_text(sources))
         try:
-            row_slot.sections = sections
+            row_slot.sections = sections if isinstance(sections, list) else []
             row_slot.last_run_status = "ok"
         except Exception:
             pass
