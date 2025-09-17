@@ -2,7 +2,8 @@ from .rules import make_levels, Features
 from .fvg import detect_fvg
 from .supply_demand import detect_zones
 from .budget import get_or_init_settings
-from .validator import normalize_and_validate
+from .validator import normalize_and_validate, validate_spot2
+from .rounding import round_plan_prices
 
 
 async def build_plan_async(db, bundle, feat: "Features", score: int, mode: str = "auto"):
@@ -76,12 +77,6 @@ async def build_plan_async(db, bundle, feat: "Features", score: int, mode: str =
         plan["invalid_struct_4h"] = round(float(struct_4h), 6) if struct_4h is not None else None
     except Exception:
         pass
-    # MTF summary for UI tabs
-    try:
-        plan["mtf_summary"] = build_mtf_summary(bundle, feat)
-    except Exception:
-        pass
-
     # Optional overlays (behind feature flags)
     try:
         s = await get_or_init_settings(db)
@@ -108,6 +103,11 @@ async def build_plan_async(db, bundle, feat: "Features", score: int, mode: str =
             )[:10]
     except Exception:
         pass
+    # MTF summary for UI tabs (setelah overlay supaya bisa dirujuk)
+    try:
+        plan["mtf_summary"] = build_mtf_summary(bundle, feat, plan)
+    except Exception:
+        pass
     return plan
 
 
@@ -128,6 +128,11 @@ def _weights_for_profile(profile: str, n: int) -> list[float]:
 async def build_spot2_from_plan(db, symbol: str, plan: dict) -> dict:
     from .budget import get_or_init_settings
     s = await get_or_init_settings(db)
+    # Snap all prices to tick size when possible before membentuk SPOT II
+    try:
+        plan = round_plan_prices(symbol, plan)
+    except Exception:
+        pass
     profile = getattr(s, "default_weight_profile", "DCA")
     entries = plan.get("entries", [])
     weights = plan.get("weights") or _weights_for_profile(profile, len(entries))
@@ -169,6 +174,12 @@ async def build_spot2_from_plan(db, symbol: str, plan: dict) -> dict:
         "mtf_refs": {},
         "overlays": {"applied": False, "ghost": False},
     }
+    # Jalankan validator SPOT II agar konsisten dengan jalur LLM
+    try:
+        v = validate_spot2(spot2)
+        spot2 = v.get("fixes") or spot2
+    except Exception:
+        pass
     return spot2
 
 
@@ -191,9 +202,23 @@ def _fmt_pct(x: float) -> str:
         return "-"
 
 
-def build_mtf_summary(bundle, feat: "Features") -> dict:
-    """Bangun ringkasan MTF ringkas untuk UI (non-JSON di FE)."""
+def build_mtf_summary(bundle, feat: "Features", plan: dict | None = None) -> dict:
+    """Bangun ringkasan MTF ringkas untuk UI (non-JSON di FE).
+    Field level_zona/skenario/catatan diisi singkat sesuai blueprint.
+    """
     out: dict = {"trend_utama": ""}
+    # Ambil referensi S/R & overlay opsional dari plan bila ada
+    sr = dict((plan or {}).get("sr") or {})
+    sup = list((plan or {}).get("support") or sr.get("support") or [])
+    res = list((plan or {}).get("resistance") or sr.get("resistance") or [])
+    fvg = (plan or {}).get("fvg") or []
+    zones = (plan or {}).get("sd_zones") or []
+    invs = {
+        "5m": (plan or {}).get("invalid_tactical_5m"),
+        "15m": (plan or {}).get("invalid_soft_15m"),
+        "1h": (plan or {}).get("invalid_hard_1h") or (plan or {}).get("invalid"),
+        "4h": (plan or {}).get("invalid_struct_4h"),
+    }
     for tf in ["5m", "15m", "1h", "4h"]:
         if tf not in bundle:
             continue
@@ -231,11 +256,37 @@ def build_mtf_summary(bundle, feat: "Features") -> dict:
         bb_line = f"BB bw {_fmt_pct(bw)}"
         atr_line = f"ATR14 {_fmt_pct(atr_pct)}"
 
+        # Level & Zona singkat
+        try:
+            s1, s2 = (sup + [None, None])[:2]
+            r1, r2 = (res + [None, None])[:2]
+            lv_txt = "S/R: " + \
+                (" · ".join([f"{s1}" if s1 is not None else "-", f"{s2}" if s2 is not None else "-"])) + \
+                " / " + (" · ".join([f"{r1}" if r1 is not None else "-", f"{r2}" if r2 is not None else "-"]))
+            fvg_cnt = len([x for x in fvg if x])
+            z_cnt = len([z for z in zones if z])
+            if fvg_cnt:
+                lv_txt += f"; FVG:{fvg_cnt}"
+            if z_cnt:
+                lv_txt += f"; SD:{z_cnt}"
+        except Exception:
+            lv_txt = ""
+        # Skenario cepat (heuristik sederhana PB/BO + invalid lokal jika ada)
+        inv_local = invs.get(tf)
+        try:
+            is_bo_bias = (plan or {}).get("mode", "PB").upper() == "BO"
+        except Exception:
+            is_bo_bias = False
+        if is_bo_bias:
+            sk = f"Micro‑BO di atas R1; invalid lokal: {inv_local if inv_local is not None else '-'}"
+        else:
+            sk = f"PB cepat dekat EMA20; invalid lokal: {inv_local if inv_local is not None else '-'}"
+
         out[tf.replace("m", "m").replace("h", "h")] = {
             "tren_momentum": f"{ema_stack}; {rsi_line}; {macd_line}; {bb_line}; {atr_line}",
-            "level_zona": "",
-            "skenario": "",
-            "catatan": "",
+            "level_zona": lv_txt,
+            "skenario": sk,
+            "catatan": "Periksa reaksi di S/R terdekat; gunakan konfirmasi wick/volume.",
         }
     # trend utama sederhana dari H1/H4
     try:

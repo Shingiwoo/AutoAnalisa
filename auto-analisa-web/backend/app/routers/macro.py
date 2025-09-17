@@ -30,4 +30,22 @@ async def today(db: AsyncSession = Depends(get_db), slot: str | None = Query(Non
         date_wib = dt_utc.astimezone(jkt).date().isoformat()
     except Exception:
         date_wib = row.date_utc
-    return {"date": row.date_utc, "date_wib": date_wib, "slot": getattr(row, "slot", slot), "narrative": row.narrative, "sources": row.sources, "sections": getattr(row, "sections", [])}
+    # Include status dan cap waktu terakhir untuk panel status di FE
+    try:
+        created_wib = row.created_at.astimezone(ZoneInfo("Asia/Jakarta")).isoformat()
+    except Exception:
+        try:
+            created_wib = row.created_at.isoformat()
+        except Exception:
+            created_wib = None
+    return {
+        "date": row.date_utc,
+        "date_wib": date_wib,
+        "slot": getattr(row, "slot", slot),
+        "narrative": row.narrative,
+        "sources": row.sources,
+        "sections": getattr(row, "sections", []),
+        "last_run_status": getattr(row, "last_run_status", None),
+        "created_at": row.created_at,
+        "last_run_wib": created_wib,
+    }

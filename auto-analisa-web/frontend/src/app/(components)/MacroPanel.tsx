@@ -12,10 +12,16 @@ export default function MacroPanel(){
   if(!data && !err) return null
   const dateLabel = data?.date_wib ? `${data.date_wib} WIB` : (data?.date||'')
   const slot = data?.slot
+  const status = (data?.last_run_status||'').toLowerCase()
+  const statusColor = status==='ok'? 'bg-emerald-600' : status==='skip'? 'bg-amber-600' : status==='error'? 'bg-rose-600':'bg-zinc-500'
   return (
     <section className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-3">
       <div className="flex items-center justify-between">
-        <div className="font-semibold flex items-center gap-2">Makro Harian {dateLabel? `(${dateLabel})`:''} {slot && <span className="px-2 py-0.5 rounded bg-zinc-800 text-white text-xs">{slot}</span>}</div>
+        <div className="font-semibold flex items-center gap-2">
+          Makro Harian {dateLabel? `(${dateLabel})`:''}
+          {slot && <span className="px-2 py-0.5 rounded bg-zinc-800 text-white text-xs">{slot}</span>}
+          {status && <span className={`px-2 py-0.5 rounded text-white text-xs ${statusColor}`} title={data?.last_run_wib? `Last run: ${new Date(data.last_run_wib).toLocaleString('id-ID',{ timeZone:'Asia/Jakarta' })} WIB`:''}>{status}</span>}
+        </div>
         <button className="text-sm underline" onClick={()=>setOpen(o=>!o)}>{open?'Tutup':'Buka'}</button>
       </div>
       {open && (

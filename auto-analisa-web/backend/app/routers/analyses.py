@@ -293,6 +293,16 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
         else:
             # backward: accept wrapper with spot2
             spot2 = parsed.get("spot2") or {}
+        # Schema-guard: wajib ada entries[] dan tp[] minimal 1
+        rjb = (spot2 or {}).get("rencana_jual_beli") or {}
+        ent = list(rjb.get("entries") or [])
+        tps = list((spot2 or {}).get("tp") or [])
+        if not ent or not tps:
+            raise HTTPException(422, detail={
+                "error_code": "schema_invalid",
+                "message": "LLM tidak menyertakan entries[]/tp[] yang wajib.",
+                "retry_hint": "Ulangi verifikasi; pastikan model mengembalikan SPOT II lengkap.",
+            })
         # validate spot2 and apply light fixes
         v = validate_spot2(spot2)
         if not v.get("ok"):
@@ -303,6 +313,8 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
         summary = parsed.get("summary") or parsed.get("ringkas") or summary
         suggestions = parsed.get("suggestions") or {}
         fundamentals = parsed.get("fundamentals") or {}
+    except HTTPException:
+        raise
     except Exception:
         # Fallback: jika hanya suggestions tersedia dalam teks plain/JSON, coba terapkan ke SPOT2_INPUT
         spot2 = {}
@@ -466,6 +478,21 @@ async def apply_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(r
             "error_code": "precondition",
             "message": "Belum ada hasil LLM berbentuk SPOT II",
         })
+    # Guard: pastikan SPOT II memiliki entries & tp
+    try:
+        rjb = (last.spot2_json or {}).get("rencana_jual_beli") or {}
+        ent = list(rjb.get("entries") or [])
+        tps = list((last.spot2_json or {}).get("tp") or [])
+        if not ent or not tps:
+            raise HTTPException(422, detail={
+                "error_code": "schema_invalid",
+                "message": "SPOT II dari LLM tidak lengkap (entries/tp kosong).",
+                "retry_hint": "Ulangi verifikasi dan pastikan format sesuai.",
+            })
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(422, detail="SPOT II dari LLM tidak valid.")
     # apply spot2 to payload, keep legacy fields for FE compatibility
     p = a.payload_json or {}
     # write spot2
