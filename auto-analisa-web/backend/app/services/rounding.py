@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, Any
+from typing import Dict, Any, List
 import math
 
 import ccxt
@@ -70,3 +70,49 @@ def round_plan_prices(symbol: str, plan: Dict[str, Any]) -> Dict[str, Any]:
         p["invalid"] = _snap(float(p["invalid"]), tick)
     return p
 
+
+def round_spot2_prices(symbol: str, spot2: Dict[str, Any]) -> Dict[str, Any]:
+    """Round SPOT II price fields (entries ranges, tp ranges, invalid) to exchange tick size.
+    Fallback to no-op if tick size unavailable (offline).
+    """
+    s2 = dict(spot2 or {})
+    tick = _tick_size_for(symbol)
+    if tick is None:
+        return s2
+    # rencana_jual_beli entries + invalid
+    rjb = dict(s2.get("rencana_jual_beli") or {})
+    ents = []
+    for e in (rjb.get("entries") or []):
+        try:
+            rng: List[float] = list(e.get("range") or [])
+            lo = _snap(float(rng[0]), tick) if len(rng) > 0 else None
+            hi = _snap(float(rng[1]), tick) if len(rng) > 1 else lo
+            new_e = dict(e)
+            new_e["range"] = [lo, hi] if lo is not None else rng
+            ents.append(new_e)
+        except Exception:
+            ents.append(e)
+    if ents:
+        rjb["entries"] = ents
+    try:
+        inv = rjb.get("invalid")
+        if inv is not None:
+            rjb["invalid"] = _snap(float(inv), tick)
+    except Exception:
+        pass
+    s2["rencana_jual_beli"] = rjb
+    # TP nodes
+    tps = []
+    for t in (s2.get("tp") or []):
+        try:
+            rng = list(t.get("range") or [])
+            lo = _snap(float(rng[0]), tick) if len(rng) > 0 else None
+            hi = _snap(float(rng[1]), tick) if len(rng) > 1 else lo
+            new_t = dict(t)
+            new_t["range"] = [lo, hi] if lo is not None else rng
+            tps.append(new_t)
+        except Exception:
+            tps.append(t)
+    if tps:
+        s2["tp"] = tps
+    return s2

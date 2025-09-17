@@ -12,6 +12,7 @@ from app.workers.analyze_worker import refresh_analysis_rules_only
 from app.services.market import fetch_bundle
 from app.main import locks
 from app.services.validator import normalize_and_validate, validate_spot2
+from app.services.rounding import round_spot2_prices
 import os, json, time
 from app.config import settings
 
@@ -309,6 +310,13 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
             # still proceed but mark verdict if necessary
             verdict = "tweak" if verdict == "confirm" else verdict
         spot2 = v.get("fixes") or spot2
+        # Snap ke tick size bila tersedia, lalu validasi ulang agar rr_min konsisten
+        try:
+            spot2 = round_spot2_prices(a.symbol, spot2)
+            v2 = validate_spot2(spot2)
+            spot2 = v2.get("fixes") or spot2
+        except Exception:
+            pass
         verdict = (parsed.get("verdict") or parsed.get("status") or verdict).lower()
         summary = parsed.get("summary") or parsed.get("ringkas") or summary
         suggestions = parsed.get("suggestions") or {}
@@ -455,6 +463,7 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
             "summary": vr.summary,
             "suggestions": vr.suggestions,
             "fundamentals": vr.fundamentals,
+            "spot2_json": vr.spot2_json,
             "created_at": vr.created_at,
             "cached": False,
         }
@@ -478,6 +487,13 @@ async def apply_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(r
             "error_code": "precondition",
             "message": "Belum ada hasil LLM berbentuk SPOT II",
         })
+    # Round & validate sebelum apply (konsisten dengan verify)
+    try:
+        s2 = round_spot2_prices(a.symbol, last.spot2_json)
+        v = validate_spot2(s2)
+        last.spot2_json = v.get("fixes") or s2
+    except Exception:
+        pass
     # Guard: pastikan SPOT II memiliki entries & tp
     try:
         rjb = (last.spot2_json or {}).get("rencana_jual_beli") or {}
