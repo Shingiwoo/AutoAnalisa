@@ -28,6 +28,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
     return last >= 1000 ? 2 : last >= 100 ? 2 : last >= 10 ? 3 : last >= 1 ? 4 : last >= 0.1 ? 5 : 6
   },[p])
   const fmt = (n:number) => typeof n==='number' ? n.toFixed(precision) : n
+  const mtfData = useMemo(()=> (p?.mtf_summary || p?.spot2?.mtf_summary || {}), [p])
   // Sync chart timeframe with tab selection
   useEffect(()=>{
     const t = (tab==='tren'? '15m' : tab) as '5m'|'15m'|'1h'|'4h'
@@ -53,6 +54,8 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
     if(typeof invalids.m15 === 'number' && lastClose <= invalids.m15){ return { type:'soft', text:'Rawan — cek ulang 15m' } }
     return null
   },[lastClose, invalids])
+  const srExtra = useSRExtra(tab, ohlcv)
+  const computeSRCombined = () => ([...(p.support||[]), ...(p.resistance||[]), ...srExtra])
   return (
     <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 shadow-sm p-4 md:p-6 space-y-4 text-zinc-900 dark:text-zinc-100">
       <div className="flex items-center justify-between">
@@ -65,11 +68,12 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
 
       {/* Unified Tabs: controls chart timeframe & content */}
       <div className="flex items-center gap-2 text-sm" role="tablist" aria-label="Analisa Tabs">
-        <button role="tab" aria-selected={tab==='tren'} onClick={()=>setTab('tren')} className={`px-2.5 py-1 rounded-md transition ${tab==='tren'?'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>Tren Utama</button>
-        <button role="tab" aria-selected={tab==='5m'} onClick={()=>setTab('5m')} className={`px-2.5 py-1 rounded-md transition ${tab==='5m'?'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>5m</button>
-        <button role="tab" aria-selected={tab==='15m'} onClick={()=>setTab('15m')} className={`px-2.5 py-1 rounded-md transition ${tab==='15m'?'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>15m</button>
-        <button role="tab" aria-selected={tab==='1h'} onClick={()=>setTab('1h')} className={`px-2.5 py-1 rounded-md transition ${tab==='1h'?'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>1h</button>
-        <button role="tab" aria-selected={tab==='4h'} onClick={()=>setTab('4h')} className={`px-2.5 py-1 rounded-md transition ${tab==='4h'?'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>4h</button>
+        {(['tren','5m','15m','1h','4h'] as const).map(t=> (
+          <button key={t} role="tab" aria-selected={tab===t} onClick={()=>setTab(t)}
+            className={`px-2.5 py-1 rounded-md transition ${tab===t? 'bg-cyan-600 text-white':'bg-white text-zinc-900 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-white/90'} `}>
+            {t==='tren'? 'Tren Utama' : t}
+          </button>
+        ))}
         <div className="text-xs text-zinc-500" title={new Date(plan.created_at).toISOString()}>{createdWIB}</div>
       </div>
 
@@ -84,7 +88,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
 
       <div className="rounded-none overflow-hidden ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-950 relative">
         <div className="aspect-[16/9] md:aspect-[21/9]">
-          <ChartOHLCV key={`${plan.symbol}-${tf}-${expanded?'x':''}`} className="h-full" data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid: invalids, entries:p.entries||[], fvg: p.fvg||[], zones: p.sd_zones||[], ghost: ghost||undefined }} />
+          <ChartOHLCV key={`${plan.symbol}-${tf}-${expanded?'x':''}`} className="h-full" data={ohlcv} overlays={{ sr: computeSRCombined(), tp:p.tp||[], invalid: invalids, entries:p.entries||[], fvg: p.fvg||[], zones: p.sd_zones||[], ghost: ghost||undefined }} />
         </div>
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/5 dark:bg-white/5">
@@ -99,7 +103,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
           <div className="w-full max-w-7xl h-[80vh] bg-zinc-950 ring-1 ring-white/10 rounded-none relative" onClick={e=>e.stopPropagation()}>
             <button onClick={()=>setExpanded(false)} className="absolute top-3 right-3 px-2 py-1 rounded bg-zinc-800 text-white text-sm">Tutup</button>
             <div className="absolute inset-0">
-              <ChartOHLCV key={`${plan.symbol}-modal-${tf}`} className="w-full h-full" data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid: invalids, entries:p.entries||[], fvg: p.fvg||[], zones: p.sd_zones||[], ghost: ghost||undefined }} />
+              <ChartOHLCV key={`${plan.symbol}-modal-${tf}`} className="w-full h-full" data={ohlcv} overlays={{ sr: computeSRCombined(), tp:p.tp||[], invalid: invalids, entries:p.entries||[], fvg: p.fvg||[], zones: p.sd_zones||[], ghost: ghost||undefined }} />
             </div>
           </div>
         </div>
@@ -118,7 +122,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
           <Spot2View spot2={p.spot2} />
         </div>
       ) : (
-        <MTFDesc mtf={p.mtf_summary || {}} tf={tab} />
+        <MTFDesc mtf={mtfData || {}} tf={tab} />
       )}
 
       {/* Previous version toggle */}
@@ -290,4 +294,36 @@ function MTFDesc({ mtf, tf }:{ mtf:any, tf:'5m'|'15m'|'1h'|'4h' }){
       </dl>
     </section>
   )
+}
+
+// Lightweight S/R overlay inspired by TV pivots
+function computePivots(rows:any[], left=15, right=15){
+  const highs:number[]=[]; const lows:number[]=[]
+  for(let i=left;i<rows.length-right;i++){
+    let isHigh=true, isLow=true
+    for(let j=i-left;j<=i+right;j++){
+      if(rows[j].h>rows[i].h) isHigh=false
+      if(rows[j].l<rows[i].l) isLow=false
+      if(!isHigh && !isLow) break
+    }
+    if(isHigh) highs.push(rows[i].h)
+    if(isLow) lows.push(rows[i].l)
+  }
+  // Dedup (near-equal levels) and limit count
+  const round=(x:number)=> +x.toFixed(6)
+  const uniq=(arr:number[])=>{
+    const out:number[]=[]
+    arr.sort((a,b)=>a-b)
+    for(const v of arr){ if(out.length===0 || Math.abs(v-out[out.length-1])>1e-6) out.push(v) }
+    return out
+  }
+  return { highs: uniq(highs.map(round)).slice(-6), lows: uniq(lows.map(round)).slice(-6) }
+}
+
+function useSRExtra(tab:'tren'|'5m'|'15m'|'1h'|'4h', rows:any[]){
+  return useMemo(()=>{
+    if(tab==='tren' || !rows || rows.length===0) return [] as number[]
+    const { highs, lows } = computePivots(rows, 15, 15)
+    return [...highs, ...lows]
+  },[tab, JSON.stringify(rows?.slice(-220))])
 }
