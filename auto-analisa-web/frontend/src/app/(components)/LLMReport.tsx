@@ -29,7 +29,7 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
         <span className="text-xs opacity-70">{tsWib} WIB</span>
       </summary>
       <div className="mt-3 text-sm space-y-2">
-        {verification.summary && <div className="italic text-zinc-300">{verification.summary}</div>}
+        {verification.summary && <div className="italic text-zinc-600 dark:text-zinc-300">{verification.summary}</div>}
         <dl className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <dt className="text-zinc-500">Entries</dt>
@@ -67,4 +67,3 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
     </details>
   )
 }
-

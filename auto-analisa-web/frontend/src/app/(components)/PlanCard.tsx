@@ -217,7 +217,7 @@ function DiffList({ label, oldVals, newVals, colorUp, colorDown, fmt }:{ label:s
     <div>
       <dt className="text-zinc-500">{label} (LLM)</dt>
       <dd className="text-sm">
-        {kept.length>0 && <span className="text-zinc-300">{kept.map(fmt as any).join(' · ')}</span>}
+        {kept.length>0 && <span className="text-zinc-600 dark:text-zinc-300">{kept.map(fmt as any).join(' · ')}</span>}
         {added.length>0 && <span className={`ml-2 ${colorUp}`}>{added.map(fmt as any).join(' · ')}</span>}
       </dd>
     </div>
@@ -236,7 +236,7 @@ function LLMVerifyBlock({ plan, verification, fmt }:{ plan:any, verification:any
         <span className="font-medium">LLM Verifikasi</span>
         <span className="text-xs opacity-70">{verification?.created_at ? new Date(verification.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : ''}</span>
       </div>
-      {verification.summary && <div className="text-sm italic text-zinc-300">{verification.summary}</div>}
+      {verification.summary && <div className="text-sm italic text-zinc-600 dark:text-zinc-300">{verification.summary}</div>}
       <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <DiffList label="Entry" oldVals={plan.entries||[]} newVals={sug.entries} colorUp="text-emerald-400" colorDown="text-rose-400" fmt={fmt} />
         <DiffList label="TP" oldVals={plan.tp||[]} newVals={sug.tp} colorUp="text-emerald-400" colorDown="text-rose-400" fmt={fmt} />
