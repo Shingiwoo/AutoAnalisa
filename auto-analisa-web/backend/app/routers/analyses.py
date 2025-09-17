@@ -78,17 +78,21 @@ async def refresh_rules(aid: int, db: AsyncSession = Depends(get_db), user=Depen
     # Check invalid-breach against latest price before refreshing
     prev_payload = dict(a.payload_json or {})
     prev_invalidated = False
+    prev_soft_breach = False
     try:
         prev_invalid = prev_payload.get("invalid")
-        if isinstance(prev_invalid, (int, float)):
-            # use latest close on 1h if available, fallback to 15m
-            bundle = await fetch_bundle(a.symbol, ("1h", "15m"))
-            last_close = None
-            try:
-                last_close = float(bundle["1h"].iloc[-1].close)
-            except Exception:
-                last_close = float(bundle["15m"].iloc[-1].close)
-            if isinstance(last_close, float) and last_close < float(prev_invalid):
+        inv_soft = prev_payload.get("invalid_soft_15m")
+        inv_hard = prev_payload.get("invalid_hard_1h") or prev_invalid
+        # use latest close on 1h if available, fallback to 15m
+        bundle = await fetch_bundle(a.symbol, ("1h", "15m"))
+        last_close = None
+        try:
+            last_close = float(bundle["1h"].iloc[-1].close)
+        except Exception:
+            last_close = float(bundle["15m"].iloc[-1].close)
+        if isinstance(last_close, float):
+            # hard-breach check
+            if isinstance(inv_hard, (int, float)) and last_close <= float(inv_hard):
                 prev_invalidated = True
                 # Archive previous plan as snapshot for reference
                 try:
@@ -98,11 +102,14 @@ async def refresh_rules(aid: int, db: AsyncSession = Depends(get_db), user=Depen
                 except Exception:
                     # best-effort; do not block refresh
                     pass
+            # soft-breach check (only mark if not hard)
+            elif isinstance(inv_soft, (int, float)) and last_close <= float(inv_soft):
+                prev_soft_breach = True
     except Exception:
         pass
 
     a = await refresh_analysis_rules_only(db, user, a)
-    # Attach a brief notice if prior setup was invalidated
+    # Attach a brief notice if prior setup was invalidated or soft-breach
     if prev_invalidated:
         try:
             p = dict(a.payload_json or {})
@@ -111,8 +118,17 @@ async def refresh_rules(aid: int, db: AsyncSession = Depends(get_db), user=Depen
             await db.commit()
         except Exception:
             pass
+    elif prev_soft_breach:
+        try:
+            p = dict(a.payload_json or {})
+            p["notice"] = "Rawan — cek ulang 15m (soft-breach)."
+            a.payload_json = p
+            await db.commit()
+        except Exception:
+            pass
     return {
         "prev_invalidated": prev_invalidated,
+        "prev_soft_breach": prev_soft_breach,
         "analysis": {
             "id": a.id,
             "symbol": a.symbol,
@@ -218,6 +234,13 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
         "weights": p.get("weights", []),
         "support": p.get("support", []),
         "resistance": p.get("resistance", []),
+        "invalids": {
+            "m5": p.get("invalid_tactical_5m"),
+            "m15": p.get("invalid_soft_15m"),
+            "h1": p.get("invalid_hard_1h") or p.get("invalid"),
+            "h4": p.get("invalid_struct_4h"),
+        },
+        "mtf_summary": p.get("mtf_summary", {}),
     }
     # Build SPOT II basis (from existing payload or rules)
     spot2_base = (p.get("spot2") if isinstance(p, dict) else None) or {}
@@ -228,13 +251,23 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
             spot2_base = {}
 
     # Instruct LLM to respond with valid SPOT II JSON + meta
+    constraints = {
+        "rr_min_required": 1.2,
+        "tp_must_be_ascending": True,
+        "must_round_to_tick": True,
+        "invalid_order": ["invalid_tactical_5m", "invalid_soft_15m", "invalid_hard_1h"],
+        "breakout_invalid_buffer_atr15m": 0.5,
+        "dca_preference": {"default": "DCA", "weights": {"DCA": [0.4,0.6], "Balanced": [0.5,0.5], "NearPrice": [0.6,0.4]}},
+        "output_format": "FORMAT_ANALISA_SPOT_II",
+    }
     prompt = (
         "Validasi dan perbaiki (jika perlu) rencana berikut. Kembalikan JSON SPOT II valid (object) "
         "dengan kunci utama: rencana_jual_beli{profile, entries:[{range:[low,high], weight, type}], invalid, eksekusi_hanya_jika}, "
-        "tp:[{name, range:[low,high]}], ringkas_teknis(optional), sr(optional), metrics(optional). Juga sertakan: verdict, summary, fundamentals{bullets:[]}. "
-        "Pastikan TP ascending dan rr_min>=1.2 bila mungkin.\n"
+        "tp:[{name, range:[low,high]}], ringkas_teknis(optional), sr(optional), metrics(optional). Sertakan juga verdict, summary, fundamentals{bullets:[]}. "
+        "Ikuti guardrails berikut.\n"
+        f"GUARDRAILS: {json.dumps(constraints, ensure_ascii=False)}\n"
         f"SPOT2_INPUT: {json.dumps(spot2_base, ensure_ascii=False)}\n"
-        f"SNAPSHOT: {json.dumps(snap, ensure_ascii=False)}"
+        f"SNAPSHOT_MTF: {json.dumps(snap, ensure_ascii=False)}"
     )
     s = await get_or_init_settings(db)
 
@@ -447,6 +480,16 @@ async def apply_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(r
         p["tp"] = [float(x) for x in tp_arr if isinstance(x,(int,float))]
         if isinstance(invalid,(int,float)):
             p["invalid"] = float(invalid)
+            # sinkronkan invalid bertingkat (fallback simple bila LLM hanya kembalikan 1 invalid)
+            try:
+                inv = float(invalid)
+                p["invalid_hard_1h"] = inv
+                # gunakan buffer sederhana
+                buf = max(abs(inv) * 1e-4, 0.0)
+                p["invalid_soft_15m"] = round(inv + buf, 6)
+                p["invalid_tactical_5m"] = round(inv + buf * 0.5, 6)
+            except Exception:
+                pass
         # set weights if provided
         wts = [ float(e.get("weight") or 0.0) for e in (rjb.get("entries") or []) ]
         if wts and len(wts)==len(p["entries"]):

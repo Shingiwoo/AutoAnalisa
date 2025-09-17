@@ -7,7 +7,8 @@ import Spot2View from './Spot2View'
 
 export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAfterVerify}:{plan:any,onUpdate:()=>void, llmEnabled?:boolean, llmRemaining?:number, onAfterVerify?:()=>void}){
   const p=plan.payload
-  const [tf,setTf]=useState<'5m'|'15m'|'1h'>(()=> '15m')
+  const [tf,setTf]=useState<'5m'|'15m'|'1h'|'4h'>(()=> '15m')
+  const [tab,setTab]=useState<'tren'|'5m'|'15m'|'1h'|'4h'>(()=> 'tren')
   const [ohlcv,setOhlcv]=useState<any[]>([])
   const [loading,setLoading]=useState(false)
   const [verifying,setVerifying]=useState(false)
@@ -29,6 +30,23 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
   useEffect(()=>{ (async()=>{
     try{ setLoading(true); const {data}=await api.get('ohlcv', { params:{ symbol:plan.symbol, tf, limit:200 } }); setOhlcv(data) }catch{} finally{ setLoading(false) }
   })() },[tf, plan.symbol])
+  const invalids = useMemo(()=>{
+    const s2 = p?.spot2 || {}
+    const invs = s2?.invalids || {}
+    return {
+      m5:  typeof invs.m5 === 'number'  ? invs.m5  : (typeof p?.invalid_tactical_5m==='number'? p.invalid_tactical_5m : undefined),
+      m15: typeof invs.m15 === 'number' ? invs.m15 : (typeof p?.invalid_soft_15m==='number'? p.invalid_soft_15m : undefined),
+      h1:  typeof invs.h1 === 'number'  ? invs.h1  : (typeof p?.invalid_hard_1h==='number'? p.invalid_hard_1h : (typeof p?.invalid==='number'? p.invalid : undefined)),
+      h4:  typeof invs.h4 === 'number'  ? invs.h4  : (typeof p?.invalid_struct_4h==='number'? p.invalid_struct_4h : undefined),
+    }
+  },[p])
+  const lastClose = (ohlcv && ohlcv.length>0) ? ohlcv[ohlcv.length-1].c : undefined
+  const breach = useMemo(()=>{
+    if(typeof lastClose !== 'number') return null
+    if(typeof invalids.h1 === 'number' && lastClose <= invalids.h1){ return { type:'hard', text:'Invalidated — rencana baru dibuat (v+1)' } }
+    if(typeof invalids.m15 === 'number' && lastClose <= invalids.m15){ return { type:'soft', text:'Rawan — cek ulang 15m' } }
+    return null
+  },[lastClose, invalids])
   return (
     <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 shadow-sm p-4 md:p-6 space-y-4 text-zinc-900 dark:text-zinc-100">
       <div className="flex items-center justify-between">
@@ -43,6 +61,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
         <button role="tab" aria-selected={tf==='5m'} onClick={()=>setTf('5m')} className={`px-2.5 py-1 rounded-md transition ${tf==='5m'?'bg-cyan-600 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>5m</button>
         <button role="tab" aria-selected={tf==='15m'} onClick={()=>setTf('15m')} className={`px-2.5 py-1 rounded-md transition ${tf==='15m'?'bg-cyan-600 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>15m</button>
         <button role="tab" aria-selected={tf==='1h'} onClick={()=>setTf('1h')} className={`px-2.5 py-1 rounded-md transition ${tf==='1h'?'bg-cyan-600 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>1h</button>
+        <button role="tab" aria-selected={tf==='4h'} onClick={()=>setTf('4h')} className={`px-2.5 py-1 rounded-md transition ${tf==='4h'?'bg-cyan-600 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>4h</button>
         <div className="text-xs text-zinc-500" title={new Date(plan.created_at).toISOString()}>{createdWIB}</div>
       </div>
 
@@ -50,10 +69,14 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
       {p?.notice && (
         <div className="p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 text-sm">{p.notice}</div>
       )}
+      {/* Runtime breach notification based on latest price */}
+      {breach && (
+        <div className={`p-2 rounded text-sm ${breach.type==='hard'?'bg-rose-50 border border-rose-200 text-rose-700':'bg-amber-50 border border-amber-200 text-amber-800'}`}>{breach.text}</div>
+      )}
 
       <div className="rounded-none overflow-hidden ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-950 relative">
         <div className="aspect-[16/9] md:aspect-[21/9]">
-          <ChartOHLCV key={`${plan.symbol}-${tf}-${expanded?'x':''}`} className="h-full" data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid:p.invalid, entries:p.entries||[], fvg: p.fvg||[], zones: p.sd_zones||[], ghost: ghost||undefined }} />
+          <ChartOHLCV key={`${plan.symbol}-${tf}-${expanded?'x':''}`} className="h-full" data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid: invalids, entries:p.entries||[], fvg: p.fvg||[], zones: p.sd_zones||[], ghost: ghost||undefined }} />
         </div>
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/5 dark:bg-white/5">
@@ -68,14 +91,36 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
           <div className="w-full max-w-7xl h-[80vh] bg-zinc-950 ring-1 ring-white/10 rounded-none relative" onClick={e=>e.stopPropagation()}>
             <button onClick={()=>setExpanded(false)} className="absolute top-3 right-3 px-2 py-1 rounded bg-zinc-800 text-white text-sm">Tutup</button>
             <div className="absolute inset-0">
-              <ChartOHLCV key={`${plan.symbol}-modal-${tf}`} className="w-full h-full" data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid:p.invalid, entries:p.entries||[], fvg: p.fvg||[], zones: p.sd_zones||[], ghost: ghost||undefined }} />
+              <ChartOHLCV key={`${plan.symbol}-modal-${tf}`} className="w-full h-full" data={ohlcv} overlays={{ sr:[...(p.support||[]),...(p.resistance||[])], tp:p.tp||[], invalid: invalids, entries:p.entries||[], fvg: p.fvg||[], zones: p.sd_zones||[], ghost: ghost||undefined }} />
             </div>
           </div>
         </div>
       )}
 
-      {/* SPOT II View */}
-      <Spot2View spot2={p.spot2} />
+      {/* Tabs Lapis-1 (MTF) */}
+      <div className="flex items-center gap-2 text-sm" role="tablist" aria-label="MTF Tabs">
+        <button role="tab" aria-selected={tab==='tren'} onClick={()=>setTab('tren')} className={`px-2.5 py-1 rounded-md transition ${tab==='tren'?'bg-zinc-900 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>Tren Utama</button>
+        <button role="tab" aria-selected={tab==='5m'} onClick={()=>setTab('5m')} className={`px-2.5 py-1 rounded-md transition ${tab==='5m'?'bg-zinc-900 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>5m</button>
+        <button role="tab" aria-selected={tab==='15m'} onClick={()=>setTab('15m')} className={`px-2.5 py-1 rounded-md transition ${tab==='15m'?'bg-zinc-900 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>15m</button>
+        <button role="tab" aria-selected={tab==='1h'} onClick={()=>setTab('1h')} className={`px-2.5 py-1 rounded-md transition ${tab==='1h'?'bg-zinc-900 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>1h</button>
+        <button role="tab" aria-selected={tab==='4h'} onClick={()=>setTab('4h')} className={`px-2.5 py-1 rounded-md transition ${tab==='4h'?'bg-zinc-900 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>4h</button>
+      </div>
+
+      {tab==='tren' ? (
+        <div className="space-y-2">
+          {/* Badge invalid bertingkat */}
+          <div className="flex flex-wrap gap-2 text-xs">
+            {typeof invalids.m5==='number' && <span className="px-2 py-0.5 rounded bg-amber-600 text-white" title="Invalid tactical 5m">5m: {fmt(invalids.m5)}</span>}
+            {typeof invalids.m15==='number' && <span className="px-2 py-0.5 rounded bg-yellow-600 text-white" title="Invalid soft 15m">15m: {fmt(invalids.m15)}</span>}
+            {typeof invalids.h1==='number' && <span className="px-2 py-0.5 rounded bg-rose-600 text-white" title="Invalid hard 1h">1h: {fmt(invalids.h1)}</span>}
+            {typeof invalids.h4==='number' && <span className="px-2 py-0.5 rounded bg-violet-600 text-white" title="Invalid struct 4h">4h: {fmt(invalids.h4)}</span>}
+          </div>
+          {/* SPOT II View */}
+          <Spot2View spot2={p.spot2} />
+        </div>
+      ) : (
+        <MTFDesc mtf={p.mtf_summary || {}} tf={tab} />
+      )}
 
       {/* Previous version toggle */}
       <div className="flex items-center gap-2">
@@ -219,5 +264,31 @@ function Glossary(){
         <li><b>LLM Verifikasi</b>: konfirmasi/penyesuaian rencana oleh model (opsional)</li>
       </ul>
     </details>
+  )
+}
+
+function MTFDesc({ mtf, tf }:{ mtf:any, tf:'5m'|'15m'|'1h'|'4h' }){
+  const d = mtf?.[tf] || {}
+  return (
+    <section className="rounded-xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white/5 p-3 text-sm">
+      <dl className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <dt className="text-zinc-500">Tren & Momentum</dt>
+          <dd>{d.tren_momentum || '-'}</dd>
+        </div>
+        <div>
+          <dt className="text-zinc-500">Level & Zona</dt>
+          <dd>{d.level_zona || '-'}</dd>
+        </div>
+        <div className="md:col-span-2">
+          <dt className="text-zinc-500">Skenario cepat</dt>
+          <dd>{d.skenario || '-'}</dd>
+        </div>
+        <div className="md:col-span-2">
+          <dt className="text-zinc-500">Catatan</dt>
+          <dd>{d.catatan || '-'}</dd>
+        </div>
+      </dl>
+    </section>
   )
 }

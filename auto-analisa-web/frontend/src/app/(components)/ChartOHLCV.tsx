@@ -9,7 +9,9 @@ type Zone = { type:'supply'|'demand', low:number, high:number }
 
 type GhostOverlay = { entries?: number[], tp?: number[], invalid?: number }
 
-export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], overlays?: { sr?: number[], tp?: number[], invalid?: number, entries?: number[], fvg?: FVG[], zones?: Zone[], ghost?: GhostOverlay }, className?: string }){
+type InvalidMulti = number | { m5?: number, m15?: number, h1?: number, h4?: number }
+
+export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], overlays?: { sr?: number[], tp?: number[], invalid?: InvalidMulti, entries?: number[], fvg?: FVG[], zones?: Zone[], ghost?: GhostOverlay }, className?: string }){
   const ref = useRef<HTMLDivElement>(null)
   useEffect(()=>{
     if(!ref.current) return
@@ -30,8 +32,15 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
     const mapped: CandlestickData[] = data.map(d=>({ time: d.t/1000 as any, open:d.o, high:d.h, low:d.l, close:d.c }))
     series.setData(mapped)
 
-    if (overlays?.invalid){
+    // Invalid overlays (single or bertingkat)
+    if (typeof overlays?.invalid === 'number'){
       series.createPriceLine({ price: overlays.invalid, color: '#ef4444', lineWidth: 2, lineStyle: 2, title: 'Invalid' })
+    } else if (overlays?.invalid && typeof overlays.invalid === 'object'){
+      const inv = overlays.invalid as any
+      if (typeof inv.m5 === 'number') series.createPriceLine({ price: inv.m5, color: '#f59e0b', lineWidth: 1, lineStyle: 2, title: 'Inv 5m' })
+      if (typeof inv.m15 === 'number') series.createPriceLine({ price: inv.m15, color: '#eab308', lineWidth: 1, lineStyle: 2, title: 'Inv 15m' })
+      if (typeof inv.h1 === 'number') series.createPriceLine({ price: inv.h1, color: '#ef4444', lineWidth: 2, lineStyle: 0, title: 'Invalid 1h' })
+      if (typeof inv.h4 === 'number') series.createPriceLine({ price: inv.h4, color: '#8b5cf6', lineWidth: 1, lineStyle: 1, title: 'Inv 4h' })
     }
     if (overlays?.tp){
       for (const t of overlays.tp){ series.createPriceLine({ price: t, color: '#16a34a', lineWidth: 1, lineStyle: 0, title: 'TP' }) }
