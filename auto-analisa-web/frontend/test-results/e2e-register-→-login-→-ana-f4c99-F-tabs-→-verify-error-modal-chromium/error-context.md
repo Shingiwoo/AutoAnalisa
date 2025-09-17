@@ -1,0 +1,78 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - navigation [ref=e6]:
+      - generic [ref=e7]:
+        - link "Auto Analisa" [ref=e8] [cursor=pointer]:
+          - /url: /
+        - generic [ref=e9]:
+          - link "Analisa" [ref=e10] [cursor=pointer]:
+            - /url: "#analisa"
+          - link "Watchlist" [ref=e11] [cursor=pointer]:
+            - /url: "#watchlist"
+      - generic [ref=e13]:
+        - button "Ganti Password" [ref=e14]:
+          - img [ref=e15]
+          - text: Ganti Password
+        - button "Logout" [ref=e18]:
+          - img [ref=e19]
+          - text: Logout
+  - main [ref=e23]:
+    - generic [ref=e27]:
+      - heading "Analisis Crypto Otomatis, Cepat & Jelas" [level=1] [ref=e28]
+      - paragraph [ref=e29]: "Dapatkan rencana intraday lengkap: bias dominan, level kunci, entri, TP, dan invalidasi — dihasilkan otomatis berdasarkan data pasar terbaru."
+      - link "Mulai Analisa" [ref=e31] [cursor=pointer]:
+        - /url: "#analisa"
+    - generic [ref=e33]:
+      - generic [ref=e35]:
+        - generic [ref=e36]:
+          - heading "Watchlist" [level=3] [ref=e37]
+          - generic [ref=e38]:
+            - textbox "OPUSDT" [ref=e39]
+            - button "Tambah" [ref=e40]:
+              - img [ref=e41]
+              - text: Tambah
+          - generic [ref=e42]: Gagal memuat watchlist
+        - heading "Daftar Koin" [level=3] [ref=e43]
+      - generic [ref=e45]:
+        - generic [ref=e46]: Panduan Pengguna
+        - list [ref=e47]:
+          - listitem [ref=e48]:
+            - text: Tambah simbol di Watchlist lalu klik
+            - generic [ref=e49]: Analisa
+            - text: untuk membuat kartu analisa (maks 4 aktif).
+          - listitem [ref=e50]:
+            - text: PlanCard menampilkan rencana
+            - generic [ref=e51]: SPOT II
+            - text: (Rules). Klik
+            - generic [ref=e52]: Update
+            - text: untuk penyegaran. Jika harga tembus
+            - generic [ref=e53]: invalid
+            - text: ", sistem membuat versi baru dan memberi tanda"
+            - generic [ref=e54]: Updated
+            - text: .
+          - listitem [ref=e55]:
+            - generic [ref=e56]: LLM Verifikasi
+            - text: "opsional: klik"
+            - generic [ref=e57]: Tanya GPT
+            - text: untuk verifikasi SPOT II; gunakan
+            - generic [ref=e58]: Pratinjau (ghost)
+            - text: untuk melihat overlay saran;
+            - generic [ref=e59]: Terapkan Saran
+            - text: untuk menyimpan.
+          - listitem [ref=e60]:
+            - generic [ref=e61]: Chart
+            - text: ": garis Entry, TP, Invalid, S/R akan tampil. Ghost overlay ditampilkan dengan garis putus-putus."
+          - listitem [ref=e62]:
+            - generic [ref=e63]: Macro Harian
+            - text: dan
+            - generic [ref=e64]: Sessions Hint
+            - text: ": ringkasan makro dan jam WIB signifikan tampil otomatis bila tersedia."
+          - listitem [ref=e65]:
+            - generic [ref=e66]: Aturan
+            - text: ": Edukasi, bukan saran finansial. Terdapat rate-limit dan batas harian LLM per pengguna."
+      - generic [ref=e67]: "Aturan: Edukasi, bukan saran finansial. Rate-limit aktif. Hasil per user terpisah."
+  - alert [ref=e68]
+```
