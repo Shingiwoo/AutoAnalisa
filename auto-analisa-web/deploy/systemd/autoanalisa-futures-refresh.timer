@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Futures Signals Refresh every 10 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Persistent=true
+Unit=autoanalisa-futures-refresh.service
+
+[Install]
+WantedBy=timers.target
+

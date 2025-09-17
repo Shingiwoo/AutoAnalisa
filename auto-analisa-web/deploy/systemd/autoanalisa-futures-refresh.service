@@ -1,0 +1,16 @@
+[Unit]
+Description=Auto Analisa Web - Futures Signals Refresh
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/auto-analisa-web/backend
+Environment=APP_ENV=prod
+Environment=PYBIN=/opt/auto-analisa-web/backend/.venv/bin/python
+ExecStart=/bin/bash -lc 'PY=${PYBIN}; if [ ! -x "$PY" ]; then PY=$(command -v python3); fi; export PYTHONPATH=$PWD; exec "$PY" scripts/futures_refresh.py'
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target
+

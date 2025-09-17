@@ -101,8 +101,11 @@ def validate_futures(plan: Dict) -> Dict:
         except Exception:
             invalid_final = inv_h1 or inv_m15 or inv_m5
 
-        fee_bp = float((s.get("risk") or {}).get("fee_bp", 0.0) or 0.0)
-        slippage_bp = float((s.get("risk") or {}).get("slippage_bp", 0.0) or 0.0)
+        risk = dict(s.get("risk") or {})
+        fee_bp = float(risk.get("fee_bp", 0.0) or 0.0)
+        slippage_bp = float(risk.get("slippage_bp", 0.0) or 0.0)
+        liq_price_est = risk.get("liq_price_est")
+        liq_buffer_abs = risk.get("liq_buffer_abs")  # numeric absolute buffer (e.g., k*ATR15m)
         rr_req = 1.5
         tp1 = tp_prices[0] if tp_prices else None
 
@@ -142,6 +145,23 @@ def validate_futures(plan: Dict) -> Dict:
         except Exception:
             pass
 
+        # Liq buffer guard: invalid_final must be away from liq by buffer
+        try:
+            if liq_price_est is not None and liq_buffer_abs is not None and entries:
+                e_avg = _weighted_avg(entries, weights)
+                if side == "SHORT":
+                    # invalid above price; keep it below liq by buffer
+                    target_max = float(liq_price_est) - float(liq_buffer_abs)
+                    if invalid_final is None or invalid_final > target_max:
+                        invalid_final = target_max
+                else:
+                    # long: invalid below price; keep it above liq by buffer
+                    target_min = float(liq_price_est) + float(liq_buffer_abs)
+                    if invalid_final is None or invalid_final < target_min:
+                        invalid_final = target_min
+        except Exception:
+            pass
+
         # RR check >= 1.5 (post fees)
         if entries and tp_prices and invalid_final is not None:
             rr = compute_rr_min_futures(side, entries, tp_prices[0], float(invalid_final), fee_bp, slippage_bp)
@@ -172,4 +192,3 @@ def validate_futures(plan: Dict) -> Dict:
         out["warnings"].append(str(e))
         out["fixes"] = plan
     return out
-
