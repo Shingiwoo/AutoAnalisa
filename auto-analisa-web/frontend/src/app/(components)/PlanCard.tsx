@@ -131,7 +131,27 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
 
       <div className="rounded-none overflow-hidden ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-950 relative">
         <div className="aspect-[16/9] md:aspect-[21/9]">
-          <ChartOHLCV key={`${plan.symbol}-${tf}-${expanded?'x':''}`} className="h-full" data={ohlcv} overlays={{ sr: computeSRCombined(), tp:p.tp||[], invalid: invalids, entries:p.entries||[], fvg: p.fvg||[], zones: p.sd_zones||[], ghost: ghost||undefined }} />
+          <ChartOHLCV
+            key={`${plan.symbol}-${tf}-${expanded?'x':''}`}
+            className="h-full"
+            data={ohlcv}
+            overlays={{
+              sr: computeSRCombined(),
+              tp: p.tp||[],
+              invalid: mode==='futures' ? ({
+                m5: typeof fut?.invalids?.tactical_5m==='number'? fut.invalids.tactical_5m : invalids.m5,
+                m15: typeof fut?.invalids?.soft_15m==='number'? fut.invalids.soft_15m : invalids.m15,
+                h1: typeof fut?.invalids?.hard_1h==='number'? fut.invalids.hard_1h : invalids.h1,
+                h4: typeof fut?.invalids?.struct_4h==='number'? fut.invalids.struct_4h : invalids.h4,
+              } as any) : invalids,
+              entries: mode==='futures' ? (fut?.entries||[]).map((e:any)=> Array.isArray(e.range)? e.range[0]: undefined).filter((x:any)=> typeof x==='number') : (p.entries||[]),
+              fvg: p.fvg||[],
+              zones: p.sd_zones||[],
+              ghost: ghost||undefined,
+              liq: mode==='futures' && typeof fut?.risk?.liq_price_est==='number' ? fut.risk.liq_price_est : undefined,
+              funding: mode==='futures' && fut?.futures_signals?.funding?.time ? [{ timeMs: Date.parse(fut.futures_signals.funding.time), windowMin: (fut?.risk?.funding_window_min||10) }] : undefined,
+            }}
+          />
         </div>
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/5 dark:bg-white/5">
@@ -146,7 +166,27 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
           <div className="w-full max-w-7xl h-[80vh] bg-zinc-950 ring-1 ring-white/10 rounded-none relative" onClick={e=>e.stopPropagation()}>
             <button onClick={()=>setExpanded(false)} className="absolute top-3 right-3 px-2 py-1 rounded bg-zinc-800 text-white text-sm">Tutup</button>
             <div className="absolute inset-0">
-              <ChartOHLCV key={`${plan.symbol}-modal-${tf}`} className="w-full h-full" data={ohlcv} overlays={{ sr: computeSRCombined(), tp:p.tp||[], invalid: invalids, entries:p.entries||[], fvg: p.fvg||[], zones: p.sd_zones||[], ghost: ghost||undefined }} />
+              <ChartOHLCV
+                key={`${plan.symbol}-modal-${tf}`}
+                className="w-full h-full"
+                data={ohlcv}
+                overlays={{
+                  sr: computeSRCombined(),
+                  tp:p.tp||[],
+                  invalid: mode==='futures' ? ({
+                    m5: typeof fut?.invalids?.tactical_5m==='number'? fut.invalids.tactical_5m : invalids.m5,
+                    m15: typeof fut?.invalids?.soft_15m==='number'? fut.invalids.soft_15m : invalids.m15,
+                    h1: typeof fut?.invalids?.hard_1h==='number'? fut.invalids.hard_1h : invalids.h1,
+                    h4: typeof fut?.invalids?.struct_4h==='number'? fut.invalids.struct_4h : invalids.h4,
+                  } as any) : invalids,
+                  entries: mode==='futures' ? (fut?.entries||[]).map((e:any)=> Array.isArray(e.range)? e.range[0]: undefined).filter((x:any)=> typeof x==='number') : (p.entries||[]),
+                  fvg: p.fvg||[],
+                  zones: p.sd_zones||[],
+                  ghost: ghost||undefined,
+                  liq: mode==='futures' && typeof fut?.risk?.liq_price_est==='number' ? fut.risk.liq_price_est : undefined,
+                  funding: mode==='futures' && fut?.futures_signals?.funding?.time ? [{ timeMs: Date.parse(fut.futures_signals.funding.time), windowMin: (fut?.risk?.funding_window_min||10) }] : undefined,
+                }}
+              />
             </div>
           </div>
         </div>

@@ -16,7 +16,11 @@ export default function AdminPage(){
   const [macroStatus,setMacroStatus]=useState<any|null>(null)
   // Simple tabs for grouping
   const [tab,setTab]=useState<'Settings'|'Indicator'|'Macro'|'Paritas'|'Docs'>('Settings')
-  const [indTab,setIndTab]=useState<'FVG'|'SupplyDemand'>('FVG')
+  const [indTab,setIndTab]=useState<'FVG'|'SupplyDemand'|'SinyalFutures'>('FVG')
+  // Futures signals preview
+  const [sigSym,setSigSym]=useState('BTCUSDT')
+  const [sig,setSig]=useState<any|null>(null)
+  const [sigBusy,setSigBusy]=useState(false)
   // Parity test UI
   const [sym,setSym]=useState('BTCUSDT')
   const [tf,setTf]=useState<'15m'|'1h'>('15m')
@@ -141,8 +145,8 @@ export default function AdminPage(){
       {tab==='Indicator' && (
         <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 space-y-4">
           <div className="flex items-center gap-2">
-            {(['FVG','SupplyDemand'] as const).map(t=> (
-              <button key={t} onClick={()=> setIndTab(t)} className={`px-3 py-1.5 rounded ${indTab===t? 'bg-cyan-600 text-white':'bg-zinc-800 text-white/80 hover:bg-zinc-700'}`}>{t==='FVG'?'FVG':'Supply/Demand'}</button>
+            {(['FVG','SupplyDemand','SinyalFutures'] as const).map(t=> (
+              <button key={t} onClick={()=> setIndTab(t)} className={`px-3 py-1.5 rounded ${indTab===t? 'bg-cyan-600 text-white':'bg-zinc-800 text-white/80 hover:bg-zinc-700'}`}>{t==='FVG'?'FVG':(t==='SupplyDemand'?'Supply/Demand':'Sinyal Futures')}</button>
             ))}
           </div>
           {indTab==='FVG' && (
@@ -180,6 +184,44 @@ export default function AdminPage(){
               <label>Min Departure <input type="number" step="0.01" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_min_departure ?? 1.5} onChange={async e=>{ const next={...s,sd_min_departure:+e.target.value}; setS(next); await save(next) }}/></label>
               <label>Vol Div <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_vol_div ?? 20} onChange={async e=>{ const next={...s,sd_vol_div:+e.target.value}; setS(next); await save(next) }}/></label>
               <label>Vol Threshold (%) <input type="number" step="0.01" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.sd_vol_threshold_pct ?? 10} onChange={async e=>{ const next={...s,sd_vol_threshold_pct:+e.target.value}; setS(next); await save(next) }}/></label>
+            </div>
+          )}
+          {indTab==='SinyalFutures' && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                <label>Symbol <input value={sigSym} onChange={e=>setSigSym(e.target.value)} className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10"/></label>
+                <button className="px-3 py-2 rounded bg-cyan-600 text-white font-medium hover:bg-cyan-500" onClick={async()=>{
+                  try{ setSigBusy(true); const {data}=await api.get('admin/futures/signals', { params:{ symbol: sigSym }}); setSig(data) }
+                  catch{ setSig(null) } finally{ setSigBusy(false) }
+                }}>{sigBusy?'Memuat…':'Lihat'}</button>
+                <button className="px-3 py-2 rounded bg-zinc-800 text-white font-medium hover:bg-zinc-700" onClick={async()=>{
+                  try{ setSigBusy(true); await api.post('admin/futures/refresh', null, { params:{ symbol: sigSym }}); const {data}=await api.get('admin/futures/signals', { params:{ symbol: sigSym }}); setSig(data) }
+                  catch{ setSig(null) } finally{ setSigBusy(false) }
+                }}>Refresh</button>
+              </div>
+              {sig?.has_data ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                  <div className="rounded p-2 ring-1 ring-zinc-200 dark:ring-white/10">
+                    <div className="font-medium">Funding</div>
+                    <div>now: {sig?.funding?.now ?? '-'} • next: {sig?.funding?.next ?? '-'}</div>
+                    <div>time: {sig?.funding?.time ?? '-'}</div>
+                  </div>
+                  <div className="rounded p-2 ring-1 ring-zinc-200 dark:ring-white/10">
+                    <div className="font-medium">Open Interest</div>
+                    <div>now: {sig?.oi?.now ?? '-'} • Δ1d: {sig?.oi?.d1 ?? '-'}</div>
+                  </div>
+                  <div className="rounded p-2 ring-1 ring-zinc-200 dark:ring-white/10">
+                    <div className="font-medium">Basis</div>
+                    <div>now: {sig?.basis?.now ?? '-'}</div>
+                  </div>
+                  <div className="rounded p-2 ring-1 ring-zinc-200 dark:ring-white/10">
+                    <div className="font-medium">Taker Δ</div>
+                    <div>m5: {sig?.taker_delta?.m5 ?? '-'} • m15: {sig?.taker_delta?.m15 ?? '-'} • h1: {sig?.taker_delta?.h1 ?? '-'}</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-zinc-500">Belum ada data.</div>
+              )}
             </div>
           )}
         </div>

@@ -9,9 +9,11 @@ type Zone = { type:'supply'|'demand', low:number, high:number }
 
 type GhostOverlay = { entries?: number[], tp?: number[], invalid?: number }
 
+type FundingWin = { timeMs: number, windowMin: number }
+
 type InvalidMulti = number | { m5?: number, m15?: number, h1?: number, h4?: number }
 
-export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], overlays?: { sr?: number[], tp?: number[], invalid?: InvalidMulti, entries?: number[], fvg?: FVG[], zones?: Zone[], ghost?: GhostOverlay }, className?: string }){
+export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], overlays?: { sr?: number[], tp?: number[], invalid?: InvalidMulti, entries?: number[], fvg?: FVG[], zones?: Zone[], ghost?: GhostOverlay, liq?: number, funding?: FundingWin[] }, className?: string }){
   const ref = useRef<HTMLDivElement>(null)
   useEffect(()=>{
     if(!ref.current) return
@@ -139,10 +141,49 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
 
     drawBoxes()
 
+    // Liqudation price line (grey dotted)
+    if (typeof overlays?.liq === 'number'){
+      series.createPriceLine({ price: overlays.liq, color: '#9ca3af', lineWidth: 1, lineStyle: 1, title: 'Liq' })
+    }
+    // Funding window vertical highlights (± minutes around time)
+    const vOverlay = document.createElement('div')
+    vOverlay.style.position = 'absolute'
+    vOverlay.style.inset = '0'
+    vOverlay.style.pointerEvents = 'none'
+    ref.current.appendChild(vOverlay)
+    function drawFunding(){
+      vOverlay.innerHTML=''
+      const funding = overlays?.funding || []
+      if(!funding || funding.length===0) return
+      const timeToX = (ms:number): number => {
+        const v = chart.timeScale().timeToCoordinate((ms/1000) as any)
+        return typeof v === 'number' ? v : 0
+      }
+      const h = ref.current?.clientHeight || 0
+      const msPerMin = 60_000
+      for(const win of funding){
+        const x = timeToX(win.timeMs)
+        const pad = Math.max(1, (win.windowMin||10) * 0.35) // approx pixels per minute
+        const left = Math.max(0, x - pad)
+        const right = Math.max(0, (ref.current?.clientWidth||0) - (x + pad))
+        const div = document.createElement('div')
+        div.style.position='absolute'
+        div.style.left = `${left}px`
+        div.style.right = `${right}px`
+        div.style.top = `0px`
+        div.style.height = `${h}px`
+        div.style.background = 'rgba(59,130,246,0.08)'
+        div.style.borderLeft = '1px solid rgba(59,130,246,0.35)'
+        div.style.borderRight = '1px solid rgba(59,130,246,0.35)'
+        vOverlay.appendChild(div)
+      }
+    }
+    drawFunding()
+
     chart.timeScale().subscribeVisibleTimeRangeChange(()=> drawBoxes())
     const ro = new ResizeObserver(()=> { chart.applyOptions({ width: ref.current!.clientWidth, height: ref.current!.clientHeight || h }); drawBoxes() })
     ro.observe(ref.current)
-    return ()=>{ ro.disconnect(); chart.remove(); try{ overlay.remove() }catch{} }
+    return ()=>{ ro.disconnect(); chart.remove(); try{ overlay.remove() }catch{} try{ vOverlay.remove() }catch{} }
   },[JSON.stringify(data), JSON.stringify(overlays)])
   return <div ref={ref} className={`w-full ${className||''}`} />
 }

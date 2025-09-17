@@ -7,6 +7,7 @@ from app.models import Analysis, FuturesSignalsCache, Settings
 from app.services.market import fetch_bundle
 from app.services.rules import Features, score_symbol
 from app.services.planner import build_plan_async, build_spot2_from_plan
+from app.services.futures import latest_signals
 
 router = APIRouter(prefix="/api/analyses", tags=["futures"])
 
@@ -39,11 +40,13 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
     rjb = dict(spot2.get("rencana_jual_beli") or {})
     entries = [(_f((e.get("range") or [None])[0]), float(e.get("weight") or 0.0), (e.get("type") or "PB")) for e in (rjb.get("entries") or [])]
     tp_nodes = [(t.get("name") or f"TP{i+1}", _f((t.get("range") or [None])[0])) for i, t in enumerate(spot2.get("tp") or [])]
+    # map spot2 invalids if available
+    inv_map = dict(spot2.get("invalids") or {})
     invalids = {
-        "tactical_5m": _f(rjb.get("invalid")),  # fallback single invalid
-        "soft_15m": None,
-        "hard_1h": _f(rjb.get("invalid")),
-        "struct_4h": None,
+        "tactical_5m": _f(inv_map.get("m5") if inv_map else rjb.get("invalid")),
+        "soft_15m": _f(inv_map.get("m15")) if inv_map else None,
+        "hard_1h": _f(inv_map.get("h1") if inv_map else rjb.get("invalid")),
+        "struct_4h": _f(inv_map.get("h4")) if inv_map else None,
     }
     # risk and guard defaults
     lev_min = int(getattr(s, "futures_leverage_min", 3) or 3)
@@ -76,7 +79,7 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
         "tp": [ {"name": name, "range": [val, val], "reduce_only_pct": (40 if i == 0 else 60)} for i,(name,val) in enumerate(tp_nodes) if val is not None ],
         "invalids": invalids,
         "leverage_suggested": {"isolated": True, "x": max(lev_min, min(lev_max, 5))},
-        "risk": {"risk_per_trade_pct": risk_pct, "rr_min": ">=1.5", "fee_bp": 3, "slippage_bp": 2, "liq_price_est": None, "liq_buffer_pct": f">={liq_buf_k} * ATR15m", "max_addons": 1, "pyramiding": "on_retest"},
+        "risk": {"risk_per_trade_pct": risk_pct, "rr_min": ">=1.5", "fee_bp": 3, "slippage_bp": 2, "liq_price_est": None, "liq_buffer_pct": f">={liq_buf_k} * ATR15m", "max_addons": 1, "pyramiding": "on_retest", "funding_window_min": int(getattr(s, "futures_funding_avoid_minutes", 10) or 10)},
         "futures_signals": futures_signals,
         "mtf_summary": spot2.get("mtf_summary") or {},
         "jam_pantau_wib": [],
@@ -89,4 +92,3 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
 async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     # Placeholder endpoint for verification flow (not yet implemented)
     raise HTTPException(501, "Verify futures belum diimplementasikan")
-

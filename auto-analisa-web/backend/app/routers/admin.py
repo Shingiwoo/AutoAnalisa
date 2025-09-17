@@ -17,6 +17,7 @@ from app.auth import hash_pw
 from app import services
 from datetime import datetime, timezone
 from app.services.parity import fvg_parity_stats, zones_parity_stats
+from app.services import futures as futures_svc
 import pandas as pd
 
 
@@ -406,6 +407,17 @@ async def macro_status(db: AsyncSession = Depends(get_db), user=Depends(require_
         "slot": getattr(row, "slot", None),
         "last_run_status": getattr(row, "last_run_status", None),
     }
+
+
+@router.get("/futures/signals")
+async def futures_signals(symbol: str = "BTCUSDT", db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
+    return await futures_svc.latest_signals(db, symbol)
+
+
+@router.post("/futures/refresh")
+async def futures_refresh(symbol: str = "BTCUSDT", db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
+    row = await futures_svc.refresh_signals_cache(db, symbol)
+    return {"ok": True, "symbol": row.symbol, "created_at": row.created_at}
 @router.post("/parity/compute")
 async def parity_compute(payload: dict, db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
     """Hitung paritas indikator terhadap referensi.
