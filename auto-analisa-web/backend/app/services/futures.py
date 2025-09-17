@@ -111,6 +111,66 @@ async def fetch_taker_delta(symbol: str, interval: str = "5m") -> float | None:
     return None
 
 
+async def fetch_oi_hist_delta(symbol: str, period: str = "1h") -> float | None:
+    """Delta OI untuk periode terakhir (period=1h/4h)."""
+    if os.getenv("MARKET_OFFLINE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return None
+    sym = _norm_symbol(symbol)
+    url = f"{BINANCE_FAPI}/futures/data/openInterestHist"
+    data = await _http_get_json(url, params={"symbol": sym, "period": period, "limit": 2})
+    try:
+        if isinstance(data, list) and len(data) >= 2:
+            v0 = float(data[-2]["sumOpenInterest"])  # previous
+            v1 = float(data[-1]["sumOpenInterest"])   # latest
+            return v1 - v0
+    except Exception:
+        pass
+    return None
+
+
+async def fetch_orderbook_metrics(symbol: str) -> dict | None:
+    """Spread (bp), depth10bp bid/ask, imbalance dari snapshot orderbook (limit 100)."""
+    if os.getenv("MARKET_OFFLINE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return None
+    sym = _norm_symbol(symbol)
+    url = f"{BINANCE_FAPI}/fapi/v1/depth"
+    data = await _http_get_json(url, params={"symbol": sym, "limit": 100})
+    try:
+        bids = [(float(p), float(q)) for p, q in (data.get("bids") or [])]
+        asks = [(float(p), float(q)) for p, q in (data.get("asks") or [])]
+        if not bids or not asks:
+            return None
+        best_bid = bids[0][0]
+        best_ask = asks[0][0]
+        mid = (best_bid + best_ask) / 2.0
+        spread_bp = ((best_ask - best_bid) / mid) * 10000.0 if mid > 0 else None
+        tol = mid * 0.001  # ±10bp
+        depth_bid = sum(q for p, q in bids if p >= mid - tol)
+        depth_ask = sum(q for p, q in asks if p <= mid + tol)
+        imb = (depth_bid - depth_ask) / (depth_bid + depth_ask) if (depth_bid + depth_ask) > 0 else 0.0
+        return {"spread_bp": spread_bp, "depth10bp_bid": depth_bid, "depth10bp_ask": depth_ask, "ob_imbalance": imb}
+    except Exception:
+        return None
+
+
+async def fetch_leverage_bracket(symbol: str) -> dict | None:
+    """Ambil leverage bracket untuk estimasi maintenance margin ratio (mmr) bracket pertama."""
+    if os.getenv("MARKET_OFFLINE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return None
+    sym = _norm_symbol(symbol)
+    url = f"{BINANCE_FAPI}/fapi/v1/leverageBracket"
+    data = await _http_get_json(url, params={"symbol": sym})
+    try:
+        if isinstance(data, list) and data:
+            br = data[0].get("brackets") or []
+            if br:
+                mmr = float(br[0].get("maintMarginRatio") or 0.0)
+                return {"mmr": mmr}
+    except Exception:
+        pass
+    return None
+
+
 async def refresh_signals_cache(db: AsyncSession, symbol: str) -> FuturesSignalsCache:
     sym = symbol.upper()
     fb = await fetch_funding_basis(sym) or {}
@@ -119,19 +179,37 @@ async def refresh_signals_cache(db: AsyncSession, symbol: str) -> FuturesSignals
     td5 = await fetch_taker_delta(sym, "5m")
     td15 = await fetch_taker_delta(sym, "15m")
     tdh1 = await fetch_taker_delta(sym, "1h")
+    # delta OI dan orderbook metrics
+    d1 = None
+    oi_h1 = await fetch_oi_hist_delta(sym, "1h")
+    oi_h4 = await fetch_oi_hist_delta(sym, "4h")
+    ob = await fetch_orderbook_metrics(sym) or {}
+    # basis bp
+    try:
+        basis_bp = (float(fb.get("basis_now")) / float(fb.get("index_price"))) * 10000.0 if fb.get("index_price") else None
+    except Exception:
+        basis_bp = None
+
     row = FuturesSignalsCache(
         symbol=sym,
         funding_now=fb.get("funding_now"),
         funding_next=None,  # not provided by endpoint; left None
         next_funding_time=fb.get("next_funding_time"),
         oi_now=oi,
-        oi_d1=None,
+        oi_d1=d1,
+        oi_delta_h1=oi_h1,
+        oi_delta_h4=oi_h4,
         lsr_accounts=lsr.get("accounts"),
         lsr_positions=lsr.get("positions"),
         basis_now=fb.get("basis_now"),
+        basis_bp=basis_bp,
         taker_delta_m5=td5,
         taker_delta_m15=td15,
         taker_delta_h1=tdh1,
+        spread_bp=ob.get("spread_bp"),
+        depth10bp_bid=ob.get("depth10bp_bid"),
+        depth10bp_ask=ob.get("depth10bp_ask"),
+        ob_imbalance=ob.get("ob_imbalance"),
     )
     db.add(row)
     await db.commit()
@@ -149,9 +227,10 @@ async def latest_signals(db: AsyncSession, symbol: str) -> dict:
         "has_data": True,
         "symbol": r.symbol,
         "funding": {"now": r.funding_now, "next": r.funding_next, "time": r.next_funding_time},
-        "oi": {"now": r.oi_now, "d1": r.oi_d1},
+        "oi": {"now": r.oi_now, "d1": r.oi_d1, "h1": getattr(r, "oi_delta_h1", None), "h4": getattr(r, "oi_delta_h4", None)},
         "lsr": {"accounts": r.lsr_accounts, "positions": r.lsr_positions},
-        "basis": {"now": r.basis_now},
+        "basis": {"now": r.basis_now, "bp": getattr(r, "basis_bp", None)},
         "taker_delta": {"m5": r.taker_delta_m5, "m15": r.taker_delta_m15, "h1": r.taker_delta_h1},
+        "orderbook": {"spread_bp": getattr(r, "spread_bp", None), "depth10bp_bid": getattr(r, "depth10bp_bid", None), "depth10bp_ask": getattr(r, "depth10bp_ask", None), "imbalance": getattr(r, "ob_imbalance", None)},
         "created_at": r.created_at,
     }

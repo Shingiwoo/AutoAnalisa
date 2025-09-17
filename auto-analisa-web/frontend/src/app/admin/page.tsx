@@ -208,15 +208,21 @@ export default function AdminPage(){
                   </div>
                   <div className="rounded p-2 ring-1 ring-zinc-200 dark:ring-white/10">
                     <div className="font-medium">Open Interest</div>
-                    <div>now: {sig?.oi?.now ?? '-'} • Δ1d: {sig?.oi?.d1 ?? '-'}</div>
+                    <div>now: {sig?.oi?.now ?? '-'} • Δ1h: {sig?.oi?.h1 ?? '-'} • Δ4h: {sig?.oi?.h4 ?? '-'}</div>
                   </div>
                   <div className="rounded p-2 ring-1 ring-zinc-200 dark:ring-white/10">
                     <div className="font-medium">Basis</div>
-                    <div>now: {sig?.basis?.now ?? '-'}</div>
+                    <div>now: {sig?.basis?.now ?? '-'} • {typeof sig?.basis?.bp==='number' ? `${sig?.basis?.bp.toFixed(1)} bp` : '-'}</div>
                   </div>
                   <div className="rounded p-2 ring-1 ring-zinc-200 dark:ring-white/10">
                     <div className="font-medium">Taker Δ</div>
                     <div>m5: {sig?.taker_delta?.m5 ?? '-'} • m15: {sig?.taker_delta?.m15 ?? '-'} • h1: {sig?.taker_delta?.h1 ?? '-'}</div>
+                  </div>
+                  <div className="rounded p-2 ring-1 ring-zinc-200 dark:ring-white/10">
+                    <div className="font-medium">Orderbook</div>
+                    <div>spread: {typeof sig?.orderbook?.spread_bp==='number' ? `${sig?.orderbook?.spread_bp.toFixed(2)} bp` : '-'}</div>
+                    <div>depth10bp: bid {sig?.orderbook?.depth10bp_bid ?? '-'} • ask {sig?.orderbook?.depth10bp_ask ?? '-'}</div>
+                    <div>imbalance: {typeof sig?.orderbook?.imbalance==='number' ? sig?.orderbook?.imbalance.toFixed(2) : '-'}</div>
                   </div>
                 </div>
               ) : (

@@ -7,7 +7,7 @@ from app.models import Analysis, FuturesSignalsCache, Settings
 from app.services.market import fetch_bundle
 from app.services.rules import Features, score_symbol
 from app.services.planner import build_plan_async, build_spot2_from_plan
-from app.services.futures import latest_signals
+from app.services.futures import latest_signals, fetch_leverage_bracket
 from app.services.sessions import btc_wib_buckets
 from app.services.validator_futures import validate_futures
 from app.services.rounding import round_futures_prices
@@ -85,15 +85,21 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
     except Exception:
         side = "LONG"
 
-    # Perkiraan harga likuidasi (linear perp, isolated): approx entry*(1 - 0.97/lev) untuk LONG dan entry*(1 + 0.97/lev) untuk SHORT
+    # Perkiraan harga likuidasi (linear perp, isolated) dengan mmr bracket pertama bila tersedia
     try:
         e0 = entries[0][0] if entries and entries[0][0] is not None else None
         liq_est = None
         if e0 is not None and lev:
+            mmr = 0.0
+            try:
+                lb = await fetch_leverage_bracket(symbol)
+                mmr = float((lb or {}).get("mmr") or 0.0)
+            except Exception:
+                mmr = 0.0
             if side == "LONG":
-                liq_est = float(e0) * (1.0 - 0.97/float(lev))
+                liq_est = float(e0) * (1.0 - 1.0/float(lev) + mmr)
             else:
-                liq_est = float(e0) * (1.0 + 0.97/float(lev))
+                liq_est = float(e0) * (1.0 + 1.0/float(lev) - mmr)
     except Exception:
         liq_est = None
 

@@ -161,3 +161,37 @@ async def init_db():
                 )
         except Exception:
             pass
+        # futures_signals_cache new columns
+        try:
+            res4 = await conn.exec_driver_sql("PRAGMA table_info(futures_signals_cache)")
+            cols_f = {row[1] for row in res4.fetchall()}
+            if "oi_delta_h1" not in cols_f:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE futures_signals_cache ADD COLUMN oi_delta_h1 FLOAT DEFAULT NULL"
+                )
+            if "oi_delta_h4" not in cols_f:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE futures_signals_cache ADD COLUMN oi_delta_h4 FLOAT DEFAULT NULL"
+                )
+            if "basis_bp" not in cols_f:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE futures_signals_cache ADD COLUMN basis_bp FLOAT DEFAULT NULL"
+                )
+            if "spread_bp" not in cols_f:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE futures_signals_cache ADD COLUMN spread_bp FLOAT DEFAULT NULL"
+                )
+            if "depth10bp_bid" not in cols_f:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE futures_signals_cache ADD COLUMN depth10bp_bid FLOAT DEFAULT NULL"
+                )
+            if "depth10bp_ask" not in cols_f:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE futures_signals_cache ADD COLUMN depth10bp_ask FLOAT DEFAULT NULL"
+                )
+            if "ob_imbalance" not in cols_f:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE futures_signals_cache ADD COLUMN ob_imbalance FLOAT DEFAULT NULL"
+                )
+        except Exception:
+            pass

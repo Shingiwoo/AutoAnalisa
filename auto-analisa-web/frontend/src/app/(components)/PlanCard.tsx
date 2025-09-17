@@ -462,6 +462,13 @@ function FuturesSummary({ fut }:{ fut:any }){
   const sig = s?.futures_signals||{}
   const tp = s?.tp||[]
   const ents = s?.entries||[]
+  const fundingColor = typeof sig?.funding?.now==='number' ? (sig.funding.now>0 ? 'text-rose-500' : 'text-emerald-500') : 'text-zinc-600'
+  const oiH1 = Number(sig?.oi?.h1)
+  const oiH4 = Number(sig?.oi?.h4)
+  const oiH1Color = isFinite(oiH1) ? (oiH1>0?'text-emerald-500':oiH1<0?'text-rose-500':'text-zinc-600') : 'text-zinc-600'
+  const oiH4Color = isFinite(oiH4) ? (oiH4>0?'text-emerald-500':oiH4<0?'text-rose-500':'text-zinc-600') : 'text-zinc-600'
+  const basisBp = typeof sig?.basis?.bp==='number' ? sig.basis.bp : null
+  const basisColor = basisBp!==null ? (basisBp>0?'text-emerald-500':'text-amber-600') : 'text-zinc-600'
   return (
     <section className="rounded-xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white/5 p-3 text-sm space-y-2">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -484,22 +491,23 @@ function FuturesSummary({ fut }:{ fut:any }){
         </div>
         <div className="md:col-span-2">
           <div className="text-zinc-500">TP (reduce-only)</div>
-          <div className="text-emerald-600">{tp.map((t:any)=> (t?.range||[]).join('–')).join(' → ')||'-'}</div>
+          <div className="text-emerald-600">{tp.map((t:any)=> `${(t?.range||[]).join('–')} (${typeof t?.reduce_only_pct==='number'? t.reduce_only_pct: '-' }%)`).join(' → ')||'-'}</div>
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
           <div className="text-zinc-500">Funding</div>
-          <div>now: {sig?.funding?.now ?? '-'} • next: {sig?.funding?.next ?? '-'}</div>
+          <div className={fundingColor}>now: {sig?.funding?.now ?? '-'} • next: {sig?.funding?.next ?? '-'}</div>
           <div>time: {sig?.funding?.time ?? '-'}</div>
         </div>
         <div>
           <div className="text-zinc-500">Open Interest</div>
-          <div>now: {sig?.oi?.now ?? '-'} • Δ1d: {sig?.oi?.d1 ?? '-'}</div>
+          <div>now: {sig?.oi?.now ?? '-'}</div>
+          <div>Δ1h: <span className={oiH1Color}>{isFinite(oiH1)? (oiH1>0?'▲':'▼') : ''} {isFinite(oiH1)? oiH1.toFixed(0): '-'}</span> • Δ4h: <span className={oiH4Color}>{isFinite(oiH4)? (oiH4>0?'▲':'▼') : ''} {isFinite(oiH4)? oiH4.toFixed(0): '-'}</span></div>
         </div>
         <div>
           <div className="text-zinc-500">Basis</div>
-          <div>now: {sig?.basis?.now ?? '-'}</div>
+          <div>now: {sig?.basis?.now ?? '-'} {basisBp!==null && <span className={basisColor}>({basisBp.toFixed(1)} bp)</span>}</div>
         </div>
         <div>
           <div className="text-zinc-500">LSR</div>
@@ -509,6 +517,12 @@ function FuturesSummary({ fut }:{ fut:any }){
           <div className="text-zinc-500">Taker Δ</div>
           <div>m5: {sig?.taker_delta?.m5 ?? '-'} • m15: {sig?.taker_delta?.m15 ?? '-'} • h1: {sig?.taker_delta?.h1 ?? '-'}</div>
         </div>
+        {sig?.orderbook && (
+          <div className="md:col-span-2">
+            <div className="text-zinc-500">Orderbook</div>
+            <div>spread: {typeof sig?.orderbook?.spread_bp==='number' ? `${sig?.orderbook?.spread_bp.toFixed(2)} bp` : '-'}, depth10bp: bid {sig?.orderbook?.depth10bp_bid ?? '-'} • ask {sig?.orderbook?.depth10bp_ask ?? '-'}, imbalance: {typeof sig?.orderbook?.imbalance==='number' ? sig?.orderbook?.imbalance.toFixed(2) : '-'}</div>
+          </div>
+        )}
       </div>
       {Array.isArray(s?.jam_pantau_wib) && s.jam_pantau_wib.length>0 && (
         <div>
