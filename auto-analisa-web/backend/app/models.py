@@ -148,6 +148,7 @@ class LLMVerification(Base):
     suggestions: Mapped[dict] = mapped_column(JSON, default={})  # {entries:[], tp:[], invalid:..., notes:[]}
     fundamentals: Mapped[dict] = mapped_column(JSON, default={})  # optional bullets for 24–48h
     spot2_json: Mapped[dict] = mapped_column(JSON, default={})
+    futures_json: Mapped[dict] = mapped_column(JSON, default={})
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
     cached: Mapped[bool] = mapped_column(Boolean, default=False)
 

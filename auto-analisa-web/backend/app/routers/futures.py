@@ -9,6 +9,14 @@ from app.services.rules import Features, score_symbol
 from app.services.planner import build_plan_async, build_spot2_from_plan
 from app.services.futures import latest_signals
 from app.services.sessions import btc_wib_buckets
+from app.services.validator_futures import validate_futures
+from app.services.rounding import round_futures_prices
+from app.services.llm import should_use_llm, ask_llm
+from app.services.usage import get_today_usage, inc_usage
+from app.services.budget import get_or_init_settings, add_usage, check_budget_and_maybe_off
+from sqlalchemy import select, desc
+import os, json, time
+from app.models import LLMVerification, Analysis
 
 router = APIRouter(prefix="/api/analyses", tags=["futures"])
 
@@ -121,5 +129,187 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
 
 @router.post("/{aid}/futures/verify")
 async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
-    # Placeholder endpoint for verification flow (not yet implemented)
-    raise HTTPException(501, "Verify futures belum diimplementasikan")
+    a = await db.get(Analysis, aid)
+    if not a:
+        raise HTTPException(404, "Not found")
+    if a.user_id != user.id and getattr(user, "role", "user") != "admin":
+        raise HTTPException(403, "Forbidden")
+    # guards LLM use
+    allowed, reason = await should_use_llm(db)
+    if not allowed:
+        raise HTTPException(409, detail={
+            "error_code": "llm_disabled",
+            "message": (reason or "LLM nonaktif"),
+        })
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(409, detail={
+            "error_code": "server_config",
+            "message": "LLM belum dikonfigurasi: OPENAI_API_KEY belum diisi.",
+        })
+    today = await get_today_usage(db, user_id=user.id)
+    if today["remaining"] <= 0:
+        raise HTTPException(409, detail={
+            "error_code": "quota_exceeded",
+            "message": "Limit harian LLM tercapai untuk akun ini.",
+        })
+
+    # build baseline futures JSON
+    # reuse the GET endpoint builder pieces
+    symbol = a.symbol
+    bundle = await fetch_bundle(symbol, ("4h", "1h", "15m", "5m"))
+    feat = Features(bundle).enrich()
+    score = score_symbol(feat)
+    base_plan = await build_plan_async(db, bundle, feat, score, "auto")
+    spot2 = await build_spot2_from_plan(db, symbol.upper(), base_plan)
+    # map invalids, entries, tp etc similar to get_futures_plan
+    # (reuse the function by calling endpoint logic would duplicate work; keep inline)
+    rjb = dict(spot2.get("rencana_jual_beli") or {})
+    entries = [((e.get("range") or [None])[0]) for e in (rjb.get("entries") or [])]
+    tp_nodes = [(t.get("name") or f"TP{i+1}", (t.get("range") or [None])[0]) for i, t in enumerate(spot2.get("tp") or [])]
+    inv_map = dict(spot2.get("invalids") or {})
+    invalids = {
+        "tactical_5m": inv_map.get("m5") if inv_map else rjb.get("invalid"),
+        "soft_15m": inv_map.get("m15") if inv_map else None,
+        "hard_1h": inv_map.get("h1") if inv_map else rjb.get("invalid"),
+        "struct_4h": inv_map.get("h4") if inv_map else None,
+    }
+    s = await get_or_init_settings(db)
+    lev = max(int(getattr(s, "futures_leverage_min", 3) or 3), min(int(getattr(s, "futures_leverage_max", 10) or 10), 5))
+    futures_base = {
+        "version": 1,
+        "symbol": symbol.upper(),
+        "contract": "PERP",
+        "side": "LONG",
+        "tf_base": "1h",
+        "support": base_plan.get("support", [])[:2],
+        "resistance": base_plan.get("resistance", [])[:2],
+        "mode": (base_plan.get("mode") or "PB").upper(),
+        "entries": [ {"range": [e, e], "weight": 0.5, "type": base_plan.get("mode", "PB")} for e in entries if isinstance(e,(int,float)) ],
+        "tp": [ {"name": name, "range": [val, val], "reduce_only_pct": (40 if i==0 else 60)} for i,(name,val) in enumerate(tp_nodes) if isinstance(val,(int,float)) ],
+        "invalids": invalids,
+        "leverage_suggested": {"isolated": True, "x": lev},
+        "risk": {"risk_per_trade_pct": float(getattr(s, "futures_risk_per_trade_pct", 0.5) or 0.5), "rr_min": ">=1.5", "fee_bp": 3, "slippage_bp": 2, "liq_price_est": None, "liq_buffer_pct": ">=0.5 * ATR15m", "max_addons": 1, "pyramiding": "on_retest", "funding_window_min": int(getattr(s, "futures_funding_avoid_minutes", 10) or 10), "funding_threshold_bp": float(getattr(s, "futures_funding_threshold_bp", 3.0) or 3.0) },
+    }
+
+    constraints = {
+        "rr_min_required": 1.5,
+        "tp_must_be_ascending": True,
+        "reduce_only_sum": 100,
+        "weights_sum": 1.0,
+        "invalid_final_ge_liq_buffer": True,
+        "funding_guard": True,
+        "output_format": "FORMAT_ANALISA_FUTURES",
+    }
+    prompt = (
+        "Validasi & rapikan rencana FUTURES berikut. Balas JSON object sesuai kontrak FUTURES: "
+        "{ entries:[{range:[low,high], weight, type}], tp:[{name,range,reduce_only_pct}], invalids{tactical_5m,soft_15m,hard_1h,struct_4h}, "
+        "leverage_suggested, risk{risk_per_trade_pct, rr_min, fee_bp, slippage_bp, liq_price_est}, notes }. "
+        "Ikuti guardrails.\n"
+        f"GUARDRAILS: {json.dumps(constraints, ensure_ascii=False)}\n"
+        f"FUTURES_INPUT: {json.dumps(futures_base, ensure_ascii=False)}\n"
+    )
+
+    try:
+        text, usage = ask_llm(prompt)
+    except Exception:
+        raise HTTPException(502, "Gagal mengakses LLM")
+
+    verdict = "confirm"
+    summary = text
+    fut_json = {}
+    try:
+        parsed = json.loads(text)
+        fut_json = parsed
+        verdict = (parsed.get("verdict") or parsed.get("status") or verdict).lower()
+        summary = parsed.get("summary") or summary
+    except Exception:
+        fut_json = futures_base
+
+    # round & validate
+    try:
+        fut_json = round_futures_prices(symbol, fut_json)
+    except Exception:
+        pass
+    v = validate_futures(fut_json)
+    if not v.get("ok"):
+        verdict = "tweak" if verdict == "confirm" else verdict
+    fut_json = v.get("fixes") or fut_json
+
+    # usage bookkeeping
+    model = os.getenv("OPENAI_MODEL", "gpt-5-chat-latest")
+    sset = await get_or_init_settings(db)
+    prompt_toks = int(usage.get("prompt_tokens", 0)) if isinstance(usage, dict) else 0
+    completion_toks = int(usage.get("completion_tokens", 0)) if isinstance(usage, dict) else 0
+    try:
+        await add_usage(db, user.id, model, prompt_toks, completion_toks, sset.input_usd_per_1k, sset.output_usd_per_1k)
+        await check_budget_and_maybe_off(db)
+    except Exception:
+        pass
+    try:
+        in_price = float(os.getenv("LLM_PRICE_INPUT_USD_PER_MTOK", 0.625))
+        out_price = float(os.getenv("LLM_PRICE_OUTPUT_USD_PER_MTOK", 5.0))
+        usd_daily = (prompt_toks/1_000_000.0)*in_price + (completion_toks/1_000_000.0)*out_price
+        await inc_usage(db, user_id=user.id, model=model, input_tokens=prompt_toks, output_tokens=completion_toks, cost_usd=usd_daily, add_call=True)
+        await db.commit()
+    except Exception:
+        pass
+
+    vr = LLMVerification(
+        analysis_id=a.id,
+        user_id=user.id,
+        model=model,
+        prompt_tokens=prompt_toks,
+        completion_tokens=completion_toks,
+        cost_usd=0.0,
+        verdict=verdict,
+        summary=summary,
+        futures_json=fut_json,
+        cached=False,
+    )
+    db.add(vr)
+    await db.commit()
+    await db.refresh(vr)
+    return {
+        "verification": {
+            "id": vr.id,
+            "analysis_id": vr.analysis_id,
+            "verdict": vr.verdict,
+            "summary": vr.summary,
+            "futures_json": vr.futures_json,
+            "created_at": vr.created_at,
+            "cached": False,
+        }
+    }
+
+
+@router.post("/{aid}/futures/apply-llm")
+async def apply_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
+    a = await db.get(Analysis, aid)
+    if not a:
+        raise HTTPException(404, "Not found")
+    if a.user_id != user.id and getattr(user, "role", "user") != "admin":
+        raise HTTPException(403, "Forbidden")
+    q = await db.execute(select(LLMVerification).where(LLMVerification.analysis_id == a.id).order_by(desc(LLMVerification.created_at)))
+    last = q.scalars().first()
+    if not last or not last.futures_json:
+        raise HTTPException(409, detail={"error_code": "precondition", "message": "Belum ada hasil LLM Futures"})
+    fut = last.futures_json
+    try:
+        fut = round_futures_prices(a.symbol, fut)
+        v = validate_futures(fut)
+        fut = v.get("fixes") or fut
+    except Exception:
+        pass
+    # Simpan ke payload analysis untuk referensi FE mendatang
+    p = dict(a.payload_json or {})
+    p["futures"] = fut
+    # Tandai overlays untuk sinkronisasi FE jika diperlukan (opsional)
+    p.setdefault("overlays", {})
+    try:
+        p["overlays"]["futures_applied"] = True
+    except Exception:
+        pass
+    a.payload_json = p
+    await db.commit()
+    await db.refresh(a)
+    return {"ok": True, "analysis": {"id": a.id, "version": a.version, "payload": a.payload_json}}

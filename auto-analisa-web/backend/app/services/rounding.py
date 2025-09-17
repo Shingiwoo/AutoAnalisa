@@ -116,3 +116,51 @@ def round_spot2_prices(symbol: str, spot2: Dict[str, Any]) -> Dict[str, Any]:
     if tps:
         s2["tp"] = tps
     return s2
+
+
+def round_futures_prices(symbol: str, fut: Dict[str, Any]) -> Dict[str, Any]:
+    """Round FUTURES price fields (entries ranges, tp ranges, invalids tiers) to tick size.
+    Fallback no-op if tick size unavailable.
+    """
+    s = dict(fut or {})
+    tick = _tick_size_for(symbol)
+    if tick is None:
+        return s
+    # entries
+    ents = []
+    for e in (s.get("entries") or []):
+        try:
+            rng = list(e.get("range") or [])
+            lo = _snap(float(rng[0]), tick) if len(rng) > 0 else None
+            hi = _snap(float(rng[1]), tick) if len(rng) > 1 else lo
+            ne = dict(e)
+            ne["range"] = [lo, hi] if lo is not None else rng
+            ents.append(ne)
+        except Exception:
+            ents.append(e)
+    if ents:
+        s["entries"] = ents
+    # tp
+    tps = []
+    for t in (s.get("tp") or []):
+        try:
+            rng = list(t.get("range") or [])
+            lo = _snap(float(rng[0]), tick) if len(rng) > 0 else None
+            hi = _snap(float(rng[1]), tick) if len(rng) > 1 else lo
+            nt = dict(t)
+            nt["range"] = [lo, hi] if lo is not None else rng
+            tps.append(nt)
+        except Exception:
+            tps.append(t)
+    if tps:
+        s["tp"] = tps
+    # invalids
+    try:
+        inv = dict(s.get("invalids") or {})
+        for k in ["tactical_5m", "soft_15m", "hard_1h", "struct_4h"]:
+            if inv.get(k) is not None:
+                inv[k] = _snap(float(inv.get(k)), tick)
+        s["invalids"] = inv
+    except Exception:
+        pass
+    return s

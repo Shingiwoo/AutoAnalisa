@@ -137,6 +137,10 @@ async def init_db():
                 await conn.exec_driver_sql(
                     "ALTER TABLE llm_verifications ADD COLUMN cached BOOLEAN DEFAULT 0"
                 )
+            if "futures_json" not in cols_v:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE llm_verifications ADD COLUMN futures_json JSON DEFAULT '{}'"
+                )
         except Exception:
             pass
         try:

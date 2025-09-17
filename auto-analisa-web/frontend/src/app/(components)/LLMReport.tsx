@@ -2,19 +2,23 @@
 import { useMemo, useState } from 'react'
 import { api } from '../api'
 
-export default function LLMReport({ analysisId, verification, onApplied, onPreview }:{ analysisId:number, verification:any|null, onApplied:()=>void, onPreview:(ghost:{entries?:number[],tp?:number[],invalid?:number}|null)=>void }){
+export default function LLMReport({ analysisId, verification, onApplied, onPreview, kind }:{ analysisId:number, verification:any|null, onApplied:()=>void, onPreview:(ghost:{entries?:number[],tp?:number[],invalid?:number}|null)=>void, kind?: 'spot'|'futures' }){
   const [busy,setBusy]=useState(false)
   const verdict = (verification?.verdict||'').toLowerCase()
   const tsWib = useMemo(()=> verification?.created_at ? new Date(verification.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '',[verification?.created_at])
-  const sug = verification?.spot2_json?.rencana_jual_beli || {}
-  const tp = verification?.spot2_json?.tp || []
+  const data = verification?.spot2_json || verification?.futures_json
+  const sug = (data?.rencana_jual_beli) ? data.rencana_jual_beli : (data?.entries ? { entries: data.entries, invalid: data?.invalids?.hard_1h } : {})
+  const tp = data?.tp || []
   const ghost = useMemo(()=>{
-    if(!verification?.spot2_json) return null
+    if(!data) return null
     const g:any={}
     try{
-      g.entries = (sug.entries||[]).map((e:any)=> (Array.isArray(e.range)? e.range[0] : undefined)).filter((x:any)=> typeof x==='number')
-      g.invalid = typeof sug.invalid==='number' ? sug.invalid : undefined
-      g.tp = (tp||[]).map((t:any)=> (Array.isArray(t.range)? t.range[0]:undefined)).filter((x:any)=> typeof x==='number')
+      const ents = (sug.entries||[]).map((e:any)=> (Array.isArray(e.range)? e.range[0] : undefined)).filter((x:any)=> typeof x==='number')
+      const inv = typeof (sug.invalid ?? data?.invalids?.hard_1h)==='number' ? (sug.invalid ?? data?.invalids?.hard_1h) : undefined
+      const tps = (tp||[]).map((t:any)=> (Array.isArray(t.range)? t.range[0]:undefined)).filter((x:any)=> typeof x==='number')
+      g.entries = ents
+      g.invalid = inv
+      g.tp = tps
     }catch{}
     return g
   },[verification])
@@ -56,7 +60,7 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
         </dl>
         <div className="flex items-center gap-2">
           <button disabled={busy} className="px-3 py-1.5 rounded bg-cyan-600 text-white text-sm hover:bg-cyan-500 disabled:opacity-50" onClick={async()=>{
-            try{ setBusy(true); await api.post(`analyses/${analysisId}/apply-llm`); onApplied(); }
+            try{ setBusy(true); const url = kind==='futures' ? `analyses/${analysisId}/futures/apply-llm` : `analyses/${analysisId}/apply-llm`; await api.post(url); onApplied(); }
             catch(e:any){ alert(e?.response?.data?.detail||'Gagal menerapkan saran') }
             finally{ setBusy(false) }
           }}>Terapkan Saran</button>

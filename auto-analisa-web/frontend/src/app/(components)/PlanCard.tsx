@@ -256,7 +256,9 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
       <Glossary />
       <div className="flex gap-2">
         <button onClick={onUpdate} className="px-3 py-2 rounded-md bg-zinc-900 text-white hover:bg-zinc-800">Update</button>
-        <button disabled={mode!=='spot' || verifying || !llmEnabled || (typeof llmRemaining==='number' && llmRemaining<=0)} title={mode!=='spot' ? 'Verifikasi hanya untuk Spot' : (!llmEnabled? 'LLM nonaktif (limit/budget)':'Tanya GPT')} onClick={async()=>{
+        {/* Spot verify */}
+        <button disabled={mode!=='spot' || verifying || !llmEnabled || (typeof llmRemaining==='number' && llmRemaining<=0)} title={mode!=='spot' ? 'Verifikasi hanya untuk Spot' : (!llmEnabled? 'LLM nonaktif (limit/budget)':'Tanya GPT')}
+          onClick={async()=>{
           try{
             setVerifying(true)
             const {data} = await api.post(`analyses/${plan.id}/verify`)
@@ -278,6 +280,30 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
             }
           }finally{ setVerifying(false); onAfterVerify?.() }
         }} className="px-3 py-2 rounded-md bg-cyan-600 text-white hover:bg-cyan-500 disabled:opacity-50">{verifying?'Memverifikasi…':'Tanya GPT'}</button>
+        {/* Futures verify */}
+        <button disabled={mode!=='futures' || verifying || !llmEnabled || (typeof llmRemaining==='number' && llmRemaining<=0)} title={mode!=='futures' ? 'Verifikasi Futures nonaktif' : (!llmEnabled? 'LLM nonaktif (limit/budget)':'Tanya GPT (Futures)')}
+          onClick={async()=>{
+          try{
+            setVerifying(true)
+            const {data} = await api.post(`analyses/${plan.id}/futures/verify`)
+            setVerification(data.verification)
+          }catch(e:any){
+            const resp = e?.response
+            const data = resp?.data
+            const det = data?.detail
+            if(det && typeof det==='object'){
+              setErr({ code: det.error_code, message: det.message, retry: det.retry_hint })
+            }else if(typeof det === 'string'){
+              setErr({ message: det })
+            }else if(typeof data?.message === 'string'){
+              setErr({ message: data.message })
+            }else if(typeof e?.message === 'string'){
+              setErr({ message: e.message })
+            }else{
+              setErr({ message: 'Verifikasi Futures gagal' })
+            }
+          }finally{ setVerifying(false); onAfterVerify?.() }
+        }} className="px-3 py-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50">{verifying?'Memverifikasi…':'Tanya GPT (Futures)'}</button>
       </div>
 
       {err && (
