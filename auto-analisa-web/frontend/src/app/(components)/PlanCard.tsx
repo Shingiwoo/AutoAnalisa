@@ -7,8 +7,9 @@ import Spot2View from './Spot2View'
 
 export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAfterVerify}:{plan:any,onUpdate:()=>void, llmEnabled?:boolean, llmRemaining?:number, onAfterVerify?:()=>void}){
   const p=plan.payload
-  const [tf,setTf]=useState<'5m'|'15m'|'1h'|'4h'>(()=> '15m')
+  // Single tab controls both chart timeframe and analysis content
   const [tab,setTab]=useState<'tren'|'5m'|'15m'|'1h'|'4h'>(()=> 'tren')
+  const [tf,setTf]=useState<'5m'|'15m'|'1h'|'4h'>(()=> '15m')
   const [ohlcv,setOhlcv]=useState<any[]>([])
   const [loading,setLoading]=useState(false)
   const [verifying,setVerifying]=useState(false)
@@ -27,6 +28,11 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
     return last >= 1000 ? 2 : last >= 100 ? 2 : last >= 10 ? 3 : last >= 1 ? 4 : last >= 0.1 ? 5 : 6
   },[p])
   const fmt = (n:number) => typeof n==='number' ? n.toFixed(precision) : n
+  // Sync chart timeframe with tab selection
+  useEffect(()=>{
+    const t = (tab==='tren'? '15m' : tab) as '5m'|'15m'|'1h'|'4h'
+    setTf(t)
+  },[tab])
   useEffect(()=>{ (async()=>{
     try{ setLoading(true); const {data}=await api.get('ohlcv', { params:{ symbol:plan.symbol, tf, limit:200 } }); setOhlcv(data) }catch{} finally{ setLoading(false) }
   })() },[tf, plan.symbol])
@@ -57,11 +63,13 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
         </div>
       </div>
 
-      <div className="flex items-center gap-2 text-sm" role="tablist" aria-label="Timeframes">
-        <button role="tab" aria-selected={tf==='5m'} onClick={()=>setTf('5m')} className={`px-2.5 py-1 rounded-md transition ${tf==='5m'?'bg-cyan-600 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>5m</button>
-        <button role="tab" aria-selected={tf==='15m'} onClick={()=>setTf('15m')} className={`px-2.5 py-1 rounded-md transition ${tf==='15m'?'bg-cyan-600 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>15m</button>
-        <button role="tab" aria-selected={tf==='1h'} onClick={()=>setTf('1h')} className={`px-2.5 py-1 rounded-md transition ${tf==='1h'?'bg-cyan-600 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>1h</button>
-        <button role="tab" aria-selected={tf==='4h'} onClick={()=>setTf('4h')} className={`px-2.5 py-1 rounded-md transition ${tf==='4h'?'bg-cyan-600 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>4h</button>
+      {/* Unified Tabs: controls chart timeframe & content */}
+      <div className="flex items-center gap-2 text-sm" role="tablist" aria-label="Analisa Tabs">
+        <button role="tab" aria-selected={tab==='tren'} onClick={()=>setTab('tren')} className={`px-2.5 py-1 rounded-md transition ${tab==='tren'?'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>Tren Utama</button>
+        <button role="tab" aria-selected={tab==='5m'} onClick={()=>setTab('5m')} className={`px-2.5 py-1 rounded-md transition ${tab==='5m'?'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>5m</button>
+        <button role="tab" aria-selected={tab==='15m'} onClick={()=>setTab('15m')} className={`px-2.5 py-1 rounded-md transition ${tab==='15m'?'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>15m</button>
+        <button role="tab" aria-selected={tab==='1h'} onClick={()=>setTab('1h')} className={`px-2.5 py-1 rounded-md transition ${tab==='1h'?'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>1h</button>
+        <button role="tab" aria-selected={tab==='4h'} onClick={()=>setTab('4h')} className={`px-2.5 py-1 rounded-md transition ${tab==='4h'?'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>4h</button>
         <div className="text-xs text-zinc-500" title={new Date(plan.created_at).toISOString()}>{createdWIB}</div>
       </div>
 
@@ -96,15 +104,6 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
           </div>
         </div>
       )}
-
-      {/* Tabs Lapis-1 (MTF) */}
-      <div className="flex items-center gap-2 text-sm" role="tablist" aria-label="MTF Tabs">
-        <button role="tab" aria-selected={tab==='tren'} onClick={()=>setTab('tren')} className={`px-2.5 py-1 rounded-md transition ${tab==='tren'?'bg-zinc-900 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>Tren Utama</button>
-        <button role="tab" aria-selected={tab==='5m'} onClick={()=>setTab('5m')} className={`px-2.5 py-1 rounded-md transition ${tab==='5m'?'bg-zinc-900 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>5m</button>
-        <button role="tab" aria-selected={tab==='15m'} onClick={()=>setTab('15m')} className={`px-2.5 py-1 rounded-md transition ${tab==='15m'?'bg-zinc-900 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>15m</button>
-        <button role="tab" aria-selected={tab==='1h'} onClick={()=>setTab('1h')} className={`px-2.5 py-1 rounded-md transition ${tab==='1h'?'bg-zinc-900 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>1h</button>
-        <button role="tab" aria-selected={tab==='4h'} onClick={()=>setTab('4h')} className={`px-2.5 py-1 rounded-md transition ${tab==='4h'?'bg-zinc-900 text-white':'bg-zinc-100 text-zinc-800 hover:bg-zinc-200'}`}>4h</button>
-      </div>
 
       {tab==='tren' ? (
         <div className="space-y-2">
