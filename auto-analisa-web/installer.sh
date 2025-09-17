@@ -104,6 +104,8 @@ OPENAI_MODEL=gpt-5-chat-latest
 LLM_TIMEOUT_S=20
 LLM_CACHE_TTL_S=300
 NEXT_PUBLIC_API_BASE=$API_BASE
+# Optional: set MARKET_OFFLINE=1 bila akses Binance diblok ISP
+MARKET_OFFLINE=0
 EOF
 
 chown $RUN_USER:$RUN_USER "$ENV_FILE" || true
@@ -243,6 +245,86 @@ EOF
 
 ln -sf "$SITE_FILE" "/etc/nginx/sites-enabled/$DOMAIN.conf"
 nginx -t && systemctl reload nginx
+
+# ---- macro & futures timers ----
+log "Mengaktifkan timer Macro dan Futures Refresh"
+MACRO_SVC=/etc/systemd/system/autoanalisa-macro.service
+MACRO_TMR=/etc/systemd/system/autoanalisa-macro.timer
+FUT_SVC=/etc/systemd/system/autoanalisa-futures-refresh.service
+FUT_TMR=/etc/systemd/system/autoanalisa-futures-refresh.timer
+
+cat > "$MACRO_SVC" <<EOF
+[Unit]
+Description=Auto Analisa Web - Macro Daily Generator
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=$PROJECT_DIR/backend
+Environment=APP_ENV=prod
+Environment=PYBIN=$PROJECT_DIR/backend/.venv/bin/python
+EnvironmentFile=$PROJECT_DIR/.env
+ExecStart=/bin/bash -lc 'PY=${PYBIN}; if [ ! -x "$PY" ]; then PY=$(command -v python3); fi; export PYTHONPATH=$PWD; exec "$PY" scripts/macro_generate.py'
+User=$RUN_USER
+Group=$RUN_USER
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat > "$MACRO_TMR" <<EOF
+[Unit]
+Description=Run Macro Daily Generator at 00:05 and 18:05 WIB
+
+[Timer]
+OnCalendar=*-*-* 00:05:00
+OnCalendar=*-*-* 18:05:00
+Persistent=true
+Unit=autoanalisa-macro.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+# Futures refresh units (gunakan script bawaan)
+cp -f "$PROJECT_DIR/deploy/systemd/autoanalisa-futures-refresh.service" "$FUT_SVC" || cat > "$FUT_SVC" <<EOF
+[Unit]
+Description=Auto Analisa Web - Futures Signals Refresh
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=$PROJECT_DIR/backend
+Environment=APP_ENV=prod
+Environment=PYBIN=$PROJECT_DIR/backend/.venv/bin/python
+EnvironmentFile=$PROJECT_DIR/.env
+ExecStart=/bin/bash -lc 'PY=${PYBIN}; if [ ! -x "$PY" ]; then PY=$(command -v python3); fi; export PYTHONPATH=$PWD; exec "$PY" scripts/futures_refresh.py'
+User=$RUN_USER
+Group=$RUN_USER
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cp -f "$PROJECT_DIR/deploy/systemd/autoanalisa-futures-refresh.timer" "$FUT_TMR" || cat > "$FUT_TMR" <<EOF
+[Unit]
+Description=Run Futures Signals Refresh every 10 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Persistent=true
+Unit=autoanalisa-futures-refresh.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now autoanalisa-macro.timer autoanalisa-futures-refresh.timer
+sleep 1
+systemctl --no-pager --full status autoanalisa-macro.timer | sed -n '1,12p' || true
+systemctl --no-pager --full status autoanalisa-futures-refresh.timer | sed -n '1,12p' || true
 
 # ---- SSL issuance (opsional) ----
 if [[ "$WITH_SSL" == "true" ]]; then

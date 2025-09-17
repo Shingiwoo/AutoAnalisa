@@ -131,7 +131,7 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
         "tp": [ {"name": name, "range": [val, val], "reduce_only_pct": (40 if i == 0 else 60)} for i,(name,val) in enumerate(tp_nodes) if val is not None ],
         "invalids": invalids,
         "leverage_suggested": {"isolated": True, "x": lev},
-        "risk": {"risk_per_trade_pct": risk_pct, "rr_min": ">=1.5", "fee_bp": 3, "slippage_bp": 2, "liq_price_est": liq_est, "liq_buffer_pct": f">={liq_buf_k} * ATR15m", "liq_buffer_abs": buf_abs, "max_addons": 1, "pyramiding": "on_retest", "funding_window_min": int(getattr(s, "futures_funding_avoid_minutes", 10) or 10), "funding_threshold_bp": float(getattr(s, "futures_funding_threshold_bp", 3.0) or 3.0)},
+        "risk": {"risk_per_trade_pct": risk_pct, "rr_min": ">=1.5", "fee_bp": 3, "slippage_bp": 2, "liq_price_est": liq_est, "liq_buffer_pct": f">={liq_buf_k} * ATR15m", "liq_buffer_abs": buf_abs, "max_addons": 1, "pyramiding": "on_retest", "funding_window_min": int(getattr(s, "futures_funding_avoid_minutes", 10) or 10), "funding_threshold_bp": float(getattr(s, "futures_funding_threshold_bp", 3.0) or 3.0), "funding_alert_enabled": bool(getattr(s, "futures_funding_alert_enabled", True)), "funding_alert_window_min": int(getattr(s, "futures_funding_alert_window_min", 30) or 30)},
         "futures_signals": futures_signals,
         "mtf_summary": spot2.get("mtf_summary") or {},
         "jam_pantau_wib": jam_pantau,

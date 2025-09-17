@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -7,7 +7,7 @@ from app.models import Settings, ApiUsage
 
 
 def month_key(dt: datetime | None = None) -> str:
-    dt = dt or datetime.utcnow()
+    dt = dt or datetime.now(timezone.utc)
     return f"{dt.year:04d}-{dt.month:02d}"
 
 

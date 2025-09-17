@@ -104,6 +104,8 @@ export default function AdminPage(){
                   <option value="Near-Price">Near-Price (0.6/0.4)</option>
                 </select>
               </label>
+              <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.futures_funding_alert_enabled} onChange={async e=>{ const next={...s,futures_funding_alert_enabled:e.target.checked}; setS(next); await save(next) }}/> Funding alert aktif</label>
+              <label>Window alert (menit) <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.futures_funding_alert_window_min ?? 30} onChange={e=> setS({...s, futures_funding_alert_window_min: +e.target.value})} onBlur={async()=>{ await save() }}/></label>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -238,26 +240,49 @@ export default function AdminPage(){
         <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 text-sm space-y-4">
           <div>
             <div className="text-lg font-semibold">Panduan Admin</div>
-            <ol className="list-decimal pl-5 space-y-1 mt-2">
-              <li>Settings: atur LLM on/off, pendaftaran user, limit budget, dan profil bobot default (DCA/Balanced/Near-Price).</li>
-              <li>Indicator: kelola FVG (TF, fill rule, threshold, auto-threshold) dan Supply/Demand (mode, base, ratio, departure, volume).</li>
-              <li>Macro: generate Makro Harian slot pagi/malam. Gunakan Systemd timer untuk otomatis 07:00 dan 19:00 WIB.</li>
-              <li>Paritas: uji presisi FVG/Zone terhadap referensi JSON untuk QA indikator.</li>
-              <li>Password: tinjau dan setujui/tolak permintaan ganti password.</li>
-              <li>Anggaran: pantau biaya bulanan dan harga token input/output per 1k token.</li>
-            </ol>
+            <div className="space-y-3 mt-2">
+              <div>
+                <div className="font-medium">1) Settings</div>
+                <ul className="list-disc pl-5">
+                  <li>LLM aktif, registrasi, limit budget, profil bobot default (Spot & Futures), Sessions Hint.</li>
+                  <li>Futures: leverage min/max, risk/trade, funding threshold (bp), funding avoid (menit), buffer liq (k·ATR15m), funding alert + window.</li>
+                </ul>
+              </div>
+              <div>
+                <div className="font-medium">2) Indicator</div>
+                <ul className="list-disc pl-5">
+                  <li>FVG (TF, fill rule, threshold, auto-threshold) & Supply/Demand (mode, base, ratio, departure, volume).</li>
+                  <li>Sinyal Futures: lihat/refresh funding, OI Δ 1h/4h, basis (bp), Taker Δ, orderbook (spread, depth10bp, imbalance).</li>
+                </ul>
+              </div>
+              <div>
+                <div className="font-medium">3) Macro</div>
+                <ul className="list-disc pl-5">
+                  <li>Generate makro harian (pagi/malam). Gunakan timer WIB 00:05 & 18:05 untuk otomatis.</li>
+                </ul>
+              </div>
+              <div>
+                <div className="font-medium">4) Paritas</div>
+                <ul className="list-disc pl-5">
+                  <li>Uji presisi FVG/SD terhadap referensi JSON (precision/recall, IoU, offset).</li>
+                </ul>
+              </div>
+              <div>
+                <div className="font-medium">5) Password</div>
+                <ul className="list-disc pl-5">
+                  <li>Approve/Reject permintaan ganti password.</li>
+                </ul>
+              </div>
+              <div>
+                <div className="font-medium">6) Systemd (opsional)</div>
+                <ul className="list-disc pl-5">
+                  <li>Aktifkan timer: <code>autoanalisa-macro.timer</code> dan <code>autoanalisa-futures-refresh.timer</code>.</li>
+                  <li>Periksa log: <code>journalctl -u autoanalisa-macro.service -f</code> dan <code>journalctl -u autoanalisa-futures-refresh.service -f</code>.</li>
+                </ul>
+              </div>
+            </div>
           </div>
-          <div>
-            <div className="text-lg font-semibold">Panduan Pengguna</div>
-            <ol className="list-decimal pl-5 space-y-1 mt-2">
-              <li>Tambah simbol di Watchlist lalu klik Analisa untuk membuat kartu analisa (maks 4 aktif).</li>
-              <li>PlanCard menampilkan rencana SPOT II (Rules). Klik Update untuk penyegaran. Jika harga tembus invalid, sistem membuat versi baru dan memberi tanda “Updated”.</li>
-              <li>LLM Verifikasi opsional: klik Tanya GPT untuk verifikasi SPOT II; gunakan Pratinjau (ghost) untuk melihat overlay saran; Terapkan Saran untuk menyimpan.</li>
-              <li>Chart: garis Entry, TP, Invalid, S/R akan tampil. Ghost overlay ditampilkan dengan garis putus-putus.</li>
-              <li>Macro Harian dan Sessions Hint: ringkasan makro dan jam WIB signifikan tampil otomatis bila tersedia.</li>
-              <li>Aturan: Edukasi, bukan saran finansial. Terdapat rate-limit dan batas harian LLM per pengguna.</li>
-            </ol>
-          </div>
+          {/* Panduan pengguna dihapus sesuai permintaan */}
         </div>
       )}
       {/* Macro tab */}

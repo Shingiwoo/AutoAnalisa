@@ -145,7 +145,7 @@ async def build_spot2_from_plan(db, symbol: str, plan: dict) -> dict:
             return None
     spot2 = {
         "symbol": symbol,
-        "timestamp": __import__("datetime").datetime.utcnow().isoformat(),
+        "timestamp": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
         "ringkas_teknis": plan.get("bias") or "",
         "rencana_jual_beli": {
             "profile": profile,

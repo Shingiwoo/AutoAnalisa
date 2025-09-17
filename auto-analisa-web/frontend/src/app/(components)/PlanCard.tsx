@@ -26,6 +26,15 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
   const [err,setErr]=useState<{code?:string,message?:string,retry?:string}|null>(null)
   const [prevOpen,setPrevOpen]=useState(false)
   const [prevPlan,setPrevPlan]=useState<any|null>(null)
+  const futUpdatedRecently = useMemo(()=>{
+    try{
+      if(mode!=='futures') return false
+      const ts = fut?.futures_signals?.created_at ? new Date(fut.futures_signals.created_at).getTime() : NaN
+      if(!isFinite(ts)) return false
+      const mins = (Date.now() - ts)/60000
+      return mins < 20
+    }catch{ return false }
+  },[mode, fut?.futures_signals?.created_at])
   const createdWIB = useMemo(()=>{
     try{ return new Date(plan.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB' }catch{ return new Date(plan.created_at).toLocaleString('id-ID') }
   },[plan.created_at])
@@ -78,6 +87,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
           <span>{plan.symbol} • v{plan.version}</span>
           <ScoreBadge score={p.score} />
           {p?.notice && <span className="px-2 py-0.5 rounded bg-amber-600 text-white text-xs" title={p.notice}>Updated</span>}
+          {futUpdatedRecently && <span className="px-2 py-0.5 rounded bg-emerald-600 text-white text-xs" title="Sinyal Futures baru diperbarui">Updated</span>}
         </div>
       </div>
       {/* Spot | Futures toggle */}
@@ -170,7 +180,9 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
           const rate = Math.abs(Number(fut?.futures_signals?.funding?.now)||0)*10000 // convert to bp if %
           const t = fut?.futures_signals?.funding?.time ? Date.parse(fut.futures_signals.funding.time) : null
           const mins = t ? Math.abs((t - Date.now())/60000) : null
-          if(t && mins!==null && mins < 30 && rate > thr){
+          const enabled = (fut?.risk?.funding_alert_enabled!==false)
+          const win = Number(fut?.risk?.funding_alert_window_min ?? fut?.risk?.funding_window_min ?? 30)
+          if(enabled && t && mins!==null && mins < win && rate > thr){
             return <div className="p-2 rounded text-sm bg-blue-50 border border-blue-200 text-blue-800">Funding soon — pertimbangkan hindari entry ±{Math.round(Number(fut?.risk?.funding_window_min)||10)} menit</div>
           }
         }catch{}
@@ -209,7 +221,11 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
       )}
 
       {mode==='futures' ? (
-        <FuturesSummary fut={fut} />
+        <>
+          <FuturesSummary fut={fut} />
+          {/* LLM Report khusus Futures */}
+          <LLMReport analysisId={plan.id} verification={verification} onApplied={()=> onUpdate()} onPreview={setGhost} kind='futures' />
+        </>
       ) : (
         (tab==='tren' ? (
           <div className="space-y-2">
@@ -251,7 +267,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
       {/* LLM Verification (legacy diff) */}
       {mode==='spot' && <LLMVerifyBlock plan={p} verification={verification || p?.llm_verification} fmt={fmt} />}
       {/* LLM SPOT II report */}
-      {mode==='spot' && <LLMReport analysisId={plan.id} verification={verification} onApplied={()=> onUpdate()} onPreview={setGhost} />}
+      {mode==='spot' && <LLMReport analysisId={plan.id} verification={verification} onApplied={()=> onUpdate()} onPreview={setGhost} kind='spot' />}
 
       <Glossary />
       <div className="flex gap-2">
@@ -496,18 +512,18 @@ function FuturesSummary({ fut }:{ fut:any }){
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
-          <div className="text-zinc-500">Funding</div>
-          <div className={fundingColor}>now: {sig?.funding?.now ?? '-'} • next: {sig?.funding?.next ?? '-'}</div>
-          <div>time: {sig?.funding?.time ?? '-'}</div>
+          <div className="text-zinc-500">Funding <span title="Warna hijau: rate negatif (cenderung baik untuk long). Merah: positif.">ⓘ</span></div>
+          <div className={fundingColor} title="Nilai funding saat ini (perpetual)">now: {sig?.funding?.now ?? '-'} • next: {sig?.funding?.next ?? '-'}</div>
+          <div title="Perkiraan waktu funding berikutnya (UTC)">time: {sig?.funding?.time ?? '-'}</div>
         </div>
         <div>
-          <div className="text-zinc-500">Open Interest</div>
-          <div>now: {sig?.oi?.now ?? '-'}</div>
-          <div>Δ1h: <span className={oiH1Color}>{isFinite(oiH1)? (oiH1>0?'▲':'▼') : ''} {isFinite(oiH1)? oiH1.toFixed(0): '-'}</span> • Δ4h: <span className={oiH4Color}>{isFinite(oiH4)? (oiH4>0?'▲':'▼') : ''} {isFinite(oiH4)? oiH4.toFixed(0): '-'}</span></div>
+          <div className="text-zinc-500">Open Interest <span title="Panah hijau ▲: kenaikan OI; merah ▼: penurunan OI.">ⓘ</span></div>
+          <div title="Open Interest saat ini">now: {sig?.oi?.now ?? '-'}</div>
+          <div title="Perubahan OI dalam 1 jam dan 4 jam terakhir">Δ1h: <span className={oiH1Color}>{isFinite(oiH1)? (oiH1>0?'▲':'▼') : ''} {isFinite(oiH1)? oiH1.toFixed(0): '-'}</span> • Δ4h: <span className={oiH4Color}>{isFinite(oiH4)? (oiH4>0?'▲':'▼') : ''} {isFinite(oiH4)? oiH4.toFixed(0): '-'}</span></div>
         </div>
         <div>
-          <div className="text-zinc-500">Basis</div>
-          <div>now: {sig?.basis?.now ?? '-'} {basisBp!==null && <span className={basisColor}>({basisBp.toFixed(1)} bp)</span>}</div>
+          <div className="text-zinc-500">Basis <span title="Basis = Mark−Index; bp positif umumnya bullish">ⓘ</span></div>
+          <div title="Basis absolut & dalam basis points">now: {sig?.basis?.now ?? '-'} {basisBp!==null && <span className={basisColor}>({basisBp.toFixed(1)} bp)</span>}</div>
         </div>
         <div>
           <div className="text-zinc-500">LSR</div>

@@ -115,6 +115,14 @@ async def init_db():
                 await conn.exec_driver_sql(
                     "ALTER TABLE settings ADD COLUMN futures_default_weight_profile TEXT DEFAULT 'DCA'"
                 )
+            if "futures_funding_alert_enabled" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN futures_funding_alert_enabled BOOLEAN DEFAULT 1"
+                )
+            if "futures_funding_alert_window_min" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN futures_funding_alert_window_min INTEGER DEFAULT 30"
+                )
         except Exception:
             pass
         # llm_verifications: add JSON fields if missing

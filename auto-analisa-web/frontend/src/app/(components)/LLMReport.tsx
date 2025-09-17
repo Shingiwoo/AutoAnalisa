@@ -6,7 +6,7 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
   const [busy,setBusy]=useState(false)
   const verdict = (verification?.verdict||'').toLowerCase()
   const tsWib = useMemo(()=> verification?.created_at ? new Date(verification.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '',[verification?.created_at])
-  const data = verification?.spot2_json || verification?.futures_json
+  const data = (kind==='futures') ? verification?.futures_json : verification?.spot2_json
   const sug = (data?.rencana_jual_beli) ? data.rencana_jual_beli : (data?.entries ? { entries: data.entries, invalid: data?.invalids?.hard_1h } : {})
   const tp = data?.tp || []
   const ghost = useMemo(()=>{

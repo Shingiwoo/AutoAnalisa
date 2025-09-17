@@ -24,7 +24,7 @@ class Plan(Base):
     symbol: Mapped[str] = mapped_column(String(32), index=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
     payload_json: Mapped[dict] = mapped_column(JSON)
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
 
 
 # New tables for auth, analysis, usage, and settings
@@ -34,7 +34,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[str] = mapped_column(String, default="user")
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
 
 
 class Analysis(Base):
@@ -46,7 +46,7 @@ class Analysis(Base):
     # keep JSON to store structured plan
     payload_json: Mapped[dict] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String, default="active")  # active|archived
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
     __table_args__ = (UniqueConstraint("user_id", "symbol", name="uniq_user_symbol"),)
 
 
@@ -89,7 +89,7 @@ class Settings(Base):
     budget_monthly_usd: Mapped[float] = mapped_column(Float, default=20.0)
     auto_off_at_budget: Mapped[bool] = mapped_column(Boolean, default=True)
     budget_used_usd: Mapped[float] = mapped_column(Float, default=0.0)
-    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
     # Futures settings (skeleton)
     enable_futures: Mapped[bool] = mapped_column(Boolean, default=False)
     futures_leverage_min: Mapped[int] = mapped_column(Integer, default=3)
@@ -99,6 +99,8 @@ class Settings(Base):
     futures_funding_avoid_minutes: Mapped[int] = mapped_column(Integer, default=10)
     futures_liq_buffer_k_atr15m: Mapped[float] = mapped_column(Float, default=0.5)
     futures_default_weight_profile: Mapped[str] = mapped_column(String, default="DCA")
+    futures_funding_alert_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    futures_funding_alert_window_min: Mapped[int] = mapped_column(Integer, default=30)
 
 
 class Watchlist(Base):
@@ -106,7 +108,7 @@ class Watchlist(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String, index=True)
     symbol: Mapped[str] = mapped_column(String, index=True)
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
     __table_args__ = (UniqueConstraint("user_id", "symbol", name="uniq_user_symbol_watch"),)
 
 
@@ -116,7 +118,7 @@ class PasswordChangeRequest(Base):
     user_id: Mapped[str] = mapped_column(String, index=True)
     new_hash: Mapped[str] = mapped_column(String)
     status: Mapped[str] = mapped_column(String, default="pending")  # pending|approved|rejected
-    requested_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    requested_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
     processed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, default=None)
     processed_by: Mapped[str | None] = mapped_column(String, default=None)
 
@@ -130,7 +132,7 @@ class MacroDaily(Base):
     sections: Mapped[list] = mapped_column(JSON, default=list)
     slot: Mapped[str] = mapped_column(String, default="pagi")  # pagi|malam
     last_run_status: Mapped[str] = mapped_column(String, default="ok")  # ok|skip|error
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
 
 
 # Verification records from LLM for each analysis snapshot
@@ -149,7 +151,7 @@ class LLMVerification(Base):
     fundamentals: Mapped[dict] = mapped_column(JSON, default={})  # optional bullets for 24–48h
     spot2_json: Mapped[dict] = mapped_column(JSON, default={})
     futures_json: Mapped[dict] = mapped_column(JSON, default={})
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
     cached: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
@@ -165,7 +167,7 @@ class LLMUsage(Base):
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
-    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
     updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, default=None)
 
 

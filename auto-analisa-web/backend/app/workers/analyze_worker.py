@@ -10,7 +10,7 @@ from ..services.budget import (
 )
 from ..services.rounding import round_plan_prices
 from ..models import Analysis, User
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import os
 
@@ -70,7 +70,7 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
         existing.payload_json = plan
         existing.status = "active"
         # bump timestamp so FE shows fresh time
-        existing.created_at = datetime.utcnow()
+        existing.created_at = datetime.now(timezone.utc)
         a = existing
     else:
         a = Analysis(
@@ -112,7 +112,7 @@ async def refresh_analysis_rules_only(db: AsyncSession, user: User, analysis: An
     ver = (q2.scalar_one() or 0) + 1
     analysis.version = ver
     analysis.payload_json = plan
-    analysis.created_at = datetime.utcnow()
+    analysis.created_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(analysis)
     return analysis

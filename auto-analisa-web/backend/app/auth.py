@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import jwt, JWTError
 from passlib.hash import argon2
@@ -28,7 +28,7 @@ def verify_pw(p: str, h: str) -> bool:
 
 def make_jwt(user_id: str, role: str) -> str:
     minutes = settings.JWT_EXPIRE_MIN or settings.JWT_EXPIRE_MINUTES or 43200
-    exp = datetime.utcnow() + timedelta(minutes=minutes)
+    exp = datetime.now(timezone.utc) + timedelta(minutes=minutes)
     return jwt.encode({"sub": user_id, "role": role, "exp": exp}, settings.JWT_SECRET, algorithm="HS256")
 
 

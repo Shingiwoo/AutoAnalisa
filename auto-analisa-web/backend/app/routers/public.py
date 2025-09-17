@@ -13,5 +13,6 @@ async def public_settings(db: AsyncSession = Depends(get_db)):
     return {
         "show_sessions_hint": getattr(s, "show_sessions_hint", True),
         "default_weight_profile": getattr(s, "default_weight_profile", "DCA"),
+        "futures_funding_alert_enabled": getattr(s, "futures_funding_alert_enabled", True),
+        "futures_funding_alert_window_min": getattr(s, "futures_funding_alert_window_min", 30),
     }
-
