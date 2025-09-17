@@ -83,6 +83,25 @@ export default function AdminPage(){
             <label>Harga Input /1k <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.input_usd_per_1k} onChange={e=>setS({...s,input_usd_per_1k:+e.target.value})}/></label>
             <label>Harga Output /1k <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.output_usd_per_1k} onChange={e=>setS({...s,output_usd_per_1k:+e.target.value})}/></label>
           </div>
+          <div className="mt-4 pt-3 border-t border-white/10">
+            <div className="font-semibold mb-2">Futures</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              <label className="flex items-center gap-2"><input type="checkbox" className="accent-cyan-600" checked={!!s.enable_futures} onChange={async e=>{ const next={...s,enable_futures:e.target.checked}; setS(next); await save(next) }}/> Aktifkan Futures</label>
+              <label>Default leverage min <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.futures_leverage_min ?? 3} onChange={e=> setS({...s, futures_leverage_min: +e.target.value})} onBlur={async()=>{ await save() }}/></label>
+              <label>Default leverage max <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.futures_leverage_max ?? 10} onChange={e=> setS({...s, futures_leverage_max: +e.target.value})} onBlur={async()=>{ await save() }}/></label>
+              <label>Risk/trade (%) <input type="number" step="0.1" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.futures_risk_per_trade_pct ?? 0.5} onChange={e=> setS({...s, futures_risk_per_trade_pct: +e.target.value})} onBlur={async()=>{ await save() }}/></label>
+              <label>Funding threshold (bp) <input type="number" step="0.1" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.futures_funding_threshold_bp ?? 3} onChange={e=> setS({...s, futures_funding_threshold_bp: +e.target.value})} onBlur={async()=>{ await save() }}/></label>
+              <label>Funding avoid (menit) <input type="number" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.futures_funding_avoid_minutes ?? 10} onChange={e=> setS({...s, futures_funding_avoid_minutes: +e.target.value})} onBlur={async()=>{ await save() }}/></label>
+              <label>Buffer liq (k·ATR15m) <input type="number" step="0.1" className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10" value={s.futures_liq_buffer_k_atr15m ?? 0.5} onChange={e=> setS({...s, futures_liq_buffer_k_atr15m: +e.target.value})} onBlur={async()=>{ await save() }}/></label>
+              <label>Default Weight Profile (Futures)
+                <select className="rounded px-2 py-1 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-white dark:text-zinc-900 dark:ring-white/10" value={s.futures_default_weight_profile||'DCA'} onChange={async e=>{ const next={...s,futures_default_weight_profile:e.target.value}; setS(next); await save(next) }}>
+                  <option value="DCA">DCA (0.4/0.6)</option>
+                  <option value="Balanced">Balanced (0.5/0.5)</option>
+                  <option value="Near-Price">Near-Price (0.6/0.4)</option>
+                </select>
+              </label>
+            </div>
+          </div>
           <div className="flex items-center gap-3">
             <button disabled={busySave} onClick={()=>save()} className="px-3 py-2 rounded bg-cyan-600 text-white font-medium hover:bg-cyan-500 disabled:opacity-50">{busySave?'Menyimpan…':'Simpan'}</button>
             {saved && <div className="text-sm text-green-600">✔ {saved}</div>}

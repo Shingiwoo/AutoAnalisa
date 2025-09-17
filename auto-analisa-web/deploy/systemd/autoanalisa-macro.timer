@@ -1,14 +1,13 @@
 [Unit]
-Description=Run Macro Daily Generator at 07:00 and 19:00 WIB
+Description=Run Macro Daily Generator at 00:05 and 18:05 WIB
 
 [Timer]
 # Catatan: Systemd menggunakan timezone host. Pastikan host diset ke Asia/Jakarta
 # atau sesuaikan jadwal OnCalendar berikut ke UTC bila host bukan WIB.
-OnCalendar=*-*-* 07:00:00
-OnCalendar=*-*-* 19:00:00
+OnCalendar=*-*-* 00:05:00
+OnCalendar=*-*-* 18:05:00
 Persistent=true
 Unit=autoanalisa-macro.service
 
 [Install]
 WantedBy=timers.target
-

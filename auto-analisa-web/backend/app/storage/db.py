@@ -82,6 +82,39 @@ async def init_db():
                 await conn.exec_driver_sql(
                     "ALTER TABLE settings ADD COLUMN default_weight_profile TEXT DEFAULT 'DCA'"
                 )
+            # Futures settings additions
+            if "enable_futures" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN enable_futures BOOLEAN DEFAULT 0"
+                )
+            if "futures_leverage_min" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN futures_leverage_min INTEGER DEFAULT 3"
+                )
+            if "futures_leverage_max" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN futures_leverage_max INTEGER DEFAULT 10"
+                )
+            if "futures_risk_per_trade_pct" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN futures_risk_per_trade_pct FLOAT DEFAULT 0.5"
+                )
+            if "futures_funding_threshold_bp" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN futures_funding_threshold_bp FLOAT DEFAULT 3.0"
+                )
+            if "futures_funding_avoid_minutes" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN futures_funding_avoid_minutes INTEGER DEFAULT 10"
+                )
+            if "futures_liq_buffer_k_atr15m" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN futures_liq_buffer_k_atr15m FLOAT DEFAULT 0.5"
+                )
+            if "futures_default_weight_profile" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN futures_default_weight_profile TEXT DEFAULT 'DCA'"
+                )
         except Exception:
             pass
         # llm_verifications: add JSON fields if missing

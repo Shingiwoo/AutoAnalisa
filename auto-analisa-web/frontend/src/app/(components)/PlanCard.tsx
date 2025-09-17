@@ -7,6 +7,13 @@ import Spot2View from './Spot2View'
 
 export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAfterVerify}:{plan:any,onUpdate:()=>void, llmEnabled?:boolean, llmRemaining?:number, onAfterVerify?:()=>void}){
   const p=plan.payload
+  // Spot | Futures mode (persist per symbol)
+  const [mode,setMode]=useState<'spot'|'futures'>(()=>{
+    try{ return (localStorage.getItem(`aa_mode_${plan.symbol}`)||'spot') as any }catch{ return 'spot' }
+  })
+  useEffect(()=>{ try{ localStorage.setItem(`aa_mode_${plan.symbol}`, mode) }catch{} },[mode, plan.symbol])
+  const [fut,setFut]=useState<any|null>(null)
+  const [futErr,setFutErr]=useState<string>('')
   // Single tab controls both chart timeframe and analysis content
   const [tab,setTab]=useState<'tren'|'5m'|'15m'|'1h'|'4h'>(()=> 'tren')
   const [tf,setTf]=useState<'5m'|'15m'|'1h'|'4h'>(()=> '15m')
@@ -37,6 +44,12 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
   useEffect(()=>{ (async()=>{
     try{ setLoading(true); const {data}=await api.get('ohlcv', { params:{ symbol:plan.symbol, tf, limit:200 } }); setOhlcv(data) }catch{} finally{ setLoading(false) }
   })() },[tf, plan.symbol])
+  // Load futures plan on demand
+  useEffect(()=>{ (async()=>{
+    if(mode!=='futures') return
+    try{ setFutErr(''); const {data}=await api.get(`analyses/${plan.symbol}/futures`); setFut(data) }
+    catch(e:any){ setFut(null); setFutErr(e?.response?.data?.detail||'Futures tidak tersedia') }
+  })() },[mode, plan.symbol])
   const invalids = useMemo(()=>{
     const s2 = p?.spot2 || {}
     const invs = s2?.invalids || {}
@@ -65,6 +78,36 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
           {p?.notice && <span className="px-2 py-0.5 rounded bg-amber-600 text-white text-xs" title={p.notice}>Updated</span>}
         </div>
       </div>
+      {/* Spot | Futures toggle */}
+      <div className="flex items-center gap-2 text-sm" role="tablist" aria-label="Mode Tabs">
+        {(['spot','futures'] as const).map(m=> (
+          <button key={m} role="tab" aria-selected={mode===m} onClick={()=> setMode(m)}
+            className={`px-3 py-1.5 rounded-md transition ${mode===m? 'bg-cyan-600 text-white':'bg-zinc-800 text-white/80 hover:bg-zinc-700'} `}>
+            {m==='spot'? 'Spot':'Futures'}
+          </button>
+        ))}
+        {mode==='futures' && futErr && <span className="text-xs text-rose-400">{futErr}</span>}
+      </div>
+
+      {mode==='futures' && (
+        <div className="rounded-xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white/5 p-3 text-sm">
+          {fut ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <div className="text-zinc-500">Leverage & Margin</div>
+                <div>isolated x={fut?.leverage_suggested?.x ?? '-'}</div>
+              </div>
+              <div>
+                <div className="text-zinc-500">Risk</div>
+                <div>risk/trade: {fut?.risk?.risk_per_trade_pct ?? '-'}% • rr_min: {fut?.risk?.rr_min||'-'}</div>
+              </div>
+              <div className="md:col-span-2 text-xs text-zinc-500">Catatan: modul Futures (beta skeleton).</div>
+            </div>
+          ) : (
+            <div className="text-zinc-500">{futErr||'Memuat Futures…'}</div>
+          )}
+        </div>
+      )}
 
       {/* Unified Tabs: controls chart timeframe & content */}
       <div className="flex items-center gap-2 text-sm" role="tablist" aria-label="Analisa Tabs">
@@ -148,14 +191,14 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
       )}
 
       {/* LLM Verification (legacy diff) */}
-      <LLMVerifyBlock plan={p} verification={verification || p?.llm_verification} fmt={fmt} />
+      {mode==='spot' && <LLMVerifyBlock plan={p} verification={verification || p?.llm_verification} fmt={fmt} />}
       {/* LLM SPOT II report */}
-      <LLMReport analysisId={plan.id} verification={verification} onApplied={()=> onUpdate()} onPreview={setGhost} />
+      {mode==='spot' && <LLMReport analysisId={plan.id} verification={verification} onApplied={()=> onUpdate()} onPreview={setGhost} />}
 
       <Glossary />
       <div className="flex gap-2">
         <button onClick={onUpdate} className="px-3 py-2 rounded-md bg-zinc-900 text-white hover:bg-zinc-800">Update</button>
-        <button disabled={verifying || !llmEnabled || (typeof llmRemaining==='number' && llmRemaining<=0)} title={!llmEnabled? 'LLM nonaktif (limit/budget)':'Tanya GPT'} onClick={async()=>{
+        <button disabled={mode!=='spot' || verifying || !llmEnabled || (typeof llmRemaining==='number' && llmRemaining<=0)} title={mode!=='spot' ? 'Verifikasi hanya untuk Spot' : (!llmEnabled? 'LLM nonaktif (limit/budget)':'Tanya GPT')} onClick={async()=>{
           try{
             setVerifying(true)
             const {data} = await api.post(`analyses/${plan.id}/verify`)

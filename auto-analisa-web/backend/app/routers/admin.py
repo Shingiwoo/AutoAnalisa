@@ -60,6 +60,15 @@ async def get_settings(db: AsyncSession = Depends(get_db), user=Depends(require_
         "sd_vol_threshold_pct": getattr(s, "sd_vol_threshold_pct", 10.0),
         "show_sessions_hint": getattr(s, "show_sessions_hint", True),
         "default_weight_profile": getattr(s, "default_weight_profile", "DCA"),
+        # futures
+        "enable_futures": getattr(s, "enable_futures", False),
+        "futures_leverage_min": getattr(s, "futures_leverage_min", 3),
+        "futures_leverage_max": getattr(s, "futures_leverage_max", 10),
+        "futures_risk_per_trade_pct": getattr(s, "futures_risk_per_trade_pct", 0.5),
+        "futures_funding_threshold_bp": getattr(s, "futures_funding_threshold_bp", 3.0),
+        "futures_funding_avoid_minutes": getattr(s, "futures_funding_avoid_minutes", 10),
+        "futures_liq_buffer_k_atr15m": getattr(s, "futures_liq_buffer_k_atr15m", 0.5),
+        "futures_default_weight_profile": getattr(s, "futures_default_weight_profile", "DCA"),
         # new aliases
         "llm_enabled": s.use_llm,
         "llm_model": llm_model,
@@ -92,15 +101,24 @@ def _apply_settings_payload(s, payload: dict):
         "sd_vol_threshold_pct": ["sd_vol_threshold_pct"],
         "show_sessions_hint": ["show_sessions_hint"],
         "default_weight_profile": ["default_weight_profile"],
+        # futures
+        "enable_futures": ["enable_futures"],
+        "futures_leverage_min": ["futures_leverage_min"],
+        "futures_leverage_max": ["futures_leverage_max"],
+        "futures_risk_per_trade_pct": ["futures_risk_per_trade_pct"],
+        "futures_funding_threshold_bp": ["futures_funding_threshold_bp"],
+        "futures_funding_avoid_minutes": ["futures_funding_avoid_minutes"],
+        "futures_liq_buffer_k_atr15m": ["futures_liq_buffer_k_atr15m"],
+        "futures_default_weight_profile": ["futures_default_weight_profile"],
         "budget_monthly_usd": ["budget_monthly_usd", "llm_limit_monthly_usd"],
         "auto_off_at_budget": ["auto_off_at_budget"],
         "input_usd_per_1k": ["input_usd_per_1k"],
         "output_usd_per_1k": ["output_usd_per_1k"],
     }
-    bool_fields = {"use_llm", "registration_enabled", "auto_off_at_budget", "show_sessions_hint"}
+    bool_fields = {"use_llm", "registration_enabled", "auto_off_at_budget", "show_sessions_hint", "enable_futures"}
     bool_fields |= {"enable_fvg", "enable_supply_demand", "fvg_use_bodies"}
-    float_fields = {"budget_monthly_usd", "input_usd_per_1k", "output_usd_per_1k", "sd_body_ratio", "sd_min_departure", "fvg_threshold_pct", "sd_vol_threshold_pct"}
-    int_fields = {"max_users", "sd_max_base", "sd_vol_div"}
+    float_fields = {"budget_monthly_usd", "input_usd_per_1k", "output_usd_per_1k", "sd_body_ratio", "sd_min_departure", "fvg_threshold_pct", "sd_vol_threshold_pct", "futures_risk_per_trade_pct", "futures_funding_threshold_bp", "futures_liq_buffer_k_atr15m"}
+    int_fields = {"max_users", "sd_max_base", "sd_vol_div", "futures_leverage_min", "futures_leverage_max", "futures_funding_avoid_minutes"}
 
     for attr, keys in sources.items():
         # pick the first present key
@@ -202,6 +220,15 @@ async def put_settings(payload: dict, db: AsyncSession = Depends(get_db), user=D
         "sd_vol_threshold_pct": getattr(s, "sd_vol_threshold_pct", 10.0),
         "show_sessions_hint": getattr(s, "show_sessions_hint", True),
         "default_weight_profile": getattr(s, "default_weight_profile", "DCA"),
+        # futures
+        "enable_futures": getattr(s, "enable_futures", False),
+        "futures_leverage_min": getattr(s, "futures_leverage_min", 3),
+        "futures_leverage_max": getattr(s, "futures_leverage_max", 10),
+        "futures_risk_per_trade_pct": getattr(s, "futures_risk_per_trade_pct", 0.5),
+        "futures_funding_threshold_bp": getattr(s, "futures_funding_threshold_bp", 3.0),
+        "futures_funding_avoid_minutes": getattr(s, "futures_funding_avoid_minutes", 10),
+        "futures_liq_buffer_k_atr15m": getattr(s, "futures_liq_buffer_k_atr15m", 0.5),
+        "futures_default_weight_profile": getattr(s, "futures_default_weight_profile", "DCA"),
     }
 
 

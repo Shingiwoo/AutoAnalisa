@@ -90,6 +90,15 @@ class Settings(Base):
     auto_off_at_budget: Mapped[bool] = mapped_column(Boolean, default=True)
     budget_used_usd: Mapped[float] = mapped_column(Float, default=0.0)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+    # Futures settings (skeleton)
+    enable_futures: Mapped[bool] = mapped_column(Boolean, default=False)
+    futures_leverage_min: Mapped[int] = mapped_column(Integer, default=3)
+    futures_leverage_max: Mapped[int] = mapped_column(Integer, default=10)
+    futures_risk_per_trade_pct: Mapped[float] = mapped_column(Float, default=0.5)
+    futures_funding_threshold_bp: Mapped[float] = mapped_column(Float, default=3.0)  # 0.03%
+    futures_funding_avoid_minutes: Mapped[int] = mapped_column(Integer, default=10)
+    futures_liq_buffer_k_atr15m: Mapped[float] = mapped_column(Float, default=0.5)
+    futures_default_weight_profile: Mapped[str] = mapped_column(String, default="DCA")
 
 
 class Watchlist(Base):
@@ -157,3 +166,33 @@ class LLMUsage(Base):
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
     updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, default=None)
+
+
+# Futures metadata and signals cache (skeleton for Futures module)
+class FuturesMeta(Base):
+    __tablename__ = "futures_meta"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String, index=True)
+    contract: Mapped[str] = mapped_column(String, default="PERP")  # PERP|USDT-M
+    leverage_min: Mapped[int] = mapped_column(Integer, default=1)
+    leverage_max: Mapped[int] = mapped_column(Integer, default=20)
+    maint_margin_tbl: Mapped[dict] = mapped_column(JSON, default={})
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
+
+
+class FuturesSignalsCache(Base):
+    __tablename__ = "futures_signals_cache"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String, index=True)
+    funding_now: Mapped[float | None] = mapped_column(Float, default=None)
+    funding_next: Mapped[float | None] = mapped_column(Float, default=None)
+    next_funding_time: Mapped[str | None] = mapped_column(String, default=None)  # ISO8601
+    oi_now: Mapped[float | None] = mapped_column(Float, default=None)
+    oi_d1: Mapped[float | None] = mapped_column(Float, default=None)
+    lsr_accounts: Mapped[float | None] = mapped_column(Float, default=None)
+    lsr_positions: Mapped[float | None] = mapped_column(Float, default=None)
+    basis_now: Mapped[float | None] = mapped_column(Float, default=None)
+    taker_delta_m5: Mapped[float | None] = mapped_column(Float, default=None)
+    taker_delta_m15: Mapped[float | None] = mapped_column(Float, default=None)
+    taker_delta_h1: Mapped[float | None] = mapped_column(Float, default=None)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=dt.datetime.utcnow)
