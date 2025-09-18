@@ -61,6 +61,8 @@ async def get_settings(db: AsyncSession = Depends(get_db), user=Depends(require_
         "sd_vol_threshold_pct": getattr(s, "sd_vol_threshold_pct", 10.0),
         "show_sessions_hint": getattr(s, "show_sessions_hint", True),
         "default_weight_profile": getattr(s, "default_weight_profile", "DCA"),
+        "llm_daily_limit_spot": getattr(s, "llm_daily_limit_spot", 40),
+        "llm_daily_limit_futures": getattr(s, "llm_daily_limit_futures", 40),
         # futures
         "enable_futures": getattr(s, "enable_futures", False),
         "futures_leverage_min": getattr(s, "futures_leverage_min", 3),
@@ -197,6 +199,8 @@ async def update_settings(payload: dict, db: AsyncSession = Depends(get_db), use
             "input_usd_per_1k": s.input_usd_per_1k,
             "output_usd_per_1k": s.output_usd_per_1k,
             "budget_used_usd": s.budget_used_usd,
+            "llm_daily_limit_spot": getattr(s, "llm_daily_limit_spot", 40),
+            "llm_daily_limit_futures": getattr(s, "llm_daily_limit_futures", 40),
         },
     }
 

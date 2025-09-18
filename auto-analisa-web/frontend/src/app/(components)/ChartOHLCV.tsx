@@ -181,8 +181,14 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
     drawFunding()
 
     chart.timeScale().subscribeVisibleTimeRangeChange(()=> drawBoxes())
-    const ro = new ResizeObserver(()=> { chart.applyOptions({ width: ref.current!.clientWidth, height: ref.current!.clientHeight || h }); drawBoxes() })
-    ro.observe(ref.current)
+    const ro = new ResizeObserver(()=> {
+      if(!ref.current) return
+      const w2 = ref.current.clientWidth
+      const h2 = ref.current.clientHeight || h
+      chart.applyOptions({ width: w2, height: h2 });
+      drawBoxes()
+    })
+    if(ref.current) ro.observe(ref.current)
     return ()=>{ ro.disconnect(); chart.remove(); try{ overlay.remove() }catch{} try{ vOverlay.remove() }catch{} }
   },[JSON.stringify(data), JSON.stringify(overlays)])
   return <div ref={ref} className={`w-full ${className||''}`} />

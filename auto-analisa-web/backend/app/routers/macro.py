@@ -26,13 +26,34 @@ async def today(db: AsyncSession = Depends(get_db), slot: str | None = Query(Non
     # Also provide date_wib for UI convenience
     try:
         jkt = ZoneInfo("Asia/Jakarta")
-        dt_utc = datetime.fromisoformat(row.date_utc).replace(tzinfo=timezone.utc)
-        date_wib = dt_utc.astimezone(jkt).date().isoformat()
+        # row.date_utc bisa 'YYYY-MM-DD' (date) atau ISO datetime
+        dt_utc = None
+        try:
+            dt_utc = datetime.fromisoformat(row.date_utc)
+        except Exception:
+            dt_utc = None
+        if dt_utc is not None:
+            # Jika hasil adalah date (tanpa waktu), jangan pakai tzinfo
+            if isinstance(dt_utc, datetime):
+                if dt_utc.tzinfo is None:
+                    dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+                date_wib = dt_utc.astimezone(jkt).date().isoformat()
+            else:
+                # objek date → langsung pakai string as-is
+                date_wib = row.date_utc
+        else:
+            date_wib = row.date_utc
     except Exception:
-        date_wib = row.date_utc
+        date_wib = getattr(row, 'date_utc', None)
     # Include status dan cap waktu terakhir untuk panel status di FE
     try:
-        created_wib = row.created_at.astimezone(ZoneInfo("Asia/Jakarta")).isoformat()
+        created = row.created_at
+        try:
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+        except Exception:
+            pass
+        created_wib = created.astimezone(ZoneInfo("Asia/Jakarta")).isoformat()
     except Exception:
         try:
             created_wib = row.created_at.isoformat()
