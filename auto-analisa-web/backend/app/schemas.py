@@ -33,6 +33,7 @@ class PlanOut(BaseModel):
 class AnalyzeIn(BaseModel):
     symbol: str
     options: AnalyzeOptions = AnalyzeOptions()
+    trade_type: str = "spot"  # spot|futures
 
 
 # Auth schemas

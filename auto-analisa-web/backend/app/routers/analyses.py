@@ -20,16 +20,18 @@ router = APIRouter(prefix="/api/analyses", tags=["analyses"])
 
 
 @router.get("")
-async def list_analyses(status: str = "active", db: AsyncSession = Depends(get_db), user=Depends(require_user)):
+async def list_analyses(status: str = "active", trade_type: str | None = None, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     if status == "active":
-        q = await db.execute(
-            select(Analysis).where(Analysis.user_id == user.id, Analysis.status == "active").order_by(Analysis.created_at.desc())
-        )
+        conds = [Analysis.user_id == user.id, Analysis.status == "active"]
+        if trade_type:
+            conds.append(Analysis.trade_type == trade_type)
+        q = await db.execute(select(Analysis).where(*conds).order_by(Analysis.created_at.desc()))
         rows = q.scalars().all()
         return [
             {
                 "id": r.id,
                 "symbol": r.symbol,
+                "trade_type": getattr(r, "trade_type", "spot"),
                 "version": r.version,
                 "payload": r.payload_json,
                 "created_at": r.created_at,
@@ -37,14 +39,16 @@ async def list_analyses(status: str = "active", db: AsyncSession = Depends(get_d
             for r in rows
         ]
     else:
-        q = await db.execute(
-            select(Plan).where(Plan.user_id == user.id).order_by(Plan.created_at.desc())
-        )
+        conds = [Plan.user_id == user.id]
+        if trade_type:
+            conds.append(Plan.trade_type == trade_type)
+        q = await db.execute(select(Plan).where(*conds).order_by(Plan.created_at.desc()))
         rows = q.scalars().all()
         return [
             {
                 "id": r.id,
                 "symbol": r.symbol,
+                "trade_type": getattr(r, "trade_type", "spot"),
                 "version": r.version,
                 "payload": r.payload_json,
                 "created_at": r.created_at,
@@ -59,7 +63,7 @@ async def save_snapshot(aid: int, db: AsyncSession = Depends(get_db), user=Depen
     if not a or a.user_id != user.id:
         raise HTTPException(404, "Not found")
     # Create a snapshot in Plan table and keep current Analysis active
-    snap = Plan(user_id=user.id, symbol=a.symbol, version=a.version, payload_json=a.payload_json)
+    snap = Plan(user_id=user.id, symbol=a.symbol, trade_type=getattr(a, 'trade_type', 'spot'), version=a.version, payload_json=a.payload_json)
     db.add(snap)
     await db.commit()
     return {"ok": True, "active_id": a.id}

@@ -38,6 +38,13 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
   const createdWIB = useMemo(()=>{
     try{ return new Date(plan.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB' }catch{ return new Date(plan.created_at).toLocaleString('id-ID') }
   },[plan.created_at])
+  // Decimals for Spot formatting (from spot2.metrics or fallback)
+  const decimals = useMemo(()=>{
+    try{
+      const d = p?.spot2?.metrics?.price_decimals ?? p?.price_decimals
+      return (typeof d === 'number') ? d : 5
+    }catch{ return 5 }
+  }, [p?.spot2?.metrics?.price_decimals, p?.price_decimals])
   const precision = useMemo(()=>{
     const base = (p?.entries && p.entries[0]) || (p?.tp && p.tp[0]) || (typeof p?.invalid==='number' ? p.invalid : 1)
     const last = typeof base === 'number' ? base : 1

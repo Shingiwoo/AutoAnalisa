@@ -20,11 +20,12 @@ async def analyze(payload: AnalyzeIn, db: AsyncSession = Depends(get_db), user=D
     ok = await locks.acquire(f"rate:analyze:{user.id}", ttl=2)
     if not ok:
         raise HTTPException(429, "Terlalu sering, coba lagi sebentar.")
-    a = await run_analysis(db, user, payload.symbol)
+    a = await run_analysis(db, user, payload.symbol, trade_type=str(getattr(payload, 'trade_type', 'spot') or 'spot'))
     return {
         "id": a.id,
         "user_id": a.user_id,
         "symbol": a.symbol,
+        "trade_type": a.trade_type,
         "version": a.version,
         "payload": a.payload_json,
         "created_at": a.created_at.isoformat(),

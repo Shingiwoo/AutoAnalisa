@@ -22,6 +22,7 @@ class Plan(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[str] = mapped_column(String(64), index=True)
     symbol: Mapped[str] = mapped_column(String(32), index=True)
+    trade_type: Mapped[str] = mapped_column(String(16), default="spot")  # spot|futures
     version: Mapped[int] = mapped_column(Integer, default=1)
     payload_json: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
@@ -42,6 +43,7 @@ class Analysis(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String, index=True)
     symbol: Mapped[str] = mapped_column(String, index=True)
+    trade_type: Mapped[str] = mapped_column(String(16), default="spot")  # spot|futures
     version: Mapped[int] = mapped_column(Integer, default=1)
     # keep JSON to store structured plan
     payload_json: Mapped[dict] = mapped_column(JSON)

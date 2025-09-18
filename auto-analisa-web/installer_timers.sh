@@ -74,7 +74,7 @@ WorkingDirectory=$BACK_DIR
 Environment=APP_ENV=prod
 $( [[ -n "$ENV_FILE" ]] && echo "EnvironmentFile=$ENV_FILE" )
 Environment=PYBIN=$PYBIN
-ExecStart=/bin/bash -lc 'PY=${PYBIN}; if [ ! -x "$PY" ]; then PY=$(command -v python3); fi; export PYTHONPATH=$PWD; exec "$PY" scripts/macro_generate.py'
+ExecStart=/bin/bash -lc 'PY=${PYBIN}; if [ ! -x "\$PY" ]; then PY=\$(command -v python3); fi; export PYTHONPATH=\$PWD; exec "\$PY" scripts/macro_generate.py'
 User=$RUN_USER
 Group=$RUN_USER
 
@@ -112,7 +112,7 @@ WorkingDirectory=$BACK_DIR
 Environment=APP_ENV=prod
 $( [[ -n "$ENV_FILE" ]] && echo "EnvironmentFile=$ENV_FILE" )
 Environment=PYBIN=$PYBIN
-ExecStart=/bin/bash -lc 'PY=${PYBIN}; if [ ! -x "$PY" ]; then PY=$(command -v python3); fi; export PYTHONPATH=$PWD; exec "$PY" scripts/futures_refresh.py'
+ExecStart=/bin/bash -lc 'PY=${PYBIN}; if [ ! -x "\$PY" ]; then PY=\$(command -v python3); fi; export PYTHONPATH=\$PWD; exec "\$PY" scripts/futures_refresh.py'
 User=$RUN_USER
 Group=$RUN_USER
 
@@ -149,4 +149,3 @@ log "Status singkat (abaikan error bila unit tertentu dinonaktifkan)"
 ( systemctl --no-pager --full status autoanalisa-futures-refresh.timer | sed -n '1,12p' ) || true
 
 log "Selesai. Gunakan 'journalctl -u autoanalisa-macro.service -f' dan 'journalctl -u autoanalisa-futures-refresh.service -f' untuk log."
-

@@ -133,6 +133,25 @@ async def init_db():
                 )
         except Exception:
             pass
+        # add trade_type to analyses and plans if missing
+        try:
+            res_a = await conn.exec_driver_sql("PRAGMA table_info(analyses)")
+            cols_a = {row[1] for row in res_a.fetchall()}
+            if "trade_type" not in cols_a:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE analyses ADD COLUMN trade_type TEXT DEFAULT 'spot'"
+                )
+        except Exception:
+            pass
+        try:
+            res_p = await conn.exec_driver_sql("PRAGMA table_info(plans)")
+            cols_p = {row[1] for row in res_p.fetchall()}
+            if "trade_type" not in cols_p:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE plans ADD COLUMN trade_type TEXT DEFAULT 'spot'"
+                )
+        except Exception:
+            pass
         # llm_verifications: add JSON fields if missing
         try:
             res3 = await conn.exec_driver_sql("PRAGMA table_info(llm_verifications)")

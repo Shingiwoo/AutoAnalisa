@@ -18,7 +18,7 @@ import os
 MAX_ACTIVE_CARDS = 4
 
 
-async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
+async def run_analysis(db: AsyncSession, user: User, symbol: str, trade_type: str = "spot") -> Analysis:
     # Check if analysis for this symbol already exists (active)
     sym = symbol.upper()
     q_exist = await db.execute(
@@ -38,7 +38,7 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
             raise HTTPException(409, "Maksimum 4 analisa aktif per user. Arsipkan salah satu dulu.")
 
     # compute baseline plan using existing rules engine
-    bundle = await fetch_bundle(symbol, ("4h", "1h", "15m", "5m"))
+    bundle = await fetch_bundle(symbol, ("4h", "1h", "15m", "5m"), market=("futures" if str(trade_type).lower()=="futures" else "spot"))
     feat = Features(bundle).enrich()
     score = score_symbol(feat)
     plan = await build_plan_async(db, bundle, feat, score, "auto")
@@ -69,6 +69,7 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
         existing.version = ver
         existing.payload_json = plan
         existing.status = "active"
+        existing.trade_type = str(trade_type or "spot")
         # bump timestamp so FE shows fresh time
         existing.created_at = datetime.now(timezone.utc)
         a = existing
@@ -76,6 +77,7 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
         a = Analysis(
             user_id=user.id,
             symbol=sym,
+            trade_type=str(trade_type or "spot"),
             version=ver,
             payload_json=plan,
             status="active",
@@ -89,7 +91,7 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str) -> Analysis:
 async def refresh_analysis_rules_only(db: AsyncSession, user: User, analysis: Analysis) -> Analysis:
     """Recompute plan using rules engine only (no LLM), bump version and timestamp."""
     sym = analysis.symbol.upper()
-    bundle = await fetch_bundle(sym, ("4h", "1h", "15m", "5m"))
+    bundle = await fetch_bundle(sym, ("4h", "1h", "15m", "5m"), market=("futures" if str(getattr(analysis, 'trade_type', 'spot')).lower()=="futures" else "spot"))
     feat = Features(bundle).enrich()
     score = score_symbol(feat)
     plan = await build_plan_async(db, bundle, feat, score, "auto")

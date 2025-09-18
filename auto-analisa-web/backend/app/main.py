@@ -60,6 +60,7 @@ from .routers import llm as llm_router
 from .routers import sessions as sessions_router
 from .routers import public as public_router
 from .routers import futures as futures_router
+from .routers import meta as meta_router
 
 
 @app.get("/api/plan/{plan_id}")
@@ -89,3 +90,4 @@ app.include_router(llm_router.router)
 app.include_router(sessions_router.router)
 app.include_router(public_router.router)
 app.include_router(futures_router.router)
+app.include_router(meta_router.router)
