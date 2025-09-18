@@ -168,7 +168,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
       <div className="rounded-none overflow-hidden ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-950 relative">
         <div className="aspect-[16/9] md:aspect-[21/9]">
           <ChartOHLCV
-            key={`${plan.symbol}-${tf}-${expanded?'x':''}`}
+            key={`${plan.symbol}-${mode}-${tf}-${expanded?'x':''}`}
             className="h-full"
             data={ohlcv}
             overlays={{
@@ -219,7 +219,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
             <button onClick={()=>setExpanded(false)} className="absolute top-3 right-3 px-2 py-1 rounded bg-zinc-800 text-white text-sm">Tutup</button>
             <div className="absolute inset-0">
               <ChartOHLCV
-                key={`${plan.symbol}-modal-${tf}`}
+                key={`${plan.symbol}-modal-${mode}-${tf}`}
                 className="w-full h-full"
                 data={ohlcv}
                 overlays={{

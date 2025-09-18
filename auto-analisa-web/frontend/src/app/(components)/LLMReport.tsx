@@ -38,13 +38,41 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
     }
     return arr.map((x:any)=> fmtNum(x)).join('–')
   }
+  const roundN = (x:number)=> {
+    const f = Math.pow(10, decimals)
+    return Math.round(x * f) / f
+  }
+  const uniqueWithTolerance = (arr:number[], eps:number)=>{
+    const out:number[] = []
+    const s = [...arr].sort((a,b)=> a-b)
+    for(const v of s){
+      if(out.length===0 || Math.abs(v - out[out.length-1]) > eps){ out.push(v) }
+    }
+    return out
+  }
+  const eps = 0.5 * Math.pow(10, -decimals)
+  // Prepare normalized/deduped data for display and preview
+  const entriesDisplay = useMemo(()=>{
+    try{
+      const list = (sug?.entries||[]).map((e:any)=> (Array.isArray(e?.range) ? e.range[0] : undefined)).filter((x:any)=> typeof x==='number') as number[]
+      const rounded = list.map(roundN)
+      return uniqueWithTolerance(rounded, eps)
+    }catch{ return [] }
+  },[JSON.stringify(sug?.entries), decimals])
+  const tpDisplay = useMemo(()=>{
+    try{
+      const list = (tp||[]).map((t:any)=> (Array.isArray(t?.range) ? t.range[0] : undefined)).filter((x:any)=> typeof x==='number') as number[]
+      const rounded = list.map(roundN)
+      return uniqueWithTolerance(rounded, eps)
+    }catch{ return [] }
+  },[JSON.stringify(tp), decimals])
   const ghost = useMemo(()=>{
     if(!data) return null
     const g:any={}
     try{
-      const ents = (sug.entries||[]).map((e:any)=> (Array.isArray(e.range)? e.range[0] : undefined)).filter((x:any)=> typeof x==='number')
+      const ents = entriesDisplay
       const inv = typeof (sug.invalid ?? data?.invalids?.hard_1h)==='number' ? (sug.invalid ?? data?.invalids?.hard_1h) : undefined
-      const tps = (tp||[]).map((t:any)=> (Array.isArray(t.range)? t.range[0]:undefined)).filter((x:any)=> typeof x==='number')
+      const tps = tpDisplay
       g.entries = ents
       g.invalid = inv
       g.tp = tps
@@ -88,7 +116,7 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
                 </div>
                 <div>
                   <dt className="text-zinc-500">Entries</dt>
-                  <dd>{(sug.entries||[]).map((e:any)=> `${fmtRange(e?.range)} (w=${e?.weight})`).join(' · ')||'-'}</dd>
+                  <dd>{entriesDisplay.length>0 ? entriesDisplay.map((x:number)=> fmtNum(x)).join(' · ') : '-'}</dd>
                 </div>
                 <div>
                   <dt className="text-zinc-500">Invalid (tiers)</dt>
@@ -96,14 +124,14 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
                 </div>
                 <div className="md:col-span-2">
                   <dt className="text-zinc-500">TP (reduce-only)</dt>
-                  <dd className="text-emerald-400">{(tp||[]).map((t:any)=> `${fmtRange(t?.range)}${typeof t?.reduce_only_pct==='number'? ` (${t.reduce_only_pct}%)`: ''}`).join(' → ')||'-'}</dd>
+                  <dd className="text-emerald-400">{tpDisplay.length>0 ? tpDisplay.map((x:number)=> fmtNum(x)).join(' → ') : '-'}</dd>
                 </div>
               </dl>
             ) : (
               <dl className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <dt className="text-zinc-500">Entries</dt>
-                  <dd>{(sug.entries||[]).map((e:any,i:number)=> `${fmtRange(e?.range)} (w=${e.weight})`).join(' · ')||'-'}</dd>
+                  <dd>{entriesDisplay.length>0 ? entriesDisplay.map((x:number)=> fmtNum(x)).join(' · ') : '-'}</dd>
                 </div>
                 <div>
                   <dt className="text-zinc-500">Invalid</dt>
@@ -111,7 +139,7 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
                 </div>
                 <div className="md:col-span-2">
                   <dt className="text-zinc-500">TP</dt>
-                  <dd className="text-emerald-400">{(tp||[]).map((t:any)=> fmtRange(t?.range)).join(' → ')||'-'}</dd>
+                  <dd className="text-emerald-400">{tpDisplay.length>0 ? tpDisplay.map((x:number)=> fmtNum(x)).join(' → ') : '-'}</dd>
                 </div>
               </dl>
             )}

@@ -57,6 +57,31 @@ async def list_analyses(status: str = "active", trade_type: str | None = None, d
         ]
 
 
+@router.get("/latest")
+async def latest(symbol: str, trade_type: str = "spot", db: AsyncSession = Depends(get_db), user=Depends(require_user)):
+    """Return latest active analysis for a symbol filtered by trade_type.
+
+    Used by FE to ensure Spot vs Futures data isolation.
+    """
+    conds = [
+        Analysis.user_id == user.id,
+        Analysis.symbol == symbol.upper(),
+        Analysis.status == "active",
+        Analysis.trade_type == trade_type,
+    ]
+    q = await db.execute(select(Analysis).where(*conds).order_by(desc(Analysis.created_at)))
+    a = q.scalars().first()
+    if not a:
+        raise HTTPException(404, "Not found")
+    return {
+        "id": a.id,
+        "symbol": a.symbol,
+        "trade_type": getattr(a, "trade_type", "spot"),
+        "version": a.version,
+        "payload": a.payload_json,
+        "created_at": a.created_at,
+    }
+
 @router.post("/{aid}/save")
 async def save_snapshot(aid: int, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     a = await db.get(Analysis, aid)
