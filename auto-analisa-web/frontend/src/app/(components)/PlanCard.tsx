@@ -4,6 +4,7 @@ import { api } from '../../app/api'
 import ChartOHLCV from './ChartOHLCV'
 import LLMReport from './LLMReport'
 import Spot2View from './Spot2View'
+import { getSymbolMeta } from '../../lib/meta'
 
 export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAfterVerify}:{plan:any,onUpdate:()=>void, llmEnabled?:boolean, llmRemaining?:number, onAfterVerify?:()=>void}){
   const p=plan.payload
@@ -42,13 +43,22 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
   const createdWIB = useMemo(()=>{
     try{ return new Date(plan.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB' }catch{ return new Date(plan.created_at).toLocaleString('id-ID') }
   },[plan.created_at])
-  // Decimals for Spot formatting (from spot2.metrics or fallback)
+  // Fetch symbol meta (fallback decimals)
+  const [metaSpot,setMetaSpot]=useState<any|null>(null)
+  const [metaFut,setMetaFut]=useState<any|null>(null)
+  useEffect(()=>{ (async()=>{
+    try{
+      if(!metaSpot){ const m = await getSymbolMeta(plan.symbol, 'spot'); setMetaSpot(m) }
+      if(!metaFut){ const m2 = await getSymbolMeta(plan.symbol, 'futures'); setMetaFut(m2) }
+    }catch{}
+  })() },[plan.symbol])
+  // Decimals for Spot formatting (from spot2.metrics or fallback to meta)
   const decimals = useMemo(()=>{
     try{
-      const d = p?.spot2?.metrics?.price_decimals ?? p?.price_decimals
+      const d = p?.spot2?.metrics?.price_decimals ?? p?.price_decimals ?? metaSpot?.price_decimals
       return (typeof d === 'number') ? d : 5
     }catch{ return 5 }
-  }, [p?.spot2?.metrics?.price_decimals, p?.price_decimals])
+  }, [p?.spot2?.metrics?.price_decimals, p?.price_decimals, metaSpot?.price_decimals])
   const precision = useMemo(()=>{
     const base = (p?.entries && p.entries[0]) || (p?.tp && p.tp[0]) || (typeof p?.invalid==='number' ? p.invalid : 1)
     const last = typeof base === 'number' ? base : 1
@@ -96,6 +106,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
       <div className="flex items-center justify-between">
         <div className="text-lg font-semibold flex items-center gap-2">
           <span>{plan.symbol} • v{plan.version}</span>
+          <span className="px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-xs" title="tf_base">{mode==='futures'? (fut?.tf_base||'15m') : (p?.spot2?.tf_base||'1h')}</span>
           <ScoreBadge score={p.score} />
           {p?.notice && <span className="px-2 py-0.5 rounded bg-amber-600 text-white text-xs" title={p.notice}>Updated</span>}
           {futUpdatedRecently && <span className="px-2 py-0.5 rounded bg-emerald-600 text-white text-xs" title="Sinyal Futures baru diperbarui">Updated</span>}
@@ -304,6 +315,10 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
       <Glossary />
       <div className="flex gap-2">
         <button onClick={onUpdate} className="px-3 py-2 rounded-md bg-zinc-900 text-white hover:bg-zinc-800">Update</button>
+        <button className="px-3 py-2 rounded-md bg-zinc-800 text-white hover:bg-zinc-700" onClick={async()=>{
+          try{ await api.post(`analyses/${plan.id}/save`); alert('Versi disimpan ke arsip') }
+          catch(e:any){ alert(e?.response?.data?.detail||'Gagal menyimpan versi') }
+        }}>Simpan Versi</button>
         {/* Spot verify */}
         <button disabled={mode!=='spot' || verifying || !llmEnabled || (typeof llmRemaining==='number' && llmRemaining<=0)} title={mode!=='spot' ? 'Verifikasi hanya untuk Spot' : (!llmEnabled? 'LLM nonaktif (limit/budget)':'Tanya GPT')}
           onClick={async()=>{
