@@ -12,6 +12,7 @@ export default function Hero({ loggedIn, isAdmin }:{ loggedIn:boolean, isAdmin:b
         <p className="mt-3 text-zinc-300 max-w-2xl">Dapatkan rencana intraday lengkap: bias dominan, level kunci, entri, TP, dan invalidasi — dihasilkan otomatis berdasarkan data pasar terbaru.</p>
         <div className="mt-6 flex flex-wrap gap-3">
           <a href="#analisa" className="rounded px-4 py-2 bg-white text-slate-900 font-medium hover:bg-zinc-200">Mulai Analisa</a>
+          <Link href="/futures" className="rounded px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-500">Futures</Link>
           {isAdmin && <Link href="/admin" className="rounded px-4 py-2 bg-zinc-800 text-white hover:bg-zinc-700">Ke Admin</Link>}
           {!loggedIn && <Link href="/register" className="rounded px-4 py-2 bg-cyan-600 text-white hover:bg-cyan-500">Buat Akun</Link>}
         </div>
