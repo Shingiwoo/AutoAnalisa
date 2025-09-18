@@ -51,8 +51,8 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
     setTf(t)
   },[tab])
   useEffect(()=>{ (async()=>{
-    try{ setLoading(true); const {data}=await api.get('ohlcv', { params:{ symbol:plan.symbol, tf, limit:200 } }); setOhlcv(data) }catch{} finally{ setLoading(false) }
-  })() },[tf, plan.symbol])
+    try{ setLoading(true); const {data}=await api.get('ohlcv', { params:{ symbol:plan.symbol, tf, limit:200, market: (mode==='futures'?'futures':'spot') } }); setOhlcv(data) }catch{} finally{ setLoading(false) }
+  })() },[tf, plan.symbol, mode])
   // Load futures plan on demand
   useEffect(()=>{ (async()=>{
     if(mode!=='futures') return
@@ -235,7 +235,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
               {typeof invalids.h1==='number' && <span className="px-2 py-0.5 rounded bg-rose-600 text-white" title="Invalid hard 1h">1h: {fmt(invalids.h1)}</span>}
               {typeof invalids.h4==='number' && <span className="px-2 py-0.5 rounded bg-violet-600 text-white" title="Invalid struct 4h">4h: {fmt(invalids.h4)}</span>}
             </div>
-            <Spot2View spot2={p.spot2} />
+            <Spot2View spot2={p.spot2} decimals={decimals} fmt={fmt} />
           </div>
         ) : (
           <MTFDesc mtf={mtfData || {}} tf={tab} />
@@ -257,10 +257,16 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
           }
         }}>{prevOpen? 'Sembunyikan versi sebelumnya':'Tampilkan versi sebelumnya'}</button>
       </div>
-      {prevOpen && prevPlan?.payload && (
+      {prevOpen && prevPlan?.payload && mode!=='futures' && (
         <div className="rounded-xl ring-1 ring-amber-500/20 bg-amber-500/5 p-3">
           <div className="text-xs text-amber-400 mb-1">Versi sebelumnya • {prevPlan?.created_at ? new Date(prevPlan.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : ''} WIB</div>
-          <Spot2View spot2={prevPlan.payload.spot2 || prevPlan.payload} />
+          <Spot2View spot2={prevPlan.payload.spot2 || prevPlan.payload} decimals={prevPlan?.payload?.spot2?.metrics?.price_decimals || decimals} fmt={fmt} />
+        </div>
+      )}
+      {prevOpen && mode==='futures' && p?.futures && (
+        <div className="rounded-xl ring-1 ring-amber-500/20 bg-amber-500/5 p-3">
+          <div className="text-xs text-amber-400 mb-1">Versi Futures (diterapkan)</div>
+          <FuturesSummary fut={p.futures} />
         </div>
       )}
 
@@ -478,6 +484,8 @@ function FuturesSummary({ fut }:{ fut:any }){
   const sig = s?.futures_signals||{}
   const tp = s?.tp||[]
   const ents = s?.entries||[]
+  const dec = typeof s?.price_decimals==='number' ? s.price_decimals : 5
+  const fmt = (n:number)=> typeof n==='number' ? n.toFixed(dec) : n
   const fundingColor = typeof sig?.funding?.now==='number' ? (sig.funding.now>0 ? 'text-rose-500' : 'text-emerald-500') : 'text-zinc-600'
   const oiH1 = Number(sig?.oi?.h1)
   const oiH4 = Number(sig?.oi?.h4)
@@ -499,15 +507,15 @@ function FuturesSummary({ fut }:{ fut:any }){
         </div>
         <div>
           <div className="text-zinc-500">Entries</div>
-          <div>{ents.map((e:any)=> (Array.isArray(e.range)? e.range[0]: '-')).join(' · ')||'-'}</div>
+          <div>{ents.map((e:any)=> (Array.isArray(e.range)? fmt(e.range[0]): '-')).join(' · ')||'-'}</div>
         </div>
         <div>
           <div className="text-zinc-500">Invalid (tiers)</div>
-          <div>{['tactical_5m','soft_15m','hard_1h','struct_4h'].map((k)=> s?.invalids?.[k]).filter((x:any)=> typeof x==='number').join(' · ')||'-'}</div>
+          <div>{['tactical_5m','soft_15m','hard_1h','struct_4h'].map((k)=> s?.invalids?.[k]).filter((x:any)=> typeof x==='number').map((x:number)=> fmt(x)).join(' · ')||'-'}</div>
         </div>
         <div className="md:col-span-2">
           <div className="text-zinc-500">TP (reduce-only)</div>
-          <div className="text-emerald-600">{tp.map((t:any)=> `${(t?.range||[]).join('–')} (${typeof t?.reduce_only_pct==='number'? t.reduce_only_pct: '-' }%)`).join(' → ')||'-'}</div>
+          <div className="text-emerald-600">{tp.map((t:any)=> `${(t?.range||[]).map((x:number)=>fmt(x)).join('–')} (${typeof t?.reduce_only_pct==='number'? t.reduce_only_pct: '-' }%)`).join(' → ')||'-'}</div>
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

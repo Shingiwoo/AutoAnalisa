@@ -177,7 +177,10 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
         })
 
     # Enforce daily per-user limit before using cache or calling LLM
-    today = await get_today_usage(db, user_id=user.id)
+    # daily limit spot
+    sset = await get_or_init_settings(db)
+    lim_spot = int(getattr(sset, "llm_daily_limit_spot", getattr(settings, "LLM_DAILY_LIMIT", 40)) or 40)
+    today = await get_today_usage(db, user_id=user.id, kind="spot", limit_override=lim_spot)
     if today["remaining"] <= 0:
         raise HTTPException(409, detail={
             "error_code": "quota_exceeded",
@@ -202,6 +205,7 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
             output_tokens=0,
             cost_usd=0.0,
             add_call=True,
+            kind="spot",
         )
         await db.commit()
         return {
@@ -413,6 +417,7 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
             output_tokens=completion_toks,
             cost_usd=usd_daily,
             add_call=True,
+            kind="spot",
         )
         await db.commit()
     except Exception:

@@ -119,11 +119,13 @@ def _apply_settings_payload(s, payload: dict):
         "auto_off_at_budget": ["auto_off_at_budget"],
         "input_usd_per_1k": ["input_usd_per_1k"],
         "output_usd_per_1k": ["output_usd_per_1k"],
+        "llm_daily_limit_spot": ["llm_daily_limit_spot"],
+        "llm_daily_limit_futures": ["llm_daily_limit_futures"],
     }
     bool_fields = {"use_llm", "registration_enabled", "auto_off_at_budget", "show_sessions_hint", "enable_futures", "futures_funding_alert_enabled"}
     bool_fields |= {"enable_fvg", "enable_supply_demand", "fvg_use_bodies"}
     float_fields = {"budget_monthly_usd", "input_usd_per_1k", "output_usd_per_1k", "sd_body_ratio", "sd_min_departure", "fvg_threshold_pct", "sd_vol_threshold_pct", "futures_risk_per_trade_pct", "futures_funding_threshold_bp", "futures_liq_buffer_k_atr15m"}
-    int_fields = {"max_users", "sd_max_base", "sd_vol_div", "futures_leverage_min", "futures_leverage_max", "futures_funding_avoid_minutes", "futures_funding_alert_window_min"}
+    int_fields = {"max_users", "sd_max_base", "sd_vol_div", "futures_leverage_min", "futures_leverage_max", "futures_funding_avoid_minutes", "futures_funding_alert_window_min", "llm_daily_limit_spot", "llm_daily_limit_futures"}
 
     for attr, keys in sources.items():
         # pick the first present key
@@ -225,6 +227,8 @@ async def put_settings(payload: dict, db: AsyncSession = Depends(get_db), user=D
         "sd_vol_threshold_pct": getattr(s, "sd_vol_threshold_pct", 10.0),
         "show_sessions_hint": getattr(s, "show_sessions_hint", True),
         "default_weight_profile": getattr(s, "default_weight_profile", "DCA"),
+        "llm_daily_limit_spot": getattr(s, "llm_daily_limit_spot", 40),
+        "llm_daily_limit_futures": getattr(s, "llm_daily_limit_futures", 40),
         # futures
         "enable_futures": getattr(s, "enable_futures", False),
         "futures_leverage_min": getattr(s, "futures_leverage_min", 3),

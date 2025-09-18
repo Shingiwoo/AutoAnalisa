@@ -82,6 +82,14 @@ async def init_db():
                 await conn.exec_driver_sql(
                     "ALTER TABLE settings ADD COLUMN default_weight_profile TEXT DEFAULT 'DCA'"
                 )
+            if "llm_daily_limit_spot" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN llm_daily_limit_spot INTEGER DEFAULT 40"
+                )
+            if "llm_daily_limit_futures" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN llm_daily_limit_futures INTEGER DEFAULT 40"
+                )
             # Futures settings additions
             if "enable_futures" not in cols:
                 await conn.exec_driver_sql(
@@ -149,6 +157,14 @@ async def init_db():
                 await conn.exec_driver_sql(
                     "ALTER TABLE llm_verifications ADD COLUMN futures_json JSON DEFAULT '{}'"
                 )
+        except Exception:
+            pass
+        # llm_usage add kind
+        try:
+            resu = await conn.exec_driver_sql("PRAGMA table_info(llm_usage)")
+            cols_u = {row[1] for row in resu.fetchall()}
+            if "kind" not in cols_u:
+                await conn.exec_driver_sql("ALTER TABLE llm_usage ADD COLUMN kind TEXT DEFAULT 'spot'")
         except Exception:
             pass
         try:

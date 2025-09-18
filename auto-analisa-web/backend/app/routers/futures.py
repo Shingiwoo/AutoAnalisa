@@ -67,6 +67,18 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
     # Signals cache (best-effort, empty in this skeleton)
     q = await db.execute(select(FuturesSignalsCache).where(FuturesSignalsCache.symbol == symbol.upper()).order_by(FuturesSignalsCache.created_at.desc()))
     sig = q.scalars().first()
+    # Auto-refresh sinyal bila kosong atau stale (>15 menit)
+    try:
+        from datetime import datetime, timezone, timedelta
+        stale = True
+        if sig and getattr(sig, "created_at", None):
+            age = datetime.now(timezone.utc) - sig.created_at.replace(tzinfo=timezone.utc) if sig.created_at.tzinfo is None else datetime.now(timezone.utc) - sig.created_at
+            stale = age > timedelta(minutes=15)
+        if (not sig) or stale:
+            from app.services.futures import refresh_signals_cache
+            sig = await refresh_signals_cache(db, symbol.upper())
+    except Exception:
+        pass
     futures_signals = {
         "funding": {"now": getattr(sig, "funding_now", None), "next": getattr(sig, "funding_next", None), "time": getattr(sig, "next_funding_time", None)},
         "oi": {"now": getattr(sig, "oi_now", None), "d1": getattr(sig, "oi_d1", None)},
@@ -122,7 +134,7 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
         "symbol": symbol.upper(),
         "contract": "PERP",
         "side": side,
-        "tf_base": "1h",
+        "tf_base": "15m",
         "bias": base_plan.get("bias", ""),
         "support": base_plan.get("support", [])[:2],
         "resistance": base_plan.get("resistance", [])[:2],
@@ -166,7 +178,9 @@ async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=
             "error_code": "server_config",
             "message": "LLM belum dikonfigurasi: OPENAI_API_KEY belum diisi.",
         })
-    today = await get_today_usage(db, user_id=user.id)
+    sset = await get_or_init_settings(db)
+    lim_fut = int(getattr(sset, "llm_daily_limit_futures", getattr(settings, "LLM_DAILY_LIMIT", 40)) or 40)
+    today = await get_today_usage(db, user_id=user.id, kind="futures", limit_override=lim_fut)
     if today["remaining"] <= 0:
         raise HTTPException(409, detail={
             "error_code": "quota_exceeded",
@@ -269,7 +283,7 @@ async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=
         in_price = float(os.getenv("LLM_PRICE_INPUT_USD_PER_MTOK", 0.625))
         out_price = float(os.getenv("LLM_PRICE_OUTPUT_USD_PER_MTOK", 5.0))
         usd_daily = (prompt_toks/1_000_000.0)*in_price + (completion_toks/1_000_000.0)*out_price
-        await inc_usage(db, user_id=user.id, model=model, input_tokens=prompt_toks, output_tokens=completion_toks, cost_usd=usd_daily, add_call=True)
+        await inc_usage(db, user_id=user.id, model=model, input_tokens=prompt_toks, output_tokens=completion_toks, cost_usd=usd_daily, add_call=True, kind="futures")
         await db.commit()
     except Exception:
         pass

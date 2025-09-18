@@ -25,11 +25,12 @@ async def inc_usage(
     output_tokens: int,
     cost_usd: float,
     add_call: bool = True,
+    kind: str = "spot",
 ) -> None:
     today = _today_utc()
     month = _month_str(today)
 
-    q = select(LLMUsage).where(LLMUsage.user_id == user_id, LLMUsage.day == today)
+    q = select(LLMUsage).where(LLMUsage.user_id == user_id, LLMUsage.day == today, LLMUsage.kind == kind)
     row = (await db.execute(q)).scalar_one_or_none()
 
     if row is None:
@@ -43,6 +44,7 @@ async def inc_usage(
             input_tokens=0,
             output_tokens=0,
             cost_usd=0.0,
+            kind=kind,
         )
         db.add(row)
         await db.flush()
@@ -54,12 +56,15 @@ async def inc_usage(
     row.cost_usd = float(row.cost_usd or 0.0) + float(cost_usd or 0.0)
 
 
-async def get_today_usage(db: AsyncSession, *, user_id: str) -> dict:
+async def get_today_usage(db: AsyncSession, *, user_id: str, kind: str = "spot", limit_override: int | None = None) -> dict:
     today = _today_utc()
-    q = select(LLMUsage).where(LLMUsage.user_id == user_id, LLMUsage.day == today)
+    q = select(LLMUsage).where(LLMUsage.user_id == user_id, LLMUsage.day == today, LLMUsage.kind == kind)
     row = (await db.execute(q)).scalar_one_or_none()
     calls = int(row.calls) if row else 0
-    limit = int(getattr(settings, "LLM_DAILY_LIMIT", 40) or 40)
+    if limit_override is not None:
+        limit = int(limit_override)
+    else:
+        limit = int(getattr(settings, "LLM_DAILY_LIMIT", 40) or 40)
     return {"calls": calls, "limit": limit, "remaining": max(0, limit - calls)}
 
 
@@ -68,4 +73,3 @@ async def get_monthly_spend(db: AsyncSession) -> float:
     q = select(LLMUsage.cost_usd).where(LLMUsage.month == month)
     rows = (await db.execute(q)).scalars().all()
     return float(sum(rows or []))
-

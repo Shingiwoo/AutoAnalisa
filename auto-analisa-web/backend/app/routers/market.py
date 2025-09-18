@@ -8,14 +8,17 @@ router = APIRouter(prefix="/api", tags=["market"])
 
 
 @router.get("/ohlcv")
-async def ohlcv(symbol: str, tf: str = "15m", limit: int = 200, user=Depends(require_user), db=Depends(get_db)):
+async def ohlcv(symbol: str, tf: str = "15m", limit: int = 200, market: str = "spot", user=Depends(require_user), db=Depends(get_db)):
     # rate limit sederhana: 3 detik per user+symbol+tf
-    key = f"rate:ohlcv:{user.id}:{symbol}:{tf}"
+    key = f"rate:ohlcv:{user.id}:{symbol}:{tf}:{market}"
     ok = await locks.acquire(key, ttl=3)
     if not ok:
         raise HTTPException(429, "Terlalu sering, coba sebentar lagi.")
     try:
-        df = await fetch_klines(symbol, tf, limit)
+        try:
+            df = await fetch_klines(symbol, tf, limit, market=market)
+        except TypeError:
+            df = await fetch_klines(symbol, tf, limit)
     except Exception as e:  # pragma: no cover
         raise HTTPException(400, f"Failed to fetch OHLCV: {e}")
     out = [

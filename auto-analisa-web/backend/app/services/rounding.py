@@ -47,6 +47,15 @@ def _tick_size_for(symbol: str) -> float | None:
     return None
 
 
+def _decimals_from_tick(step: float | None) -> int:
+    if step is None or step <= 0:
+        return 6
+    s = f"{step:.12f}".rstrip('0').rstrip('.')
+    if '.' in s:
+        return min(8, max(0, len(s.split('.')[1])))
+    return 0
+
+
 def _snap(v: float, step: float) -> float:
     if step is None or step <= 0:
         return round(float(v), 6)
@@ -62,6 +71,7 @@ def round_plan_prices(symbol: str, plan: Dict[str, Any]) -> Dict[str, Any]:
     if tick is None:
         # fallback already handled in validator; no-op here
         return p
+    p["price_decimals"] = _decimals_from_tick(tick)
     for key in ("support", "resistance", "entries", "tp"):
         arr = p.get(key)
         if isinstance(arr, list):
@@ -79,6 +89,8 @@ def round_spot2_prices(symbol: str, spot2: Dict[str, Any]) -> Dict[str, Any]:
     tick = _tick_size_for(symbol)
     if tick is None:
         return s2
+    s2.setdefault("metrics", {})
+    s2["metrics"]["price_decimals"] = _decimals_from_tick(tick)
     # rencana_jual_beli entries + invalid
     rjb = dict(s2.get("rencana_jual_beli") or {})
     ents = []
@@ -126,6 +138,7 @@ def round_futures_prices(symbol: str, fut: Dict[str, Any]) -> Dict[str, Any]:
     tick = _tick_size_for(symbol)
     if tick is None:
         return s
+    s["price_decimals"] = _decimals_from_tick(tick)
     # entries
     ents = []
     for e in (s.get("entries") or []):

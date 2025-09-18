@@ -5,6 +5,7 @@ from typing import Dict
 
 
 ex = ccxt.binance()
+ex_usdm = ccxt.binanceusdm()
 
 def _normalize_symbol(sym: str) -> str:
     s = sym.replace(':USDT', '/USDT') if ':USDT' in sym else sym
@@ -18,7 +19,7 @@ def _normalize_symbol(sym: str) -> str:
     return s
 
 
-async def fetch_klines(symbol: str, timeframe: str, limit: int = 500) -> pd.DataFrame:
+async def fetch_klines(symbol: str, timeframe: str, limit: int = 500, market: str = "spot") -> pd.DataFrame:
     # catatan: ccxt sync; untuk lokal ok dipanggil di fungsi async
     symbol = _normalize_symbol(symbol)
     # Force offline synthetic data if env set (e.g., ISP blocks Binance DNS)
@@ -46,7 +47,8 @@ async def fetch_klines(symbol: str, timeframe: str, limit: int = 500) -> pd.Data
         except Exception:
             pass
     try:
-        ohlcv = ex.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+        client = ex if str(market).lower() != "futures" else ex_usdm
+        ohlcv = client.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
         df = pd.DataFrame(ohlcv, columns=["ts", "open", "high", "low", "close", "volume"])
         return df
     except Exception:
@@ -72,8 +74,12 @@ async def fetch_klines(symbol: str, timeframe: str, limit: int = 500) -> pd.Data
         return df
 
 
-async def fetch_bundle(symbol: str, tfs=("4h", "1h", "15m", "5m")) -> Dict[str, pd.DataFrame]:
+async def fetch_bundle(symbol: str, tfs=("4h", "1h", "15m", "5m"), market: str = "spot") -> Dict[str, pd.DataFrame]:
     out: Dict[str, pd.DataFrame] = {}
     for tf in tfs:
-        out[tf] = await fetch_klines(symbol, tf, 300 if tf == "15m" else 600)
+        try:
+            out[tf] = await fetch_klines(symbol, tf, 300 if tf == "15m" else 600, market=market)
+        except TypeError:
+            # compatibility with tests that monkeypatch fetch_klines(symbol, tf, limit)
+            out[tf] = await fetch_klines(symbol, tf, 300 if tf == "15m" else 600)
     return out

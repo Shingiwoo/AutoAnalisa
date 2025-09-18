@@ -72,6 +72,8 @@ class Settings(Base):
     enable_supply_demand: Mapped[bool] = mapped_column(Boolean, default=False)
     show_sessions_hint: Mapped[bool] = mapped_column(Boolean, default=True)
     default_weight_profile: Mapped[str] = mapped_column(String, default="DCA")
+    llm_daily_limit_spot: Mapped[int] = mapped_column(Integer, default=40)
+    llm_daily_limit_futures: Mapped[int] = mapped_column(Integer, default=40)
     # Indicator tuning parameters (admin configurable)
     fvg_use_bodies: Mapped[bool] = mapped_column(Boolean, default=False)
     fvg_fill_rule: Mapped[str] = mapped_column(String, default="any_touch")  # any_touch|50pct|full
@@ -163,6 +165,7 @@ class LLMUsage(Base):
     day: Mapped[dt.date] = mapped_column(Date, index=True)  # UTC date
     month: Mapped[str] = mapped_column(String, index=True)   # YYYY-MM
     model: Mapped[str] = mapped_column(String)
+    kind: Mapped[str] = mapped_column(String, default="spot")  # spot|futures
     calls: Mapped[int] = mapped_column(Integer, default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
