@@ -46,31 +46,33 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
             </div>
           </div>
         ) : (
-        {verification.summary && <div className="italic text-zinc-600 dark:text-zinc-300">{verification.summary}</div>}
-        <dl className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div>
-            <dt className="text-zinc-500">Entries</dt>
-            <dd>{(sug.entries||[]).map((e:any,i:number)=> `${(e.range||[]).join('–')} (w=${e.weight})`).join(' · ')||'-'}</dd>
-          </div>
-          <div>
-            <dt className="text-zinc-500">Invalid</dt>
-            <dd className="text-rose-400">{sug.invalid}</dd>
-          </div>
-          <div className="md:col-span-2">
-            <dt className="text-zinc-500">TP</dt>
-            <dd className="text-emerald-400">{(tp||[]).map((t:any)=> (t?.range||[]).join('–')).join(' → ')||'-'}</dd>
-          </div>
-          {Array.isArray(verification?.fundamentals?.bullets) && verification.fundamentals.bullets.length>0 && (
-            <div className="md:col-span-2">
-              <dt className="text-zinc-500">Fundamentals</dt>
-              <dd>
-                <ul className="list-disc pl-5">
-                  {verification.fundamentals.bullets.map((b:string,i:number)=> <li key={i}>{b}</li>)}
-                </ul>
-              </dd>
-            </div>
-          )}
-        </dl>
+          <>
+            {verification.summary && <div className="italic text-zinc-600 dark:text-zinc-300">{verification.summary}</div>}
+            <dl className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <dt className="text-zinc-500">Entries</dt>
+                <dd>{(sug.entries||[]).map((e:any,i:number)=> `${(e.range||[]).join('–')} (w=${e.weight})`).join(' · ')||'-'}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Invalid</dt>
+                <dd className="text-rose-400">{sug.invalid}</dd>
+              </div>
+              <div className="md:col-span-2">
+                <dt className="text-zinc-500">TP</dt>
+                <dd className="text-emerald-400">{(tp||[]).map((t:any)=> (t?.range||[]).join('–')).join(' → ')||'-'}</dd>
+              </div>
+              {Array.isArray(verification?.fundamentals?.bullets) && verification.fundamentals.bullets.length>0 && (
+                <div className="md:col-span-2">
+                  <dt className="text-zinc-500">Fundamentals</dt>
+                  <dd>
+                    <ul className="list-disc pl-5">
+                      {verification.fundamentals.bullets.map((b:string,i:number)=> <li key={i}>{b}</li>)}
+                    </ul>
+                  </dd>
+                </div>
+              )}
+            </dl>
+          </>
         )}
         <div className="flex items-center gap-2">
           <button disabled={busy} className="px-3 py-1.5 rounded bg-cyan-600 text-white text-sm hover:bg-cyan-500 disabled:opacity-50" onClick={async()=>{
