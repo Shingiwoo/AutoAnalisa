@@ -154,7 +154,9 @@ async def fetch_orderbook_metrics(symbol: str) -> dict | None:
 
 
 async def fetch_leverage_bracket(symbol: str) -> dict | None:
-    """Ambil leverage bracket untuk estimasi maintenance margin ratio (mmr) bracket pertama."""
+    """Ambil leverage bracket: kembalikan mmr bracket pertama dan lev_max bila tersedia.
+    Struktur Binance biasanya memuat 'brackets': [{ initialLeverage, maintMarginRatio, ... }].
+    """
     if os.getenv("MARKET_OFFLINE", "").strip().lower() in {"1", "true", "yes", "on"}:
         return None
     sym = _norm_symbol(symbol)
@@ -165,7 +167,13 @@ async def fetch_leverage_bracket(symbol: str) -> dict | None:
             br = data[0].get("brackets") or []
             if br:
                 mmr = float(br[0].get("maintMarginRatio") or 0.0)
-                return {"mmr": mmr}
+                levs = []
+                try:
+                    levs = [int(b.get("initialLeverage")) for b in br if b.get("initialLeverage") is not None]
+                except Exception:
+                    levs = []
+                lev_max = max(levs) if levs else None
+                return {"mmr": mmr, "lev_max": lev_max}
     except Exception:
         pass
     return None

@@ -155,6 +155,10 @@ class LLMVerification(Base):
     fundamentals: Mapped[dict] = mapped_column(JSON, default={})  # optional bullets for 24–48h
     spot2_json: Mapped[dict] = mapped_column(JSON, default={})
     futures_json: Mapped[dict] = mapped_column(JSON, default={})
+    # New fields for confirm-only futures verify contract
+    trade_type: Mapped[str] = mapped_column(String, default="spot")  # spot|futures
+    macro_snapshot: Mapped[dict] = mapped_column(JSON, default={})
+    ui_contract: Mapped[dict] = mapped_column(JSON, default={})
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
     cached: Mapped[bool] = mapped_column(Boolean, default=False)
 

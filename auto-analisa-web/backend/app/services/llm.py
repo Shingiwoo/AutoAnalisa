@@ -1,6 +1,6 @@
 import os
 import json
-from typing import Tuple, Dict
+from typing import Tuple, Dict, List
 
 from openai import OpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,3 +55,27 @@ async def should_use_llm(db: AsyncSession) -> tuple[bool, str | None]:
     if await check_budget_and_maybe_off(db):
         return False, "LLM auto-off: limit reached"
     return True, None
+
+
+def ask_llm_messages(messages: List[Dict[str, str]]) -> Tuple[str, Dict[str, int]]:
+    """Chat Completions with explicit messages. Returns (text, usage).
+    Honors OPENAI_JSON_STRICT to require JSON object responses.
+    """
+    if _client is None:
+        return "", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    strict = os.getenv("OPENAI_JSON_STRICT", "").strip().lower() in {"1", "true", "yes", "on"}
+    kwargs = {}
+    if strict:
+        kwargs["response_format"] = {"type": "json_object"}
+    resp = _client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=messages,
+        **kwargs,
+    )
+    text = resp.choices[0].message.content or ""
+    usage = {
+        "prompt_tokens": getattr(resp.usage, "prompt_tokens", 0),
+        "completion_tokens": getattr(resp.usage, "completion_tokens", 0),
+        "total_tokens": getattr(resp.usage, "total_tokens", 0),
+    }
+    return text, usage

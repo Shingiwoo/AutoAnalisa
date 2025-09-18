@@ -6,6 +6,15 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
   const [busy,setBusy]=useState(false)
   const [view,setView]=useState<'summary'|'json'>('summary')
   const verdict = (verification?.verdict||'').toLowerCase()
+  const verdictLabel = useMemo(()=>{
+    switch(verdict){
+      case 'valid': return '✅ Valid'
+      case 'tweak': return '🛠️ Perlu Penyesuaian'
+      case 'reject': return '⛔ Tolak'
+      case 'warning': return '⚠️ Warning'
+      default: return verdict||'verify'
+    }
+  },[verdict])
   const tsWib = useMemo(()=> verification?.created_at ? new Date(verification.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '',[verification?.created_at])
   const data = (kind==='futures') ? verification?.futures_json : verification?.spot2_json
   const sug = (data?.rencana_jual_beli) ? data.rencana_jual_beli : (data?.entries ? { entries: data.entries, invalid: data?.invalids?.hard_1h } : {})
@@ -85,7 +94,7 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
   return (
     <details className="rounded-xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white/5 p-3">
       <summary className="flex items-center gap-2 cursor-pointer text-sm">
-        <span className={`px-2 py-0.5 rounded text-white text-xs ${badgeColor}`}>{verdict||'verify'}</span>
+        <span className={`px-2 py-0.5 rounded text-white text-xs ${badgeColor}`}>{verdictLabel}</span>
         <span className="font-medium">LLM Report</span>
         <span className="text-xs opacity-70">{tsWib} WIB</span>
       </summary>
@@ -105,28 +114,66 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
           <>
             {verification.summary && <div className="italic text-zinc-600 dark:text-zinc-300">{verification.summary}</div>}
             {kind==='futures' ? (
-              <dl className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <dt className="text-zinc-500">Side • Leverage</dt>
-                  <dd>{data?.side || '-'} • isolated x={(data?.leverage_suggested?.x ?? '-')}</dd>
-                </div>
-                <div>
-                  <dt className="text-zinc-500">Risk</dt>
-                  <dd>risk/trade: {data?.risk?.risk_per_trade_pct ?? '-'}% • rr_min: {data?.risk?.rr_min ?? '-'}</dd>
-                </div>
-                <div>
-                  <dt className="text-zinc-500">Entries</dt>
-                  <dd>{entriesDisplay.length>0 ? entriesDisplay.map((x:number)=> fmtNum(x)).join(' · ') : '-'}</dd>
-                </div>
-                <div>
-                  <dt className="text-zinc-500">Invalid (tiers)</dt>
-                  <dd className="text-rose-400">{['tactical_5m','soft_15m','hard_1h','struct_4h'].map((k)=> data?.invalids?.[k]).filter((x:any)=> typeof x==='number').map((x:number)=> fmtNum(x)).join(' · ')||'-'}</dd>
-                </div>
-                <div className="md:col-span-2">
-                  <dt className="text-zinc-500">TP (reduce-only)</dt>
-                  <dd className="text-emerald-400">{tpDisplay.length>0 ? tpDisplay.map((x:number)=> fmtNum(x)).join(' → ') : '-'}</dd>
-                </div>
-              </dl>
+              <>
+                <dl className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <dt className="text-zinc-500">Leverage</dt>
+                    <dd>
+                      {typeof data?.leverage?.lev_default==='number' ? (
+                        <>
+                          default x={data.leverage.lev_default}
+                          {data.leverage.violates_lev_policy && <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-600 text-white text-xs">⚠️ policy</span>}
+                        </>
+                      ) : (
+                        <>{data?.side || '-'} • isolated x={(data?.leverage_suggested?.x ?? '-')}</>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-zinc-500">Risk</dt>
+                    <dd>risk/trade: {data?.risk?.risk_per_trade_pct ?? '-'}% • rr_min: {data?.risk?.rr_min ?? '-'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-zinc-500">Entries</dt>
+                    <dd>{entriesDisplay.length>0 ? entriesDisplay.map((x:number)=> fmtNum(x)).join(' · ') : '-'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-zinc-500">Invalid (tiers)</dt>
+                    <dd className="text-rose-400">{['tactical_5m','soft_15m','hard_1h','struct_4h'].map((k)=> data?.invalids?.[k]).filter((x:any)=> typeof x==='number').map((x:number)=> fmtNum(x)).join(' · ')||'-'}</dd>
+                  </div>
+                  <div className="md:col-span-2">
+                    <dt className="text-zinc-500">TP Ladder</dt>
+                    <dd className="text-emerald-400">
+                      {Array.isArray(data?.tp_ladder_pct) && data.tp_ladder_pct.length>0 ? (
+                        <>{data.tp_ladder_pct.join('/')}{' '}% • {tpDisplay.length>0 ? tpDisplay.map((x:number)=> fmtNum(x)).join(' → ') : '-'}</>
+                      ) : (
+                        <>{tpDisplay.length>0 ? tpDisplay.map((x:number)=> fmtNum(x)).join(' → ') : '-'}</>
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+                {(Array.isArray(data?.macro_notes) && data.macro_notes.length>0) && (
+                  <div>
+                    <div className="text-zinc-500 flex items-center gap-2">
+                      <span>Makro WIB</span>
+                      {(()=>{
+                        const w = (verification?.macro_snapshot?.wib_window||'').toUpperCase()
+                        const icon = w==='HIJAU'? '🟢' : w==='MERAH'? '🔴' : w? '🟡' : ''
+                        return icon ? <span title={w}>{icon}</span> : null
+                      })()}
+                    </div>
+                    <ul className="list-disc pl-5">
+                      {data.macro_notes.slice(0,3).map((m:string,i:number)=> <li key={i}>{m}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {(data?.ui_flags && (data.ui_flags.need_rounding || data.ui_flags.dup_values_cleaned)) && (
+                  <div className="flex items-center gap-2 text-xs">
+                    {data.ui_flags.need_rounding && <span className="px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800">Rounded</span>}
+                    {data.ui_flags.dup_values_cleaned && <span className="px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800">Dedupe</span>}
+                  </div>
+                )}
+              </>
             ) : (
               <dl className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>

@@ -176,6 +176,18 @@ async def init_db():
                 await conn.exec_driver_sql(
                     "ALTER TABLE llm_verifications ADD COLUMN futures_json JSON DEFAULT '{}'"
                 )
+            if "trade_type" not in cols_v:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE llm_verifications ADD COLUMN trade_type TEXT DEFAULT 'spot'"
+                )
+            if "macro_snapshot" not in cols_v:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE llm_verifications ADD COLUMN macro_snapshot JSON DEFAULT '{}'"
+                )
+            if "ui_contract" not in cols_v:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE llm_verifications ADD COLUMN ui_contract JSON DEFAULT '{}'"
+                )
         except Exception:
             pass
         # llm_usage add kind
