@@ -106,7 +106,10 @@ export default function Page(){
       </div>
       <div id="analisa" className="max-w-7xl mx-auto px-4 md:px-6 space-y-4">
         {loggedIn ? (
-          <WatchlistRow quota={quota} onPick={(s)=>analyze(s,'spot')} onPickFutures={(s)=>analyze(s,'futures')} onDelete={(s)=>{ setCards(prev=> prev.filter(c=> c.symbol !== s)) }} />
+          <>
+            <WatchlistRow quota={quota} onPick={(s)=>analyze(s,'spot')} onDelete={(s)=>{ setCards(prev=> prev.filter(c=> c.symbol !== s)) }} />
+            <div className="mt-2 text-xs text-zinc-600">Butuh Futures? Gunakan halaman khusus: <Link href="/futures" className="underline">/futures</Link></div>
+          </>
         ) : (
           <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 text-sm text-gray-600">Login untuk mengelola watchlist dan menganalisa.</div>
         )}
