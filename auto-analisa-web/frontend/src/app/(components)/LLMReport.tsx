@@ -10,6 +10,34 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
   const data = (kind==='futures') ? verification?.futures_json : verification?.spot2_json
   const sug = (data?.rencana_jual_beli) ? data.rencana_jual_beli : (data?.entries ? { entries: data.entries, invalid: data?.invalids?.hard_1h } : {})
   const tp = data?.tp || []
+  // Formatting helpers: prefer provided decimals; fallback infer from numbers
+  const decimals = useMemo(()=>{
+    const d = (data?.metrics?.price_decimals ?? data?.price_decimals)
+    if (typeof d === 'number' && d>=0 && d<=8) return d
+    // infer from representative price
+    try{
+      const sample = (()=>{
+        const arr:number[] = []
+        ;(sug?.entries||[]).forEach((e:any)=> Array.isArray(e?.range) && e.range.forEach((x:number)=> typeof x==='number' && arr.push(x)))
+        ;(tp||[]).forEach((t:any)=> Array.isArray(t?.range) && t.range.forEach((x:number)=> typeof x==='number' && arr.push(x)))
+        if (typeof (sug?.invalid)==='number') arr.push(sug.invalid)
+        const v = arr.find((x)=> typeof x==='number' && isFinite(x))
+        return (typeof v==='number' && isFinite(v)) ? v : 1
+      })()
+      return sample >= 1000 ? 2 : sample >= 100 ? 2 : sample >= 10 ? 3 : sample >= 1 ? 4 : sample >= 0.1 ? 5 : 6
+    }catch{ return 5 }
+  },[JSON.stringify(data)])
+  const fmtNum = (n:any)=> typeof n==='number' ? n.toFixed(decimals) : n
+  const fmtRange = (r:any)=>{
+    const arr = Array.isArray(r)? r:[]
+    const lo = arr[0]
+    const hi = (arr.length>1? arr[1] : lo)
+    if (typeof lo==='number' && typeof hi==='number'){
+      const eps = 0.5 * Math.pow(10, -decimals)
+      if (Math.abs(hi-lo) <= eps) return `${fmtNum(lo)}`
+    }
+    return arr.map((x:any)=> fmtNum(x)).join('–')
+  }
   const ghost = useMemo(()=>{
     if(!data) return null
     const g:any={}
@@ -48,30 +76,53 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
         ) : (
           <>
             {verification.summary && <div className="italic text-zinc-600 dark:text-zinc-300">{verification.summary}</div>}
-            <dl className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <dt className="text-zinc-500">Entries</dt>
-                <dd>{(sug.entries||[]).map((e:any,i:number)=> `${(e.range||[]).join('–')} (w=${e.weight})`).join(' · ')||'-'}</dd>
-              </div>
-              <div>
-                <dt className="text-zinc-500">Invalid</dt>
-                <dd className="text-rose-400">{sug.invalid}</dd>
-              </div>
-              <div className="md:col-span-2">
-                <dt className="text-zinc-500">TP</dt>
-                <dd className="text-emerald-400">{(tp||[]).map((t:any)=> (t?.range||[]).join('–')).join(' → ')||'-'}</dd>
-              </div>
-              {Array.isArray(verification?.fundamentals?.bullets) && verification.fundamentals.bullets.length>0 && (
-                <div className="md:col-span-2">
-                  <dt className="text-zinc-500">Fundamentals</dt>
-                  <dd>
-                    <ul className="list-disc pl-5">
-                      {verification.fundamentals.bullets.map((b:string,i:number)=> <li key={i}>{b}</li>)}
-                    </ul>
-                  </dd>
+            {kind==='futures' ? (
+              <dl className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <dt className="text-zinc-500">Side • Leverage</dt>
+                  <dd>{data?.side || '-'} • isolated x={(data?.leverage_suggested?.x ?? '-')}</dd>
                 </div>
-              )}
-            </dl>
+                <div>
+                  <dt className="text-zinc-500">Risk</dt>
+                  <dd>risk/trade: {data?.risk?.risk_per_trade_pct ?? '-'}% • rr_min: {data?.risk?.rr_min ?? '-'}</dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Entries</dt>
+                  <dd>{(sug.entries||[]).map((e:any)=> `${fmtRange(e?.range)} (w=${e?.weight})`).join(' · ')||'-'}</dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Invalid (tiers)</dt>
+                  <dd className="text-rose-400">{['tactical_5m','soft_15m','hard_1h','struct_4h'].map((k)=> data?.invalids?.[k]).filter((x:any)=> typeof x==='number').map((x:number)=> fmtNum(x)).join(' · ')||'-'}</dd>
+                </div>
+                <div className="md:col-span-2">
+                  <dt className="text-zinc-500">TP (reduce-only)</dt>
+                  <dd className="text-emerald-400">{(tp||[]).map((t:any)=> `${fmtRange(t?.range)}${typeof t?.reduce_only_pct==='number'? ` (${t.reduce_only_pct}%)`: ''}`).join(' → ')||'-'}</dd>
+                </div>
+              </dl>
+            ) : (
+              <dl className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <dt className="text-zinc-500">Entries</dt>
+                  <dd>{(sug.entries||[]).map((e:any,i:number)=> `${fmtRange(e?.range)} (w=${e.weight})`).join(' · ')||'-'}</dd>
+                </div>
+                <div>
+                  <dt className="text-zinc-500">Invalid</dt>
+                  <dd className="text-rose-400">{typeof sug.invalid==='number'? fmtNum(sug.invalid) : (sug.invalid||'-')}</dd>
+                </div>
+                <div className="md:col-span-2">
+                  <dt className="text-zinc-500">TP</dt>
+                  <dd className="text-emerald-400">{(tp||[]).map((t:any)=> fmtRange(t?.range)).join(' → ')||'-'}</dd>
+                </div>
+              </dl>
+            )}
+            {Array.isArray(verification?.fundamentals?.bullets) && verification.fundamentals.bullets.length>0 && (
+              <div className="mt-2">
+                <div className="text-zinc-500">Fundamentals</div>
+                <ul className="list-disc pl-5">
+                  {verification.fundamentals.bullets.map((b:string,i:number)=> <li key={i}>{b}</li>)}
+                </ul>
+              </div>
+            )}
           </>
         )}
         <div className="flex items-center gap-2">

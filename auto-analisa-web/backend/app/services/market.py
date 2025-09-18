@@ -36,7 +36,15 @@ async def fetch_klines(symbol: str, timeframe: str, limit: int = 500, market: st
             }.get(timeframe, 60 * 60 * 1000)
             n = int(limit or 200)
             ts = np.array([now - step * (n - i) for i in range(n)], dtype=np.int64)
+            # Anchor synthetic base near spot price when possible
             base = 100.0
+            try:
+                t = ex.fetch_ticker(symbol)
+                last = t.get("last") or t.get("close")
+                if isinstance(last, (int, float)) and last > 0:
+                    base = float(last)
+            except Exception:
+                pass
             close = base + np.linspace(0, n * 0.05, n) + np.sin(np.linspace(0, 6.28, n)) * 0.5
             open_ = close - 0.05
             high = close + 0.1
@@ -52,26 +60,39 @@ async def fetch_klines(symbol: str, timeframe: str, limit: int = 500, market: st
         df = pd.DataFrame(ohlcv, columns=["ts", "open", "high", "low", "close", "volume"])
         return df
     except Exception:
-        # OFFLINE fallback: synth data agar fitur lokal/e2e dapat berjalan tanpa jaringan
-        import time
-        import numpy as np
-        now = int(time.time() * 1000)
-        step = {
-            "5m": 5 * 60 * 1000,
-            "15m": 15 * 60 * 1000,
-            "1h": 60 * 60 * 1000,
-            "4h": 4 * 60 * 60 * 1000,
-        }.get(timeframe, 60 * 60 * 1000)
-        n = int(limit or 200)
-        ts = np.array([now - step * (n - i) for i in range(n)], dtype=np.int64)
-        base = 100.0
-        close = base + np.linspace(0, n * 0.05, n) + np.sin(np.linspace(0, 6.28, n)) * 0.5
-        open_ = close - 0.05
-        high = close + 0.1
-        low = close - 0.1
-        vol = np.linspace(100, 100 + n, n)
-        df = pd.DataFrame({"ts": ts, "open": open_, "high": high, "low": low, "close": close, "volume": vol})
-        return df
+        # If futures failed, try spot OHLCV as a close visual proxy
+        try:
+            alt = ex.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+            df = pd.DataFrame(alt, columns=["ts", "open", "high", "low", "close", "volume"])
+            return df
+        except Exception:
+            # OFFLINE fallback: synth data anchored near spot ticker when available
+            import time
+            import numpy as np
+            now = int(time.time() * 1000)
+            step = {
+                "5m": 5 * 60 * 1000,
+                "15m": 15 * 60 * 1000,
+                "1h": 60 * 60 * 1000,
+                "4h": 4 * 60 * 60 * 1000,
+            }.get(timeframe, 60 * 60 * 1000)
+            n = int(limit or 200)
+            ts = np.array([now - step * (n - i) for i in range(n)], dtype=np.int64)
+            base = 100.0
+            try:
+                t = ex.fetch_ticker(symbol)
+                last = t.get("last") or t.get("close")
+                if isinstance(last, (int, float)) and last > 0:
+                    base = float(last)
+            except Exception:
+                pass
+            close = base + np.linspace(0, n * 0.05, n) + np.sin(np.linspace(0, 6.28, n)) * 0.5
+            open_ = close - 0.05
+            high = close + 0.1
+            low = close - 0.1
+            vol = np.linspace(100, 100 + n, n)
+            df = pd.DataFrame({"ts": ts, "open": open_, "high": high, "low": low, "close": close, "volume": vol})
+            return df
 
 
 async def fetch_bundle(symbol: str, tfs=("4h", "1h", "15m", "5m"), market: str = "spot") -> Dict[str, pd.DataFrame]:
