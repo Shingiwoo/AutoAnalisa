@@ -4,6 +4,7 @@ import { api } from '../api'
 
 export default function LLMReport({ analysisId, verification, onApplied, onPreview, kind }:{ analysisId:number, verification:any|null, onApplied:()=>void, onPreview:(ghost:{entries?:number[],tp?:number[],invalid?:number}|null)=>void, kind?: 'spot'|'futures' }){
   const [busy,setBusy]=useState(false)
+  const [view,setView]=useState<'summary'|'json'>('summary')
   const verdict = (verification?.verdict||'').toLowerCase()
   const tsWib = useMemo(()=> verification?.created_at ? new Date(verification.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '',[verification?.created_at])
   const data = (kind==='futures') ? verification?.futures_json : verification?.spot2_json
@@ -33,6 +34,18 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
         <span className="text-xs opacity-70">{tsWib} WIB</span>
       </summary>
       <div className="mt-3 text-sm space-y-2">
+        <div className="flex items-center gap-2 text-xs">
+          <button className={`px-2 py-0.5 rounded ${view==='summary'?'bg-zinc-800 text-white':'bg-zinc-200 dark:bg-zinc-800 dark:text-white/80'}`} onClick={()=>setView('summary')}>Ringkas</button>
+          <button className={`px-2 py-0.5 rounded ${view==='json'?'bg-zinc-800 text-white':'bg-zinc-200 dark:bg-zinc-800 dark:text-white/80'}`} onClick={()=>setView('json')}>JSON</button>
+        </div>
+        {view==='json' ? (
+          <div className="rounded bg-zinc-900 text-zinc-100 p-2 text-xs overflow-auto">
+            <pre className="whitespace-pre-wrap">{data ? JSON.stringify(data, null, 2) : '-'}</pre>
+            <div className="mt-2">
+              <button className="px-2 py-1 rounded bg-zinc-800 text-white hover:bg-zinc-700" onClick={()=> navigator.clipboard?.writeText(JSON.stringify(data||{}, null, 2))}>Copy JSON</button>
+            </div>
+          </div>
+        ) : (
         {verification.summary && <div className="italic text-zinc-600 dark:text-zinc-300">{verification.summary}</div>}
         <dl className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
@@ -58,6 +71,7 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
             </div>
           )}
         </dl>
+        )}
         <div className="flex items-center gap-2">
           <button disabled={busy} className="px-3 py-1.5 rounded bg-cyan-600 text-white text-sm hover:bg-cyan-500 disabled:opacity-50" onClick={async()=>{
             try{ setBusy(true); const url = kind==='futures' ? `analyses/${analysisId}/futures/apply-llm` : `analyses/${analysisId}/apply-llm`; await api.post(url); onApplied(); }

@@ -11,6 +11,9 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
   const [mode,setMode]=useState<'spot'|'futures'>(()=>{
     try{ return (localStorage.getItem(`aa_mode_${plan.symbol}`)||'spot') as any }catch{ return 'spot' }
   })
+  // Jika plan disimpan sebagai trade_type=futures, paksa mode futures & sembunyikan toggle
+  const forcedFutures = String((plan as any)?.trade_type||'spot').toLowerCase()==='futures'
+  useEffect(()=>{ if(forcedFutures) setMode('futures') },[forcedFutures])
   useEffect(()=>{ try{ localStorage.setItem(`aa_mode_${plan.symbol}`, mode) }catch{} },[mode, plan.symbol])
   const [fut,setFut]=useState<any|null>(null)
   const [futErr,setFutErr]=useState<string>('')
@@ -26,6 +29,7 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
   const [err,setErr]=useState<{code?:string,message?:string,retry?:string}|null>(null)
   const [prevOpen,setPrevOpen]=useState(false)
   const [prevPlan,setPrevPlan]=useState<any|null>(null)
+  const [prevList,setPrevList]=useState<any[]|null>(null)
   const futUpdatedRecently = useMemo(()=>{
     try{
       if(mode!=='futures') return false
@@ -97,16 +101,18 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
           {futUpdatedRecently && <span className="px-2 py-0.5 rounded bg-emerald-600 text-white text-xs" title="Sinyal Futures baru diperbarui">Updated</span>}
         </div>
       </div>
-      {/* Spot | Futures toggle */}
-      <div className="flex items-center gap-2 text-sm" role="tablist" aria-label="Mode Tabs">
-        {(['spot','futures'] as const).map(m=> (
-          <button key={m} role="tab" aria-selected={mode===m} onClick={()=> setMode(m)}
-            className={`px-3 py-1.5 rounded-md transition ${mode===m? 'bg-cyan-600 text-white':'bg-zinc-800 text-white/80 hover:bg-zinc-700'} `}>
-            {m==='spot'? 'Spot':'Futures'}
-          </button>
-        ))}
-        {mode==='futures' && futErr && <span className="text-xs text-rose-400">{futErr}</span>}
-      </div>
+      {/* Spot | Futures toggle (disembunyikan jika analisa trade_type=futures) */}
+      {!forcedFutures && (
+        <div className="flex items-center gap-2 text-sm" role="tablist" aria-label="Mode Tabs">
+          {(['spot','futures'] as const).map(m=> (
+            <button key={m} role="tab" aria-selected={mode===m} onClick={()=> setMode(m)}
+              className={`px-3 py-1.5 rounded-md transition ${mode===m? 'bg-cyan-600 text-white':'bg-zinc-800 text-white/80 hover:bg-zinc-700'} `}>
+              {m==='spot'? 'Spot':'Futures'}
+            </button>
+          ))}
+          {mode==='futures' && futErr && <span className="text-xs text-rose-400">{futErr}</span>}
+        </div>
+      )}
 
       {mode==='futures' && (
         <div className="rounded-xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white/5 p-3 text-sm">
@@ -256,14 +262,27 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
           setPrevOpen(next)
           if(next && !prevPlan){
             try{
-              const { data } = await api.get('analyses', { params:{ status:'archived' } })
+              const { data } = await api.get('analyses', { params:{ status:'archived', trade_type: forcedFutures? 'futures':'spot' } })
               const same = (data||[]).filter((x:any)=> x.symbol===plan.symbol)
+              setPrevList(same)
               const prev = same.find((x:any)=> new Date(x.created_at) < new Date(plan.created_at)) || same[0]
               setPrevPlan(prev||null)
             }catch{}
           }
         }}>{prevOpen? 'Sembunyikan versi sebelumnya':'Tampilkan versi sebelumnya'}</button>
       </div>
+      {prevOpen && prevList && prevList.length>0 && (
+        <div className="rounded-xl ring-1 ring-amber-500/20 bg-amber-500/5 p-3 space-y-2">
+          <div className="text-xs text-amber-400">Pilih versi:</div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            {prevList.map((it:any)=> (
+              <button key={it.id} className={`px-2 py-1 rounded ${prevPlan?.id===it.id? 'bg-amber-600 text-white':'bg-zinc-800 text-white/90'}`} onClick={()=> setPrevPlan(it)}>
+                v{it.version} • {new Date(it.created_at).toLocaleString('id-ID',{ timeZone:'Asia/Jakarta'})}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {prevOpen && prevPlan?.payload && mode!=='futures' && (
         <div className="rounded-xl ring-1 ring-amber-500/20 bg-amber-500/5 p-3">
           <div className="text-xs text-amber-400 mb-1">Versi sebelumnya • {prevPlan?.created_at ? new Date(prevPlan.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : ''} WIB</div>

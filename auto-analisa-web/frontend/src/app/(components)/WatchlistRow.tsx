@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { Plus, X } from 'lucide-react'
 
-export default function WatchlistRow({ quota, onPick, onDelete }:{ quota?:{limit:number,remaining:number,llm_enabled:boolean}|null, onPick:(s:string)=>void, onDelete?: (s:string)=>void }){
+export default function WatchlistRow({ quota, onPick, onPickFutures, onDelete }:{ quota?:{limit:number,remaining:number,llm_enabled:boolean}|null, onPick:(s:string)=>void, onPickFutures?:(s:string)=>void, onDelete?: (s:string)=>void }){
   const [items,setItems]=useState<string[]>([])
   const [sym,setSym]=useState('')
   const [msg,setMsg]=useState<string>('')
@@ -49,8 +49,9 @@ export default function WatchlistRow({ quota, onPick, onDelete }:{ quota?:{limit
           <h3 className="sr-only">Daftar Koin</h3>
           <div className="flex flex-wrap gap-2">
             {items.map(s=> (
-              <div key={s} className="inline-flex items-center px-3 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-                <button onClick={()=>onPick(s)} className="mr-2 hover:underline">{s}</button>
+              <div key={s} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-sm font-medium text-zinc-800 dark:text-zinc-100">
+                <button onClick={()=>onPick(s)} className="hover:underline" title="Analisa Spot">{s}</button>
+                {onPickFutures && <button onClick={()=>onPickFutures!(s)} className="px-2 py-0.5 rounded bg-indigo-600 text-white text-xs hover:bg-indigo-500" title="Analisa Futures">Fut</button>}
                 <button onClick={()=> (confirm(`Hapus ${s}?`) && del(s))} className="text-rose-600 hover:text-rose-700" title="Remove"><X size={16}/></button>
               </div>
             ))}

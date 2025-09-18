@@ -53,17 +53,20 @@ export default function Page(){
     }catch{}
   }
 
-  async function analyze(symbol:string){
+  async function analyze(symbol:string, trade_type:'spot'|'futures'='spot'){
     if(cards.length>=4){ alert('Maksimal 4 analisa aktif. Arsipkan salah satu dulu.'); return }
     try{
-      const {data}=await api.post('analyze',{symbol})
+      const {data}=await api.post('analyze',{symbol, trade_type})
       setNotice(data?.payload?.notice)
       setCards(prev=>{
         const next=[data, ...prev]
-        // dedup by symbol keep first
+        // dedup by symbol+trade_type keep first
         const seen = new Set<string>()
         const uniq: any[] = []
-        for (const it of next){ if(!seen.has(it.symbol)){ uniq.push(it); seen.add(it.symbol) } }
+        for (const it of next){
+          const key = `${it.symbol}:${it.trade_type||'spot'}`
+          if(!seen.has(key)){ uniq.push(it); seen.add(key) }
+        }
         return uniq.slice(0,4)
       })
     }catch(e:any){
@@ -103,7 +106,7 @@ export default function Page(){
       </div>
       <div id="analisa" className="max-w-7xl mx-auto px-4 md:px-6 space-y-4">
         {loggedIn ? (
-          <WatchlistRow quota={quota} onPick={analyze} onDelete={(s)=>{ setCards(prev=> prev.filter(c=> c.symbol !== s)) }} />
+          <WatchlistRow quota={quota} onPick={(s)=>analyze(s,'spot')} onPickFutures={(s)=>analyze(s,'futures')} onDelete={(s)=>{ setCards(prev=> prev.filter(c=> c.symbol !== s)) }} />
         ) : (
           <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 text-sm text-gray-600">Login untuk mengelola watchlist dan menganalisa.</div>
         )}
