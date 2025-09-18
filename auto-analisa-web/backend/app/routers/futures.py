@@ -40,7 +40,7 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
         raise HTTPException(404, "Futures dinonaktifkan oleh admin")
 
     # Build a baseline spot plan and adapt to futures format
-    bundle = await fetch_bundle(symbol, ("4h", "1h", "15m", "5m"))
+    bundle = await fetch_bundle(symbol, ("4h", "1h", "15m", "5m"), market="futures")
     feat = Features(bundle).enrich()
     score = score_symbol(feat)
     base_plan = await build_plan_async(db, bundle, feat, score, "auto")
@@ -179,7 +179,7 @@ async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=
             "message": "LLM belum dikonfigurasi: OPENAI_API_KEY belum diisi.",
         })
     sset = await get_or_init_settings(db)
-    lim_fut = int(getattr(sset, "llm_daily_limit_futures", getattr(settings, "LLM_DAILY_LIMIT", 40)) or 40)
+    lim_fut = int(getattr(sset, "llm_daily_limit_futures", 40) or 40)
     today = await get_today_usage(db, user_id=user.id, kind="futures", limit_override=lim_fut)
     if today["remaining"] <= 0:
         raise HTTPException(409, detail={
