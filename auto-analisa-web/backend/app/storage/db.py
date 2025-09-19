@@ -250,3 +250,37 @@ async def init_db():
                 )
         except Exception:
             pass
+        # watchlist: add trade_type and enforce unique(user_id,symbol,trade_type)
+        try:
+            resw = await conn.exec_driver_sql("PRAGMA table_info(watchlist)")
+            cols_w = {row[1] for row in resw.fetchall()}
+            if "trade_type" not in cols_w:
+                await conn.exec_driver_sql("ALTER TABLE watchlist ADD COLUMN trade_type TEXT DEFAULT 'spot'")
+            # Recreate table to adjust unique constraint (SQLite limitation)
+            # Detect whether unique index already includes trade_type
+            idx_list = await conn.exec_driver_sql("PRAGMA index_list(watchlist)")
+            idx_rows = idx_list.fetchall()
+            has_unique_on_ust = False
+            for ir in idx_rows:
+                try:
+                    if int(ir[2]) != 1:
+                        continue
+                except Exception:
+                    continue
+                iname = ir[1]
+                info = await conn.exec_driver_sql(f"PRAGMA index_info({iname})")
+                cols_idx = [r[2] for r in info.fetchall()]
+                if cols_idx == ["user_id", "symbol", "trade_type"]:
+                    has_unique_on_ust = True
+                    break
+            if not has_unique_on_ust:
+                await conn.exec_driver_sql(
+                    "CREATE TABLE IF NOT EXISTS watchlist__new (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, symbol TEXT, trade_type TEXT DEFAULT 'spot', created_at DATETIME, UNIQUE(user_id, symbol, trade_type))"
+                )
+                await conn.exec_driver_sql(
+                    "INSERT OR IGNORE INTO watchlist__new (id, user_id, symbol, trade_type, created_at) SELECT id, user_id, symbol, COALESCE(trade_type, 'spot'), created_at FROM watchlist"
+                )
+                await conn.exec_driver_sql("DROP TABLE watchlist")
+                await conn.exec_driver_sql("ALTER TABLE watchlist__new RENAME TO watchlist")
+        except Exception:
+            pass

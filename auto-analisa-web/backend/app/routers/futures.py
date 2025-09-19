@@ -28,6 +28,13 @@ def _f(x):
         return None
 
 
+def _norm_symbol(sym: str) -> str:
+    s = sym.upper().replace(":USDT", "/USDT")
+    if "/" not in s and s.endswith("USDT"):
+        s = f"{s[:-4]}/USDT"
+    return s
+
+
 @router.get("/{symbol}/futures")
 async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     # Feature-flag
@@ -174,7 +181,7 @@ async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=
         raise HTTPException(403, "Forbidden")
     # Build machine plan from current analysis (reuse get_futures_plan pieces)
     symbol = a.symbol
-    bundle = await fetch_bundle(symbol, ("4h", "1h", "15m", "5m"))
+    bundle = await fetch_bundle(symbol, ("4h", "1h", "15m", "5m"), market="futures")
     feat = Features(bundle).enrich()
     score = score_symbol(feat)
     base_plan = await build_plan_async(db, bundle, feat, score, "auto")
@@ -199,19 +206,25 @@ async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=
     s = await get_or_init_settings(db)
     lev_suggested = max(int(getattr(s, "futures_leverage_min", 3) or 3), min(int(getattr(s, "futures_leverage_max", 10) or 10), 5))
     plan_mesin = {"entries": entries_nums, "tp": tp_nums, "invalids": invalids, "risk": {"risk_per_trade_pct": float(getattr(s, "futures_risk_per_trade_pct", 0.5) or 0.5), "rr_min": 1.5}}
-    # precision from ccxt
-    import ccxt
-    ex = ccxt.binanceusdm()
-    ex.load_markets(reload=False)
-    m = ex.market(symbol.upper().replace(":USDT","/USDT"))
-    price_prec = m.get("precision",{}).get("price")
-    tick = float(10 ** (-price_prec)) if isinstance(price_prec,int) and price_prec>0 else (float((m.get("limits",{}).get("price") or {}).get("min") or 0) or None)
-    step = float((m.get("limits",{}).get("amount") or {}).get("min") or 0) or None
-    quote_precision = m.get("info",{}).get("quotePrecision")
+    # precision from ccxt (best-effort)
+    tick = None
+    step = None
+    quote_precision = None
     try:
-        quote_precision = int(quote_precision) if quote_precision is not None else None
+        import ccxt
+        ex = ccxt.binanceusdm()
+        ex.load_markets(reload=False)
+        m = ex.market(_norm_symbol(symbol))
+        price_prec = m.get("precision", {}).get("price")
+        tick = float(10 ** (-price_prec)) if isinstance(price_prec, int) and price_prec > 0 else (float((m.get("limits", {}).get("price") or {}).get("min") or 0) or None)
+        step = float((m.get("limits", {}).get("amount") or {}).get("min") or 0) or None
+        quote_precision = m.get("info", {}).get("quotePrecision")
+        try:
+            quote_precision = int(quote_precision) if quote_precision is not None else None
+        except Exception:
+            quote_precision = None
     except Exception:
-        quote_precision = None
+        tick = None; step = None; quote_precision = None
     from app.routers.llm import VerifyBody, perform_verify
     # lev_max via leverageBracket when available (best-effort)
     lev_max = None
@@ -221,6 +234,16 @@ async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=
             lev_max = int(br.get("lev_max"))
     except Exception:
         lev_max = None
+    # futures_signals for context
+    futures_signals = {}
+    try:
+        from app.services.futures import latest_signals
+        sig = await latest_signals(db, symbol)
+        if isinstance(sig, dict):
+            futures_signals = sig
+    except Exception:
+        futures_signals = {}
+
     vb = VerifyBody(
         symbol=symbol,
         trade_type="futures",

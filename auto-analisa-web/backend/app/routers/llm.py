@@ -14,6 +14,7 @@ from app.services.advisor_futures import auto_suggest_futures
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import os, json
+import datetime as _dt
 
 
 def _round_to_tick(x: float, tick: float) -> float:
@@ -87,6 +88,20 @@ async def perform_verify(db: AsyncSession, user_id: str, body: VerifyBody) -> Di
     # Server macro snapshot
     jkt = ZoneInfo("Asia/Jakarta")
     now = datetime.now(timezone.utc)
+    def _json_safe(x):
+        if isinstance(x, (str, int, float, bool)) or x is None:
+            return x
+        if isinstance(x, (_dt.datetime, _dt.date)):
+            try:
+                return x.isoformat()
+            except Exception:
+                return str(x)
+        if isinstance(x, dict):
+            return {k: _json_safe(v) for k, v in x.items()}
+        if isinstance(x, (list, tuple)):
+            return [_json_safe(v) for v in x]
+        return str(x)
+
     mctx = dict(body.macro_context or {})
     mctx.setdefault("wib_window", _wib_window(now))
     # minutes_to_funding best-effort: get from FuturesSignalsCache if available
@@ -136,7 +151,7 @@ async def perform_verify(db: AsyncSession, user_id: str, body: VerifyBody) -> Di
         "plan_mesin": pm,
         "lev_policy": {"lev_max_symbol": lev_max, "lev_default": lev_default},
         "precision": {"tickSize": tick, "stepSize": step, "quotePrecision": quote_prec},
-        "macro_context": mctx,
+        "macro_context": _json_safe(mctx),
         "ui_contract": dict(body.ui_contract or {}),
     }
     asst = (

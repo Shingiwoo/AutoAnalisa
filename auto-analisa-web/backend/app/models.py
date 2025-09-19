@@ -112,8 +112,9 @@ class Watchlist(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String, index=True)
     symbol: Mapped[str] = mapped_column(String, index=True)
+    trade_type: Mapped[str] = mapped_column(String(16), default="spot")  # spot|futures
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
-    __table_args__ = (UniqueConstraint("user_id", "symbol", name="uniq_user_symbol_watch"),)
+    __table_args__ = (UniqueConstraint("user_id", "symbol", "trade_type", name="uniq_user_symbol_trade_watch"),)
 
 
 class PasswordChangeRequest(Base):

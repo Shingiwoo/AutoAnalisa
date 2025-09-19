@@ -77,7 +77,7 @@ export default function FuturesPage(){
       </div>
       <div id="analisa" className="max-w-7xl mx-auto px-4 md:px-6 space-y-4">
         {loggedIn ? (
-          <WatchlistRow quota={{ limit: futLimit, remaining: futRemaining, llm_enabled: !!quota?.llm_enabled }} onPick={(s)=>analyze(s)} titleLabel="Analisa Futures" onDelete={(s)=>{ setCards(prev=> prev.filter(c=> c.symbol !== s)) }} />
+          <WatchlistRow tradeType='futures' quota={{ limit: futLimit, remaining: futRemaining, llm_enabled: !!quota?.llm_enabled }} onPick={(s)=>analyze(s)} titleLabel="Analisa Futures" onDelete={(s)=>{ setCards(prev=> prev.filter(c=> c.symbol !== s)) }} />
         ) : (
           <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 text-sm text-gray-600">Login untuk mengelola watchlist dan menganalisa.</div>
         )}
@@ -96,4 +96,3 @@ export default function FuturesPage(){
     </main>
   )
 }
-

@@ -3,22 +3,22 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { Plus, X } from 'lucide-react'
 
-export default function WatchlistRow({ quota, onPick, onPickFutures, onDelete, titleLabel }:{ quota?:{limit:number,remaining:number,llm_enabled:boolean}|null, onPick:(s:string)=>void, onPickFutures?:(s:string)=>void, onDelete?: (s:string)=>void, titleLabel?: string }){
+export default function WatchlistRow({ quota, onPick, onPickFutures, onDelete, titleLabel, tradeType='spot' }:{ quota?:{limit:number,remaining:number,llm_enabled:boolean}|null, onPick:(s:string)=>void, onPickFutures?:(s:string)=>void, onDelete?: (s:string)=>void, titleLabel?: string, tradeType?: 'spot'|'futures' }){
   const [items,setItems]=useState<string[]>([])
   const [sym,setSym]=useState('')
   const [msg,setMsg]=useState<string>('')
-  async function load(){ try{ const r=await api.get('watchlist'); setItems(r.data||[]) }catch(e:any){ setMsg(e?.response?.data?.detail||'Gagal memuat watchlist') } }
+  async function load(){ try{ const r=await api.get('watchlist', { params:{ trade_type: tradeType } }); setItems(r.data||[]) }catch(e:any){ setMsg(e?.response?.data?.detail||'Gagal memuat watchlist') } }
   async function add(){
     if(!sym) return
     if(items.length >= 4){ setMsg('Maksimal 4 koin dalam watchlist.'); return }
     try{
-      await api.post('watchlist/add', null, { params:{ symbol: sym.toUpperCase().trim() } })
+      await api.post('watchlist/add', null, { params:{ symbol: sym.toUpperCase().trim(), trade_type: tradeType } })
       setSym(''); setMsg(''); load()
     }catch(e:any){ setMsg(e?.response?.data?.detail || 'Gagal menambah simbol') }
   }
   async function del(s:string){
     try{
-      await api.delete(`watchlist/${encodeURIComponent(s)}`)
+      await api.delete(`watchlist/${encodeURIComponent(s)}`, { params:{ trade_type: tradeType } })
       onDelete?.(s)
       load()
     }catch(e:any){ setMsg(e?.response?.data?.detail || 'Gagal menghapus simbol') }

@@ -107,7 +107,7 @@ export default function Page(){
       <div id="analisa" className="max-w-7xl mx-auto px-4 md:px-6 space-y-4">
         {loggedIn ? (
           <>
-            <WatchlistRow quota={quota} onPick={(s)=>analyze(s,'spot')} onDelete={(s)=>{ setCards(prev=> prev.filter(c=> c.symbol !== s)) }} />
+            <WatchlistRow tradeType='spot' quota={quota} onPick={(s)=>analyze(s,'spot')} onDelete={(s)=>{ setCards(prev=> prev.filter(c=> c.symbol !== s)) }} />
             <div className="mt-2 text-xs text-zinc-600">Butuh Futures? Gunakan halaman khusus: <Link href="/futures" className="underline">/futures</Link></div>
           </>
         ) : (
