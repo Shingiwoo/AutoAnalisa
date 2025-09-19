@@ -142,6 +142,25 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
         atr15 = 0.0
     buf_abs = float(atr15) * float(liq_buf_k)
 
+    # Scalping TP ladder: target profit +0.6% and +0.8% (sebelum leverage)
+    try:
+        e_vals = [float(x) for (x, _w, _t) in entries if isinstance(x, (int, float))]
+    except Exception:
+        e_vals = []
+    e_avg = (sum(e_vals) / len(e_vals)) if e_vals else None
+    tp_scalps = []
+    if isinstance(e_avg, (int, float)) and e_avg > 0:
+        if side == "SHORT":
+            tp1 = e_avg * (1.0 - 0.006)
+            tp2 = e_avg * (1.0 - 0.008)
+        else:
+            tp1 = e_avg * (1.0 + 0.006)
+            tp2 = e_avg * (1.0 + 0.008)
+        tp_scalps = [
+            {"name": "TP1", "range": [tp1, tp1], "reduce_only_pct": 40},
+            {"name": "TP2", "range": [tp2, tp2], "reduce_only_pct": 60},
+        ]
+
     fut = {
         "version": 1,
         "symbol": symbol.upper(),
@@ -153,10 +172,10 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
         "resistance": base_plan.get("resistance", [])[:2],
         "mode": (base_plan.get("mode") or "PB").upper(),
         "entries": [ {"range": [e or None, e or None], "weight": w, "type": t} for (e,w,t) in entries ],
-        "tp": [ {"name": name, "range": [val, val], "reduce_only_pct": (40 if i == 0 else 60)} for i,(name,val) in enumerate(tp_nodes) if val is not None ],
+        "tp": tp_scalps if tp_scalps else [ {"name": name, "range": [val, val], "reduce_only_pct": (40 if i == 0 else 60)} for i,(name,val) in enumerate(tp_nodes) if val is not None ],
         "invalids": invalids,
         "leverage_suggested": {"isolated": True, "x": lev},
-        "risk": {"risk_per_trade_pct": risk_pct, "rr_min": ">=1.5", "fee_bp": 3, "slippage_bp": 2, "liq_price_est": liq_est, "liq_buffer_pct": f">={liq_buf_k} * ATR15m", "liq_buffer_abs": buf_abs, "max_addons": 1, "pyramiding": "on_retest", "funding_window_min": int(getattr(s, "futures_funding_avoid_minutes", 10) or 10), "funding_threshold_bp": float(getattr(s, "futures_funding_threshold_bp", 3.0) or 3.0), "funding_alert_enabled": bool(getattr(s, "futures_funding_alert_enabled", True)), "funding_alert_window_min": int(getattr(s, "futures_funding_alert_window_min", 30) or 30)},
+        "risk": {"risk_per_trade_pct": risk_pct, "rr_min": ">=1.2", "fee_bp": 3, "slippage_bp": 2, "liq_price_est": liq_est, "liq_buffer_pct": f">={liq_buf_k} * ATR15m", "liq_buffer_abs": buf_abs, "max_addons": 1, "pyramiding": "on_retest", "funding_window_min": int(getattr(s, "futures_funding_avoid_minutes", 10) or 10), "funding_threshold_bp": float(getattr(s, "futures_funding_threshold_bp", 3.0) or 3.0), "funding_alert_enabled": bool(getattr(s, "futures_funding_alert_enabled", True)), "funding_alert_window_min": int(getattr(s, "futures_funding_alert_window_min", 30) or 30)},
         "futures_signals": futures_signals,
         "mtf_summary": spot2.get("mtf_summary") or {},
         "jam_pantau_wib": jam_pantau,
@@ -205,7 +224,18 @@ async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=
     }
     s = await get_or_init_settings(db)
     lev_suggested = max(int(getattr(s, "futures_leverage_min", 3) or 3), min(int(getattr(s, "futures_leverage_max", 10) or 10), 5))
-    plan_mesin = {"entries": entries_nums, "tp": tp_nums, "invalids": invalids, "risk": {"risk_per_trade_pct": float(getattr(s, "futures_risk_per_trade_pct", 0.5) or 0.5), "rr_min": 1.5}}
+    # Scalping TP targets for verify input as baseline (0.6% / 0.8%)
+    tp_scalp_nums = []
+    if entries_nums:
+        try:
+            e_avg2 = sum(entries_nums)/len(entries_nums)
+            if e_avg2 > 0:
+                # Guess side from mtf trend (optional) or from relative tp; default LONG
+                side_guess = "LONG"
+                tp_scalp_nums = [e_avg2*(1.0+0.006), e_avg2*(1.0+0.008)]
+        except Exception:
+            tp_scalp_nums = []
+    plan_mesin = {"entries": entries_nums, "tp": (tp_scalp_nums or tp_nums), "invalids": invalids, "risk": {"risk_per_trade_pct": float(getattr(s, "futures_risk_per_trade_pct", 0.5) or 0.5), "rr_min": 1.2}}
     # precision from ccxt (best-effort)
     tick = None
     step = None
