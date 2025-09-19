@@ -18,7 +18,7 @@ from ..indicators.mtf_indicators import (
     volume_stats,
 )
 from ..features.structure import infer_trend, last_hh_hl_lh_ll
-from ..features.levels import sr_levels
+from ..features.levels import sr_levels, distance_tol, confidence_from_tags
 from ..features.fvg import detect_fvg
 from ..datasource import binance_spot, binance_futures
 from ..schemas.payload_v1 import PayloadV1, Precision, Fees, Account, TFIndicators, StructureTF, LevelsTF, LevelsContainer, Derivatives, Orderbook
@@ -127,7 +127,23 @@ class PayloadBuilder:
         return LevelsTF(**piv)
 
     def _levels_confluence(self, levels_map: Dict[str, LevelsTF], tf_blocks: Dict[str, TFIndicators]) -> list[dict]:
-        from ..features.levels import confluence_tags
+        import os, yaml
+        # Load confluence config if exists
+        cfg_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config", "rules_pullback.yaml")
+        cfg = {}
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path, "r") as f:
+                    cfg = yaml.safe_load(f) or {}
+            except Exception:
+                cfg = {}
+        c_cfg = cfg.get("confluence", {})
+        tol_pct_min_5_15m = float(c_cfg.get("tol_pct_min_5_15m", 0.0005))
+        tol_pct_min_1h_4h = float(c_cfg.get("tol_pct_min_1h_4h", 0.0003))
+        tol_atr_mult_5_15m = float(c_cfg.get("tol_atr_mult_5_15m", 0.15))
+        tol_atr_mult_1h_4h = float(c_cfg.get("tol_atr_mult_1h_4h", 0.10))
+        ticksize_mult = float(c_cfg.get("ticksize_mult", 2.0))
+        weights = c_cfg.get("weights", {})
         results: list[dict] = []
         def tag_tf(label: str, tf: str) -> str:
             if label.startswith("EMA"):
@@ -143,15 +159,54 @@ class PayloadBuilder:
             if not tb:
                 continue
             ema = tb.ema
-            bb = tb.bb.model_dump() if hasattr(tb.bb, 'model_dump') else tb.bb
+            bb_obj = tb.bb
+            bb = bb_obj.model_dump() if hasattr(bb_obj, 'model_dump') else bb_obj
             piv = {"support": lvl.support, "resistance": lvl.resistance}
+            atr15 = float(tf_blocks.get("15m").atr14) if tf_blocks.get("15m") else 0.0
+            atr1h = float(tf_blocks.get("1H").atr14) if tf_blocks.get("1H") else 0.0
+            tick = float(self.precision.price)
             for p in (lvl.support[:2] + lvl.resistance[:2]):
-                tags = confluence_tags(p, None, ema, bb, piv)
-                labeled = [tag_tf(t, tf) for t in tags]
+                # Collect tags using dynamic tolerance
+                tags_base: list[str] = []
+                best_distance = None
+                # EMA
+                for k, v in (ema or {}).items():
+                    if v:
+                        dist, tol = distance_tol(float(p), float(v), tf, atr15, atr1h, tick,
+                                                 tol_pct_min_5_15m, tol_pct_min_1h_4h, tol_atr_mult_5_15m, tol_atr_mult_1h_4h, ticksize_mult)
+                        if dist <= tol:
+                            tags_base.append(f"EMA{k}")
+                            best_distance = dist if best_distance is None else min(best_distance, dist)
+                # BB-mid
+                mid = (bb or {}).get("middle") if isinstance(bb, dict) else None
+                if mid:
+                    dist_mid, tol_mid = distance_tol(float(p), float(mid), tf, atr15, atr1h, tick,
+                                                     tol_pct_min_5_15m, tol_pct_min_1h_4h, tol_atr_mult_5_15m, tol_atr_mult_1h_4h, ticksize_mult)
+                    if dist_mid <= tol_mid:
+                        tags_base.append("BB-mid")
+                        best_distance = dist_mid if best_distance is None else min(best_distance, dist_mid)
+                # Pivot tag if price equals one of SR (trivially true; ensure tag present)
+                # We already loop over SR prices; include pivot tag by default
+                tags_base.append("pivot")
+                # Round number
                 if near_round(p):
-                    labeled.append("round-number")
-                if labeled:
-                    results.append({"tf": tf, "price": float(p), "tags": labeled})
+                    tags_base.append("round-number")
+
+                if tags_base:
+                    labeled = [tag_tf(t, tf) for t in tags_base]
+                    # Use tol computed from last check; pick representative tol: use tol at EMA20 if exists else mid
+                    # Fallback tol calculation directly on price to itself
+                    d_rep, tol_rep = distance_tol(float(p), float(p), tf, atr15, atr1h, tick,
+                                                  tol_pct_min_5_15m, tol_pct_min_1h_4h, tol_atr_mult_5_15m, tol_atr_mult_1h_4h, ticksize_mult)
+                    conf = confidence_from_tags(labeled, best_distance or 0.0, tol_rep, weights, scale=5.0, cap=100)
+                    results.append({
+                        "tf": tf,
+                        "price": float(p),
+                        "tags": labeled,
+                        "confidence": conf,
+                        "distance": float(best_distance or 0.0),
+                        "tol": float(tol_rep),
+                    })
         return results
 
     def build(self) -> dict:

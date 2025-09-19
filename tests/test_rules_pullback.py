@@ -1,4 +1,5 @@
 from autoanalisa.rules.pullback_v1 import generate_signals
+from autoanalisa.features.levels import distance_tol, confidence_from_tags
 
 
 def make_min_payload(market="futures"):
@@ -108,3 +109,39 @@ def test_L2_divergence_detection():
     sigs = generate_signals(p)
     # likely returns L2 long candidate or [] if macro gating blocks; we accept either or a single long
     assert sigs == [] or all(s.side == "long" for s in sigs)
+
+
+def test_confluence_distance_and_confidence():
+    # distance within tol for 15m
+    price = 1.0
+    level_close = 1.0004
+    d, tol = distance_tol(price, level_close, tf="15m", atr15=0.01, atr1h=0.01, tick_size=0.0001)
+    assert d <= tol
+    # confidence increases when closer
+    weights = {"EMA50-15m": 8}
+    conf_near = confidence_from_tags(["EMA50-15m"], distance=0.0001, tol=0.002, weights=weights, scale=5.0, cap=100)
+    conf_far = confidence_from_tags(["EMA50-15m"], distance=0.0019, tol=0.002, weights=weights, scale=5.0, cap=100)
+    assert 0 <= conf_near <= 100 and 0 <= conf_far <= 100
+    assert conf_near > conf_far
+
+
+def test_confluence_score_bonus_in_rules():
+    # Craft payload that triggers L1 and include strong confluence near entry zone
+    p = make_min_payload(market="futures")
+    p["session_bias"] = "neutral"
+    # L1 condition
+    p["tf"]["1H"]["ema"]["20"] = 0.9
+    p["tf"]["1H"]["atr14"] = 0.01
+    p["tf"]["15m"]["last"] = 0.902
+    p["tf"]["15m"]["ema"]["50"] = 0.895
+    p["tf"]["15m"]["close_last5"] = [0.89, 0.892, 0.896, 0.900, 0.902]
+    p["tf"]["15m"]["ema50_last5"] = [0.895, 0.895, 0.895, 0.895, 0.895]
+    # Level confluence near entry mid (~0.9)
+    p.setdefault("levels", {})["confluence"] = [
+        {"tf": "1H", "price": 0.9005, "tags": ["EMA20-1H", "pivot-1H"], "confidence": 80, "distance": 0.0005/0.9005, "tol": 0.01}
+    ]
+    sigs = generate_signals(p)
+    if sigs:
+        s = sigs[0]
+        assert s.side == "long"
+        assert s.score >= 75  # base 70 + bonus from confluence

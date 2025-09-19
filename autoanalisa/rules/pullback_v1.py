@@ -50,6 +50,37 @@ def _macro_scoring_enabled() -> bool:
     return bool(((_RULES_CFG.get("macro") or {}).get("scoring_enabled", True)))
 
 
+def _apply_confluence_scoring(payload: dict, sig: Signal) -> Signal:
+    confs = ((payload.get("levels") or {}).get("confluence")) or []
+    if not confs:
+        # no confluence info => small penalty
+        sig.score = int(sig.score - 5)
+        sig.notes.append("confluence: none (-5)")
+        return sig
+    entry_mid = sum(sig.entry_zone) / 2.0 if sig.entry_zone else None
+    if not entry_mid:
+        return sig
+    near = []
+    for c in confs:
+        price = float(c.get("price", 0))
+        tol = float(c.get("tol", 0))
+        if price <= 0 or tol <= 0:
+            continue
+        dist = abs(price - entry_mid) / entry_mid
+        if dist <= tol:
+            near.append(float(c.get("confidence", 0)))
+    if not near:
+        sig.score = int(sig.score - 5)
+        sig.notes.append("confluence: no-hit (-5)")
+        return sig
+    avg_conf = sum(near) / len(near)
+    cap = int(((_RULES_CFG.get("confluence") or {}).get("score_cap", 15)))
+    bonus = min(cap, int(avg_conf / 7.0))
+    sig.score = int(sig.score + bonus)
+    sig.notes.append(f"confluence: +{bonus}")
+    return _apply_confluence_scoring(payload, sig)
+
+
 def gating_ok(payload: dict) -> bool:
     # trend
     struct = payload.get("structure", {})
@@ -153,7 +184,7 @@ def _setup_L1(payload: dict) -> Optional[Signal]:
         elif btc_bias == "bearish":
             sig.score -= 10
             sig.notes.append("btc bias: bearish")
-    return sig
+    return _apply_confluence_scoring(payload, sig)
 
 
 def _setup_S1(payload: dict) -> Optional[Signal]:
@@ -212,7 +243,7 @@ def _setup_S1(payload: dict) -> Optional[Signal]:
         elif btc_bias == "bullish":
             sig.score -= 10
             sig.notes.append("btc bias: bullish")
-    return sig
+    return _apply_confluence_scoring(payload, sig)
 
 
 def _setup_L2(payload: dict) -> Optional[Signal]:
@@ -261,7 +292,7 @@ def _setup_L2(payload: dict) -> Optional[Signal]:
             sig.score += 10
         elif btc_bias == "bearish":
             sig.score -= 10
-    return sig
+    return _apply_confluence_scoring(payload, sig)
 
 
 def _setup_L3(payload: dict) -> Optional[Signal]:
@@ -310,7 +341,7 @@ def _setup_L3(payload: dict) -> Optional[Signal]:
             sig.score += 10
         elif btc_bias == "bearish":
             sig.score -= 10
-    return sig
+    return _apply_confluence_scoring(payload, sig)
 
 
 def _setup_S2(payload: dict) -> Optional[Signal]:
