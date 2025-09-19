@@ -1,0 +1,31 @@
+{
+  "default": {
+    "risk_per_trade": 0.008,
+    "leverage": 10,
+    "rr_min": 1.8,
+    "fee_bp": 5.0,
+    "slippage_bp": 2.0
+  },
+  "symbols": {
+    "BTCUSDT": {
+      "risk_per_trade": 0.006,
+      "leverage": 8
+    },
+    "ETHUSDT": {
+      "risk_per_trade": 0.007,
+      "leverage": 10
+    },
+    "XRPUSDT": {
+      "risk_per_trade": 0.01,
+      "leverage": 12
+    },
+    "ADAUSDT": {
+      "risk_per_trade": 0.01,
+      "leverage": 12
+    },
+    "DOGEUSDT": {
+      "risk_per_trade": 0.012,
+      "leverage": 15
+    }
+  }
+}
