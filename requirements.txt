@@ -1,0 +1,7 @@
+pydantic>=2.7
+pytz
+python-dateutil
+requests
+pandas
+numpy
+ta
