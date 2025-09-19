@@ -36,10 +36,16 @@ def _unique_with_tol(vals: List[float], eps: float) -> List[float]:
     return out
 
 
+def _safe_wib_tz():
+    try:
+        return ZoneInfo("Asia/Jakarta")
+    except Exception:
+        return timezone.utc
+
+
 def _wib_window(now: Optional[datetime] = None) -> str:
-    jkt = ZoneInfo("Asia/Jakarta")
     now = now or datetime.now(timezone.utc)
-    w = now.astimezone(jkt)
+    w = now.astimezone(_safe_wib_tz())
     hm = w.hour + w.minute / 60.0
     # HIJAU: 01:00–08:00, 20:30–23:00; MERAH: 22:00–01:00; NETRAL: lainnya
     if (1.0 <= hm <= 8.0) or (20.5 <= hm <= 23.0):
@@ -86,7 +92,6 @@ async def perform_verify(db: AsyncSession, user_id: str, body: VerifyBody) -> Di
         quote_prec = None
 
     # Server macro snapshot
-    jkt = ZoneInfo("Asia/Jakarta")
     now = datetime.now(timezone.utc)
     def _json_safe(x):
         if isinstance(x, (str, int, float, bool)) or x is None:
