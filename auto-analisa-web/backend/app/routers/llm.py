@@ -10,6 +10,7 @@ from app.services.usage import get_today_usage
 from app.services.budget import get_or_init_settings
 from app.services.usage import inc_usage
 from app.models import LLMVerification
+from app.services.advisor_futures import auto_suggest_futures
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import os, json
@@ -193,6 +194,48 @@ async def perform_verify(db: AsyncSession, user_id: str, body: VerifyBody) -> Di
         rr_min = float(((hasil.get("risk") or {}).get("rr_min")) or ((pm.get("risk") or {}).get("rr_min")) or 0)
     except Exception:
         rr_min = None
+
+    # Server-side advisor fallback bila LLM minim saran
+    try:
+        macro = dict(body.macro_context or {})
+        fut_sig = dict(macro.get("futures_signals") or {})
+        mtf_sum = dict(macro.get("mtf_summary") or {})
+        # side tebak: TP > entry → LONG, sebaliknya SHORT
+        side_guess = "LONG"
+        try:
+            side_guess = "LONG" if (tp and entries and float(tp[0]) >= float(entries[0])) else "SHORT"
+        except Exception:
+            pass
+        plan_for_advisor = {
+            "side": side_guess,
+            "entries": entries,
+            "tp": tp,
+            "invalids": {"hard_1h": invalids.get("hard_1h") or invalids.get("h1")},
+            "risk": (hasil.get("risk") or pm.get("risk") or {}),
+        }
+        advisor = auto_suggest_futures(
+            plan_for_advisor,
+            fut_sig,
+            mtf_sum,
+            precision=prec,
+            rr_min_threshold=1.5,
+            funding_thresh_bp=float(os.getenv("FUTURES_FUNDING_WARNING_BP", "3.0")),
+        )
+        sev = int(advisor.get("severity") or 0)
+        if sev >= 1:
+            reasons = reasons + (advisor.get("reasons") or [])
+        # apply fixes bila severity>=2 atau LLM diam (tidak memberi fixes eksplisit)
+        if sev >= 2:
+            if advisor.get("verdict") and verdict in ("valid", "warning"):
+                verdict = advisor.get("verdict")
+            fixes = advisor.get("fixes") or {}
+            if isinstance(fixes.get("entries"), list) and fixes["entries"]:
+                entries = [float(x) for x in fixes["entries"] if isinstance(x, (int, float))]
+            inv_fix = fixes.get("invalids") or {}
+            if isinstance(inv_fix.get("hard_1h"), (int, float)):
+                invalids["hard_1h"] = float(inv_fix.get("hard_1h"))
+    except Exception:
+        pass
 
     # Leverage policy check
     lev_obj = dict(hasil.get("leverage") or {})

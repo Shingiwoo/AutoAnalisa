@@ -87,13 +87,19 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
         "taker_delta": {"m5": getattr(sig, "taker_delta_m5", None), "m15": getattr(sig, "taker_delta_m15", None), "h1": getattr(sig, "taker_delta_h1", None)},
     }
 
-    # Side heuristic sederhana (trend 1H): LONG bila ema5>ema20>ema50; else SHORT
+    # Side heuristic gabungan: EMA stack 1H/4H + taker delta 15m
     side = "LONG"
     try:
-        df1h = bundle.get("1h")
-        last = df1h.iloc[-1]
-        if not (float(getattr(last, "ema5", 0)) > float(getattr(last, "ema20", 0)) > float(getattr(last, "ema50", 0))):
+        df1h = bundle.get("1h"); df4h = bundle.get("4h")
+        l1 = df1h.iloc[-1]
+        l4 = df4h.iloc[-1] if df4h is not None else l1
+        up1 = float(getattr(l1, "ema5", 0)) > float(getattr(l1, "ema20", 0)) > float(getattr(l1, "ema50", 0))
+        up4 = float(getattr(l4, "ema5", 0)) > float(getattr(l4, "ema20", 0)) > float(getattr(l4, "ema50", 0))
+        td15 = float(((futures_signals or {}).get("taker_delta") or {}).get("m15") or 0.0)
+        if (not up1 and not up4) or (up1 and up4 and td15 < 0):
             side = "SHORT"
+        else:
+            side = "LONG"
     except Exception:
         side = "LONG"
 
@@ -207,7 +213,24 @@ async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=
     except Exception:
         quote_precision = None
     from app.routers.llm import VerifyBody, perform_verify
-    vb = VerifyBody(symbol=symbol, trade_type="futures", tf_base="15m", plan_mesin=plan_mesin, lev_policy={"lev_max_symbol": None, "lev_default": lev_suggested}, precision={"tickSize": tick, "stepSize": step, "quotePrecision": quote_precision}, macro_context=None, ui_contract={"tp_ladder_pct": [40,60]})
+    # lev_max via leverageBracket when available (best-effort)
+    lev_max = None
+    try:
+        br = await fetch_leverage_bracket(symbol)
+        if br and br.get("lev_max"):
+            lev_max = int(br.get("lev_max"))
+    except Exception:
+        lev_max = None
+    vb = VerifyBody(
+        symbol=symbol,
+        trade_type="futures",
+        tf_base="15m",
+        plan_mesin=plan_mesin,
+        lev_policy={"lev_max_symbol": lev_max, "lev_default": lev_suggested},
+        precision={"tickSize": tick, "stepSize": step, "quotePrecision": quote_precision},
+        macro_context={"futures_signals": futures_signals, "mtf_summary": spot2.get("mtf_summary") or {}},
+        ui_contract={"tp_ladder_pct": [40, 60]},
+    )
     out = await perform_verify(db, user.id, vb)
     usage = out.get("_usage") or {}
     model = os.getenv("OPENAI_MODEL", "gpt-5-chat-latest")
