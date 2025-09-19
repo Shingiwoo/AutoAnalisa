@@ -43,7 +43,7 @@ export default function Page(){
 
   async function load(){
     try{
-      const r = await api.get('analyses', { params:{ status: 'active' } })
+      const r = await api.get('analyses', { params:{ status: 'active', trade_type: 'spot' } })
       setCards(r.data)
       // Try admin settings; ignore if forbidden
       try {
