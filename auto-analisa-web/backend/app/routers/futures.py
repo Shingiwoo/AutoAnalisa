@@ -344,6 +344,13 @@ async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=
         await db.commit()
     except Exception:
         pass
+    # sanitize macro snapshot for JSON columns (datetime -> isoformat)
+    try:
+        from app.routers.llm import _json_safe as _llm_json_safe
+        macro_snap = _llm_json_safe(out.get("_macro_snapshot") or {})
+    except Exception:
+        macro_snap = out.get("_macro_snapshot") or {}
+
     vr = LLMVerification(
         analysis_id=a.id,
         user_id=user.id,
@@ -355,7 +362,7 @@ async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=
         summary=out.get("ringkas_naratif") or "",
         futures_json=out.get("hasil_json") or {},
         trade_type="futures",
-        macro_snapshot=out.get("_macro_snapshot") or {},
+        macro_snapshot=macro_snap,
         ui_contract={"tp_ladder_pct": (out.get("hasil_json") or {}).get("tp_ladder_pct") or [40,60]},
         cached=False,
     )

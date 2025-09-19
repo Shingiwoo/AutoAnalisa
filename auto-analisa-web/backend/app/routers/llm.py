@@ -297,7 +297,8 @@ async def perform_verify(db: AsyncSession, user_id: str, body: VerifyBody) -> Di
         "ringkas_naratif": ringkas,
         "hasil_json": hasil_out,
         "_usage": usage,
-        "_macro_snapshot": mctx,
+        # ensure JSON-serializable macro snapshot to avoid DB JSON serialization errors
+        "_macro_snapshot": _json_safe(mctx),
         "_lev_policy": {"lev_max_symbol": lev_max, "lev_default": lev_default, "expected_default": exp_default},
     }
 
