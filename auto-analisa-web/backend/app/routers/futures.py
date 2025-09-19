@@ -147,15 +147,16 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
         e_vals = [float(x) for (x, _w, _t) in entries if isinstance(x, (int, float))]
     except Exception:
         e_vals = []
-    e_avg = (sum(e_vals) / len(e_vals)) if e_vals else None
+    # Gunakan referensi konservatif agar TP selalu di sisi profit untuk semua entry ladder
+    e_ref = (max(e_vals) if side == "LONG" else (min(e_vals) if e_vals else None)) if e_vals else None
     tp_scalps = []
-    if isinstance(e_avg, (int, float)) and e_avg > 0:
+    if isinstance(e_ref, (int, float)) and e_ref > 0:
         if side == "SHORT":
-            tp1 = e_avg * (1.0 - 0.006)
-            tp2 = e_avg * (1.0 - 0.008)
+            tp1 = e_ref * (1.0 - 0.006)
+            tp2 = e_ref * (1.0 - 0.008)
         else:
-            tp1 = e_avg * (1.0 + 0.006)
-            tp2 = e_avg * (1.0 + 0.008)
+            tp1 = e_ref * (1.0 + 0.006)
+            tp2 = e_ref * (1.0 + 0.008)
         tp_scalps = [
             {"name": "TP1", "range": [tp1, tp1], "reduce_only_pct": 40},
             {"name": "TP2", "range": [tp2, tp2], "reduce_only_pct": 60},
@@ -225,14 +226,32 @@ async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=
     s = await get_or_init_settings(db)
     lev_suggested = max(int(getattr(s, "futures_leverage_min", 3) or 3), min(int(getattr(s, "futures_leverage_max", 10) or 10), 5))
     # Scalping TP targets for verify input as baseline (0.6% / 0.8%)
-    tp_scalp_nums = []
+    tp_scalp_nums: list[float] = []
     if entries_nums:
         try:
-            e_avg2 = sum(entries_nums)/len(entries_nums)
-            if e_avg2 > 0:
-                # Guess side from mtf trend (optional) or from relative tp; default LONG
+            # Heuristik side (sederhana) untuk verifikasi: gunakan sinyal taker_delta + ema stack
+            side_guess = "LONG"
+            try:
+                df1h = bundle.get("1h"); df4h = bundle.get("4h")
+                l1 = df1h.iloc[-1]
+                l4 = df4h.iloc[-1] if df4h is not None else l1
+                up1 = float(getattr(l1, "ema5", 0)) > float(getattr(l1, "ema20", 0)) > float(getattr(l1, "ema50", 0))
+                up4 = float(getattr(l4, "ema5", 0)) > float(getattr(l4, "ema20", 0)) > float(getattr(l4, "ema50", 0))
+                # futures_signals di bawah akan diisi; gunakan m15 bila ada
+                td15_val = None
+                try:
+                    td15_val = float(((futures_signals or {}).get("taker_delta") or {}).get("m15") or 0.0)
+                except Exception:
+                    td15_val = None
+                if (not up1 and not up4) or (up1 and up4 and (td15_val is not None and td15_val < 0)):
+                    side_guess = "SHORT"
+            except Exception:
                 side_guess = "LONG"
-                tp_scalp_nums = [e_avg2*(1.0+0.006), e_avg2*(1.0+0.008)]
+            e_ref2 = max(entries_nums) if side_guess == "LONG" else min(entries_nums)
+            if side_guess == "LONG":
+                tp_scalp_nums = [e_ref2*(1.0+0.006), e_ref2*(1.0+0.008)]
+            else:
+                tp_scalp_nums = [e_ref2*(1.0-0.006), e_ref2*(1.0-0.008)]
         except Exception:
             tp_scalp_nums = []
     plan_mesin = {"entries": entries_nums, "tp": (tp_scalp_nums or tp_nums), "invalids": invalids, "risk": {"risk_per_trade_pct": float(getattr(s, "futures_risk_per_trade_pct", 0.5) or 0.5), "rr_min": 1.2}}
