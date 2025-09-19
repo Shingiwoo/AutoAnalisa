@@ -8,6 +8,7 @@ import pandas as pd
 from .rules import Features, make_levels
 from .rounding import round_futures_prices
 from .validator_futures import compute_rr_min_futures
+from .llm import ask_llm_messages
 from .filters_futures import gating_signals_ok
 
 # --- Core helpers ---------------------------------------------------------
@@ -158,9 +159,116 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
         plan["gates"] = {"checked": True, "ok": bool(gates_ok), "reasons": reasons, "snapshot": dumps}
 
     # Optional LLM fix pass (must return plan-like dict)
-    if use_llm_fixes and callable(llm_fix_hook):
+    if use_llm_fixes:
+        def _default_llm_fix_hook(p0: Dict[str, Any], *, bundle: Dict[str, pd.DataFrame], symbol: Optional[str] = None) -> Dict[str, Any]:
+            """Best-effort LLM correction to improve RR while preserving structure.
+            Expects JSON-only output: { entries: [..], tp: [{name,range:[..]},..], invalids:{hard_1h:..}, notes:[..] }
+            """
+            try:
+                # Minimal snapshot for context
+                def _safe(v, d=None):
+                    try:
+                        return float(v)
+                    except Exception:
+                        return d
+                snap = {
+                    "price": _safe(bundle["15m"].iloc[-1].close, None),
+                    "ema": {
+                        "1h": {"ema20": _safe(bundle["1h"].iloc[-1].ema20, None), "ema50": _safe(bundle["1h"].iloc[-1].ema50, None)},
+                        "4h": {"ema20": _safe(bundle["4h"].iloc[-1].ema20, None), "ema50": _safe(bundle["4h"].iloc[-1].ema50, None)},
+                    },
+                    "atr15m": _safe(bundle["15m"].iloc[-1].atr14, None),
+                }
+                # Compose strict-JSON instruction
+                import json as _json
+                messages = [
+                    {"role": "system", "content": "Anda asisten strategi Futures. Keluarkan hanya JSON valid (object)."},
+                    {"role": "user", "content": (
+                        "Tugas: Koreksi rencana Futures agar RR >= %.2f, jaga 2 entry & 2 TP.\n"
+                        "Input: {\"snapshot_MTF\": %s, \"plan_awal\": %s, \"fee_bp\": %.3f, \"slippage_bp\": %.3f}\n"
+                        "Output (JSON only): { \"entries\":[..], \"tp\":[{\"name\":\"TP1\",\"range\":[..]},{\"name\":\"TP2\",\"range\":[..]}], \"invalids\":{\"hard_1h\":..}, \"notes\":[..] }\n"
+                        "Aturan: Naikkan RR tanpa memperburuk validitas teknikal; hindari TP menurun; bobot 0.4/0.6 dipertahankan."
+                    ) % (
+                        float(rr_min),
+                        _json.dumps(snap, ensure_ascii=False),
+                        _json.dumps(p0, ensure_ascii=False),
+                        float(fee_bp), float(slippage_bp)
+                    )},
+                ]
+                text, _usage = ask_llm_messages(messages)
+                import json
+                data = json.loads(text or "{}") if text else {}
+                if not isinstance(data, dict) or not data:
+                    return p0
+                p1 = dict(p0)
+                # attach usage for upstream accounting (router will log and strip if needed)
+                try:
+                    p1.setdefault("_usage", {})
+                    p1["_usage"].update({
+                        "prompt_tokens": int((_usage or {}).get("prompt_tokens") or 0),
+                        "completion_tokens": int((_usage or {}).get("completion_tokens") or 0),
+                        "total_tokens": int((_usage or {}).get("total_tokens") or 0),
+                    })
+                except Exception:
+                    pass
+                # Merge entries
+                if isinstance(data.get("entries"), list) and len(data["entries"]) >= 2:
+                    try:
+                        e_nums = [float(x) for x in data["entries"][:2]]
+                        p1["entries"] = e_nums
+                    except Exception:
+                        pass
+                # Merge invalids.hard_1h
+                inv = data.get("invalids") or {}
+                try:
+                    if inv and inv.get("hard_1h") is not None:
+                        p1.setdefault("invalids", {})
+                        p1["invalids"]["hard_1h"] = float(inv.get("hard_1h"))
+                except Exception:
+                    pass
+                # Merge tp nodes
+                if isinstance(data.get("tp"), list) and data["tp"]:
+                    tps = []
+                    for t in data["tp"][:2]:
+                        try:
+                            name = t.get("name") or f"TP{len(tps)+1}"
+                            rng = t.get("range") or []
+                            lo = float(rng[0]); hi = float(rng[1]) if len(rng) > 1 else lo
+                            if lo is not None and hi is not None:
+                                tps.append({"name": name, "range": [lo, hi]})
+                        except Exception:
+                            continue
+                    if tps:
+                        p1["tp"] = tps
+                # Notes
+                if isinstance(data.get("notes"), list):
+                    try:
+                        p1.setdefault("notes", [])
+                        p1["notes"].extend([str(n) for n in data["notes"]][:4])
+                    except Exception:
+                        pass
+                # Recompute RR; if still below threshold, keep original
+                try:
+                    e_nums = [float(x) for x in (p1.get("entries") or [])]
+                    tp1v = float((p1.get("tp") or [{}])[0].get("range", [None])[0]) if (p1.get("tp") or [{}])[0].get("range") else None
+                    inv_final = float((p1.get("invalids") or {}).get("hard_1h")) if (p1.get("invalids") or {}).get("hard_1h") is not None else None
+                    rr_new = compute_rr_min_futures(p1.get("side") or "LONG", e_nums, tp1v, inv_final, fee_bp, slippage_bp)
+                    p1.setdefault("metrics", {})
+                    p1["metrics"]["rr_min"] = float(rr_new)
+                    if rr_new >= float(rr_min):
+                        return p1
+                    # else, fallback to original but append note
+                    p0 = dict(p0)
+                    p0.setdefault("notes", []).append("LLM fixes diabaikan: RR masih di bawah ambang")
+                    return p0
+                except Exception:
+                    return p1
+            except Exception:
+                return p0
+
         try:
-            plan = llm_fix_hook(plan, bundle=bundle, symbol=symbol)
+            hook = llm_fix_hook if callable(llm_fix_hook) else _default_llm_fix_hook
+            plan = hook(plan, bundle=bundle, symbol=symbol)
         except Exception:
             # ignore LLM errors to keep deterministic plan
             pass
