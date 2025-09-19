@@ -38,7 +38,9 @@ class BuilderConfig:
 
 
 class PayloadBuilder:
-    def __init__(self, symbol: str, market: str = "futures", contract: str = "perp", tz: str = "Asia/Jakarta", use_fvg: bool = False, tfs: Optional[List[str]] = None):
+    def __init__(self, symbol: str, market: str = "futures", contract: str = "perp", tz: str = "Asia/Jakarta", use_fvg: bool = False, tfs: Optional[List[str]] = None,
+                 override_risk: Optional[float] = None, override_lev: Optional[int] = None, news: Optional[list] = None,
+                 session_bias: Optional[str] = None, btc_bias: Optional[str] = None):
         self.cfg = BuilderConfig(symbol=symbol, market=market, contract=contract, tz=tz, use_fvg=use_fvg, tfs=tfs or list(DEFAULT_TFS))
         if market not in ("spot", "futures"):
             raise ValueError("market must be 'spot' or 'futures'")
@@ -57,13 +59,18 @@ class PayloadBuilder:
         self.precision = Precision(price=precision.get("price", 0.0001), qty=precision.get("qty", 0.1), min_notional=precision.get("min_notional", 5.0))
         self.fees = Fees(maker=fees.get("maker", 0.0002), taker=fees.get("taker", 0.0005))
         self._insufficient_history = False
+        self._override_risk = override_risk
+        self._override_lev = override_lev
+        self._news = news or None
+        self._session_bias = session_bias
+        self._btc_bias = btc_bias
 
     def _build_tf_block(self, tf: str) -> TFIndicators:
         interval = tf_to_binance_interval(tf)
         df = self.ds.get_klines(self.cfg.symbol, interval, limit=300, tz_str=self.cfg.tz)
         if len(df) < 150:
             self._insufficient_history = True
-        # Ensure closed bar; Binance returns closed bars; still optional drop if too fresh
+        # Ensure closed bar; get last close_time
         last_close_time = pd.to_datetime(df["close_time"].iloc[-1])
         # compute indicators on df
         ema = ema_dict(df)
@@ -73,6 +80,15 @@ class PayloadBuilder:
         macd = macd_dict(df)
         atr = atr_last(df)
         vol = volume_stats(df)
+        # recent series
+        try:
+            from ta.trend import EMAIndicator
+            from ta.momentum import RSIIndicator
+            ema50_series = EMAIndicator(close=df["close"], window=50).ema_indicator().dropna().iloc[-5:].tolist()
+            rsi6_series = RSIIndicator(close=df["close"], window=6).rsi().dropna().iloc[-5:].tolist()
+        except Exception:
+            ema50_series, rsi6_series = None, None
+        close_last5 = df["close"].iloc[-5:].tolist() if len(df) >= 5 else None
 
         return TFIndicators(
             last=float(df["close"].iloc[-1]),
@@ -89,6 +105,9 @@ class PayloadBuilder:
             vol_last=vol["vol_last"],
             vol_ma5=vol["vol_ma5"],
             vol_ma10=vol["vol_ma10"],
+            rsi6_last5=rsi6_series,
+            close_last5=close_last5,
+            ema50_last5=ema50_series,
         )
 
     def _structure_for_tf(self, tf: str, tf_block: TFIndicators) -> StructureTF:
@@ -154,8 +173,8 @@ class PayloadBuilder:
             balance_usdt=None,  # unknown without keys; downstream can fill
             fee_maker=self.fees.maker,
             fee_taker=self.fees.taker,
-            risk_per_trade=0.01,
-            leverage=None if self.cfg.market == "spot" else 10,
+            risk_per_trade=self._override_risk if self._override_risk is not None else 0.01,
+            leverage=1 if self.cfg.market == "spot" else (self._override_lev if self._override_lev is not None else 10),
             margin_mode="cross" if self.cfg.market == "futures" else None,
         )
 
@@ -174,6 +193,10 @@ class PayloadBuilder:
             levels=levels,
             derivatives=derivatives,
             orderbook=orderbook,
+            orderflow=None,
+            news=self._news,
+            session_bias=self._session_bias,
+            btc_bias=self._btc_bias,
             insufficient_history=self._insufficient_history,
             notes=None,
         )
@@ -181,6 +204,10 @@ class PayloadBuilder:
         return payload.model_dump(mode="python", by_alias=False)
 
 
-def build_payload(symbol: str, market: str = "futures", contract: str = "perp", tfs: Optional[List[str]] = None, tz: str = "Asia/Jakarta", use_fvg: bool = False) -> dict:
-    builder = PayloadBuilder(symbol=symbol, market=market, contract=contract, tz=tz, use_fvg=use_fvg, tfs=tfs)
+def build_payload(symbol: str, market: str = "futures", contract: str = "perp", tfs: Optional[List[str]] = None, tz: str = "Asia/Jakarta", use_fvg: bool = False,
+                  override_risk: Optional[float] = None, override_lev: Optional[int] = None, news: Optional[list] = None,
+                  session_bias: Optional[str] = None, btc_bias: Optional[str] = None) -> dict:
+    builder = PayloadBuilder(symbol=symbol, market=market, contract=contract, tz=tz, use_fvg=use_fvg, tfs=tfs,
+                             override_risk=override_risk, override_lev=override_lev, news=news,
+                             session_bias=session_bias, btc_bias=btc_bias)
     return builder.build()

@@ -1,0 +1,18 @@
+[
+  {
+    "symbol": "IMXUSDT",
+    "market": "futures",
+    "side": "long",
+    "setup": "L1_ema20_1h_reclaim_15m",
+    "score": 80,
+    "entry_zone": [0.8950, 0.9130],
+    "invalid_level": 0.8875,
+    "sl": 0.8875,
+    "tp": ["+1.2%", "+2.2%", "+3.5%"],
+    "tp_price": [0.906, 0.920, 0.933],
+    "risk_per_trade": 0.008,
+    "position_sizing": {"method": "fixed_risk", "qty": 850.0},
+    "notes": ["reclaim EMA50 15m", "zone EMA20 1H ±0.2*ATR1H", "session bias: bullish", "btc bias: bullish"],
+    "timeframe_confirmations": {"confirm_tf": "15m", "support_tf": "1H"}
+  }
+]

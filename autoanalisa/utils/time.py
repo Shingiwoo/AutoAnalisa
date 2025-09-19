@@ -40,3 +40,37 @@ def tf_duration_seconds(tf: str) -> int:
 def isoformat_wtz(dt: datetime, tz_str: str = "Asia/Jakarta") -> str:
     return to_tz(dt, tz_str).isoformat()
 
+
+def current_session_bias(now: datetime | None = None, tz_str: str = "Asia/Jakarta") -> Literal["bullish", "bearish", "neutral"]:
+    dt = now or now_tz(tz_str)
+    hour = dt.hour
+    minute = dt.minute
+    hm = hour * 60 + minute
+    # Static windows (can be moved to config):
+    # 01:00–08:00 WIB => bullish
+    # 12:00–17:00 WIB => bullish
+    # 22:00–01:00 WIB => bearish
+    # 17:00–22:00 WIB => bearish
+    # 08:00–12:00 WIB => neutral
+
+    def in_range(start_hm: int, end_hm: int) -> bool:
+        # supports wrap around midnight when end < start
+        if end_hm >= start_hm:
+            return start_hm <= hm < end_hm
+        # wrap
+        return hm >= start_hm or hm < end_hm
+
+    b_bull = (
+        in_range(1 * 60, 8 * 60) or  # 01:00-08:00
+        in_range(12 * 60, 17 * 60)   # 12:00-17:00
+    )
+    b_bear = (
+        in_range(22 * 60, 24 * 60) or  # 22:00-24:00
+        in_range(0, 1 * 60) or         # 00:00-01:00
+        in_range(17 * 60, 22 * 60)     # 17:00-22:00
+    )
+    if b_bull and not b_bear:
+        return "bullish"
+    if b_bear and not b_bull:
+        return "bearish"
+    return "neutral"

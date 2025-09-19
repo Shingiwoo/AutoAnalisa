@@ -53,6 +53,10 @@ class TFIndicators(BaseModel):
     vol_last: float
     vol_ma5: float
     vol_ma10: float
+    # Optional recent series to help rules detect patterns
+    rsi6_last5: Optional[list[float]] = None
+    close_last5: Optional[list[float]] = None
+    ema50_last5: Optional[list[float]] = None
 
 
 class StructureTF(BaseModel):
@@ -102,6 +106,10 @@ class PayloadV1(BaseModel):
     levels: Dict[str, LevelsTF]
     derivatives: Optional[Derivatives] = None
     orderbook: Optional[Orderbook] = None
+    orderflow: Optional[dict] = None
+    news: Optional[list] = None
+    session_bias: Optional[str] = None
+    btc_bias: Optional[str] = None
+    dxy_bias: Optional[str] = None
     insufficient_history: Optional[bool] = None
     notes: Optional[str] = None
-
