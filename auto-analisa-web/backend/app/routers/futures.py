@@ -35,6 +35,34 @@ def _norm_symbol(sym: str) -> str:
     return s
 
 
+async def _ensure_llm_verif_cols(db: AsyncSession) -> None:
+    """Ensure llm_verifications has the columns used by futures verify. Safe to run often."""
+    try:
+        res = await db.execute("PRAGMA table_info(llm_verifications)")
+        cols = {row[1] for row in res.fetchall()}
+        stmts: list[str] = []
+        if "futures_json" not in cols:
+            stmts.append("ALTER TABLE llm_verifications ADD COLUMN futures_json JSON DEFAULT '{}'")
+        if "trade_type" not in cols:
+            stmts.append("ALTER TABLE llm_verifications ADD COLUMN trade_type TEXT DEFAULT 'spot'")
+        if "macro_snapshot" not in cols:
+            stmts.append("ALTER TABLE llm_verifications ADD COLUMN macro_snapshot JSON DEFAULT '{}' ")
+        if "ui_contract" not in cols:
+            stmts.append("ALTER TABLE llm_verifications ADD COLUMN ui_contract JSON DEFAULT '{}' ")
+        if "cached" not in cols:
+            stmts.append("ALTER TABLE llm_verifications ADD COLUMN cached BOOLEAN DEFAULT 0")
+        for s in stmts:
+            try:
+                await db.execute(s)
+            except Exception:
+                pass
+        if stmts:
+            await db.commit()
+    except Exception:
+        # best-effort; ignore if DB forbids PRAGMA or ALTER (non-SQLite)
+        pass
+
+
 @router.get("/{symbol}/futures")
 async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     # Feature-flag
@@ -303,6 +331,8 @@ async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=
         macro_context={"futures_signals": futures_signals, "mtf_summary": spot2.get("mtf_summary") or {}},
         ui_contract={"tp_ladder_pct": [40, 60]},
     )
+    # Ensure DB columns exist (handles case when service not restarted after update)
+    await _ensure_llm_verif_cols(db)
     out = await perform_verify(db, user.id, vb)
     usage = out.get("_usage") or {}
     model = os.getenv("OPENAI_MODEL", "gpt-5-chat-latest")
