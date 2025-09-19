@@ -21,7 +21,7 @@ from ..features.structure import infer_trend, last_hh_hl_lh_ll
 from ..features.levels import sr_levels
 from ..features.fvg import detect_fvg
 from ..datasource import binance_spot, binance_futures
-from ..schemas.payload_v1 import PayloadV1, Precision, Fees, Account, TFIndicators, StructureTF, LevelsTF, Derivatives, Orderbook
+from ..schemas.payload_v1 import PayloadV1, Precision, Fees, Account, TFIndicators, StructureTF, LevelsTF, LevelsContainer, Derivatives, Orderbook
 
 
 DEFAULT_TFS = ("1D", "4H", "1H", "15m")
@@ -126,6 +126,34 @@ class PayloadBuilder:
         piv = sr_levels(df)
         return LevelsTF(**piv)
 
+    def _levels_confluence(self, levels_map: Dict[str, LevelsTF], tf_blocks: Dict[str, TFIndicators]) -> list[dict]:
+        from ..features.levels import confluence_tags
+        results: list[dict] = []
+        def tag_tf(label: str, tf: str) -> str:
+            if label.startswith("EMA"):
+                return f"{label}-{tf}"
+            if label in ("BB-mid", "pivot"):
+                return f"{label}-{tf}"
+            return label
+        def near_round(price: float, step: float = 0.05, tol: float = 0.001) -> bool:
+            nearest = round(price / step) * step
+            return abs(price - nearest) / max(nearest, 1e-9) < tol
+        for tf, lvl in levels_map.items():
+            tb = tf_blocks.get(tf)
+            if not tb:
+                continue
+            ema = tb.ema
+            bb = tb.bb.model_dump() if hasattr(tb.bb, 'model_dump') else tb.bb
+            piv = {"support": lvl.support, "resistance": lvl.resistance}
+            for p in (lvl.support[:2] + lvl.resistance[:2]):
+                tags = confluence_tags(p, None, ema, bb, piv)
+                labeled = [tag_tf(t, tf) for t in tags]
+                if near_round(p):
+                    labeled.append("round-number")
+                if labeled:
+                    results.append({"tf": tf, "price": float(p), "tags": labeled})
+        return results
+
     def build(self) -> dict:
         tf_blocks: Dict[str, TFIndicators] = {}
         for tf in self.cfg.tfs:
@@ -136,10 +164,12 @@ class PayloadBuilder:
             if tf in tf_blocks:
                 structure[tf] = self._structure_for_tf(tf, tf_blocks[tf])
 
-        levels: Dict[str, LevelsTF] = {}
+        levels_map: Dict[str, LevelsTF] = {}
         for tf in ("1H", "15m"):
             if tf in tf_blocks:
-                levels[tf] = self._levels_for_tf(tf)
+                levels_map[tf] = self._levels_for_tf(tf)
+
+        levels_confluence = self._levels_confluence(levels_map, tf_blocks)
 
         derivatives = None
         orderbook = None
@@ -190,7 +220,7 @@ class PayloadBuilder:
             account=account,
             tf=tf_blocks,
             structure=structure,
-            levels=levels,
+            levels=LevelsContainer(**{tf: levels_map[tf].model_dump() for tf in levels_map}, confluence=levels_confluence),
             derivatives=derivatives,
             orderbook=orderbook,
             orderflow=None,

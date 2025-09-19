@@ -16,7 +16,7 @@ def sr_levels(df: pd.DataFrame, method: str = "pivot", n: int = 3) -> Dict[str, 
     }
 
 
-def confluence_tags(price: float, ema: dict, bb: dict, pivots: dict, tol: float = 0.001) -> list[str]:
+def confluence_tags(price: float, df, ema: dict, bb: dict, pivots: dict, tol: float = 0.001) -> list[str]:
     tags: list[str] = []
     def near(a: float, b: float) -> bool:
         return abs(a - b) / b < tol if b else False
@@ -30,4 +30,3 @@ def confluence_tags(price: float, ema: dict, bb: dict, pivots: dict, tol: float 
         if near(price, float(lvl)):
             tags.append("pivot")
     return tags
-

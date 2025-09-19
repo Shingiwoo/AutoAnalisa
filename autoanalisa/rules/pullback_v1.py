@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import List, Optional
 
+import os
+import yaml
+
 from ..schemas.signal_v1 import Signal
 from ..utils.num import pct_targets, round_to, position_size
 from ..utils.time import current_session_bias, now_tz
@@ -23,6 +26,28 @@ def _spread_ok(payload: dict) -> bool:
         return (spread / last) < (0.05 / 100.0) if last else False
     except Exception:
         return False
+
+
+def _load_rules_config() -> dict:
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config", "rules_pullback.yaml")
+    if os.path.exists(path):
+        try:
+            with open(path, "r") as f:
+                return yaml.safe_load(f) or {}
+        except Exception:
+            return {}
+    return {}
+
+
+_RULES_CFG = _load_rules_config()
+
+
+def _macro_gating_enabled() -> bool:
+    return bool(((_RULES_CFG.get("macro") or {}).get("gating_enabled", True)))
+
+
+def _macro_scoring_enabled() -> bool:
+    return bool(((_RULES_CFG.get("macro") or {}).get("scoring_enabled", True)))
 
 
 def gating_ok(payload: dict) -> bool:
@@ -113,20 +138,21 @@ def _setup_L1(payload: dict) -> Optional[Signal]:
         timeframe_confirmations={"confirm_tf": "15m", "support_tf": "1H"},
     )
     # Macro bias scoring tweak
-    bias = payload.get("session_bias") or current_session_bias(now_tz())
-    btc_bias = payload.get("btc_bias")
-    if bias == "bullish":
-        sig.score += 10
-        sig.notes.append("session bias: bullish")
-    elif bias == "bearish":
-        sig.score -= 10
-        sig.notes.append("session bias: bearish")
-    if btc_bias == "bullish":
-        sig.score += 10
-        sig.notes.append("btc bias: bullish")
-    elif btc_bias == "bearish":
-        sig.score -= 10
-        sig.notes.append("btc bias: bearish")
+    if _macro_scoring_enabled():
+        bias = payload.get("session_bias") or current_session_bias(now_tz())
+        btc_bias = payload.get("btc_bias")
+        if bias == "bullish":
+            sig.score += 10
+            sig.notes.append("session bias: bullish")
+        elif bias == "bearish":
+            sig.score -= 10
+            sig.notes.append("session bias: bearish")
+        if btc_bias == "bullish":
+            sig.score += 10
+            sig.notes.append("btc bias: bullish")
+        elif btc_bias == "bearish":
+            sig.score -= 10
+            sig.notes.append("btc bias: bearish")
     return sig
 
 
@@ -171,20 +197,21 @@ def _setup_S1(payload: dict) -> Optional[Signal]:
         notes=["below EMA50 15m"],
         timeframe_confirmations={"confirm_tf": "15m"},
     )
-    bias = payload.get("session_bias") or current_session_bias(now_tz())
-    btc_bias = payload.get("btc_bias")
-    if bias == "bearish":
-        sig.score += 10
-        sig.notes.append("session bias: bearish")
-    elif bias == "bullish":
-        sig.score -= 10
-        sig.notes.append("session bias: bullish")
-    if btc_bias == "bearish":
-        sig.score += 10
-        sig.notes.append("btc bias: bearish")
-    elif btc_bias == "bullish":
-        sig.score -= 10
-        sig.notes.append("btc bias: bullish")
+    if _macro_scoring_enabled():
+        bias = payload.get("session_bias") or current_session_bias(now_tz())
+        btc_bias = payload.get("btc_bias")
+        if bias == "bearish":
+            sig.score += 10
+            sig.notes.append("session bias: bearish")
+        elif bias == "bullish":
+            sig.score -= 10
+            sig.notes.append("session bias: bullish")
+        if btc_bias == "bearish":
+            sig.score += 10
+            sig.notes.append("btc bias: bearish")
+        elif btc_bias == "bullish":
+            sig.score -= 10
+            sig.notes.append("btc bias: bullish")
     return sig
 
 
@@ -223,16 +250,17 @@ def _setup_L2(payload: dict) -> Optional[Signal]:
         tp=[f"+{x}%" for x in tps], tp_price=[round_to(x, price_step) for x in tp_price], risk_per_trade=risk_pt, position_sizing={"method":"fixed_risk","qty":qty},
         notes=["RSI6 < 20"], timeframe_confirmations={"confirm_tf": "5m" if "5m" in payload.get("tf", {}) else "15m"}
     )
-    bias = payload.get("session_bias") or current_session_bias(now_tz())
-    btc_bias = payload.get("btc_bias")
-    if bias == "bullish":
-        sig.score += 10
-    elif bias == "bearish":
-        sig.score -= 10
-    if btc_bias == "bullish":
-        sig.score += 10
-    elif btc_bias == "bearish":
-        sig.score -= 10
+    if _macro_scoring_enabled():
+        bias = payload.get("session_bias") or current_session_bias(now_tz())
+        btc_bias = payload.get("btc_bias")
+        if bias == "bullish":
+            sig.score += 10
+        elif bias == "bearish":
+            sig.score -= 10
+        if btc_bias == "bullish":
+            sig.score += 10
+        elif btc_bias == "bearish":
+            sig.score -= 10
     return sig
 
 
@@ -271,16 +299,17 @@ def _setup_L3(payload: dict) -> Optional[Signal]:
         tp=[f"+{x}%" for x in tps], tp_price=[round_to(x, price_step) for x in tp_price], risk_per_trade=risk_pt, position_sizing={"method":"fixed_risk","qty":qty},
         notes=["breakout range 15m"], timeframe_confirmations={"confirm_tf": "15m"}
     )
-    bias = payload.get("session_bias") or current_session_bias(now_tz())
-    btc_bias = payload.get("btc_bias")
-    if bias == "bullish":
-        sig.score += 10
-    elif bias == "bearish":
-        sig.score -= 10
-    if btc_bias == "bullish":
-        sig.score += 10
-    elif btc_bias == "bearish":
-        sig.score -= 10
+    if _macro_scoring_enabled():
+        bias = payload.get("session_bias") or current_session_bias(now_tz())
+        btc_bias = payload.get("btc_bias")
+        if bias == "bullish":
+            sig.score += 10
+        elif bias == "bearish":
+            sig.score -= 10
+        if btc_bias == "bullish":
+            sig.score += 10
+        elif btc_bias == "bearish":
+            sig.score -= 10
     return sig
 
 
@@ -317,16 +346,17 @@ def _setup_S2(payload: dict) -> Optional[Signal]:
         tp=[f"+{x}%" for x in tps], tp_price=[round_to(x, price_step) for x in tp_price], risk_per_trade=risk_pt, position_sizing={"method":"fixed_risk","qty":qty},
         notes=["reject from EMA20 1H cluster"], timeframe_confirmations={"confirm_tf": "15m", "support_tf": "1H"}
     )
-    bias = payload.get("session_bias") or current_session_bias(now_tz())
-    btc_bias = payload.get("btc_bias")
-    if bias == "bearish":
-        sig.score += 10
-    elif bias == "bullish":
-        sig.score -= 10
-    if btc_bias == "bearish":
-        sig.score += 10
-    elif btc_bias == "bullish":
-        sig.score -= 10
+    if _macro_scoring_enabled():
+        bias = payload.get("session_bias") or current_session_bias(now_tz())
+        btc_bias = payload.get("btc_bias")
+        if bias == "bearish":
+            sig.score += 10
+        elif bias == "bullish":
+            sig.score -= 10
+        if btc_bias == "bearish":
+            sig.score += 10
+        elif btc_bias == "bullish":
+            sig.score -= 10
     return sig
 
 
@@ -362,16 +392,17 @@ def _setup_S3(payload: dict) -> Optional[Signal]:
         tp=[f"+{x}%" for x in tps], tp_price=[round_to(x, price_step) for x in tp_price], risk_per_trade=risk_pt, position_sizing={"method":"fixed_risk","qty":qty},
         notes=[f"false break {rn:.3f}"], timeframe_confirmations={"confirm_tf": "15m"}
     )
-    bias = payload.get("session_bias") or current_session_bias(now_tz())
-    btc_bias = payload.get("btc_bias")
-    if bias == "bearish":
-        sig.score += 10
-    elif bias == "bullish":
-        sig.score -= 10
-    if btc_bias == "bearish":
-        sig.score += 10
-    elif btc_bias == "bullish":
-        sig.score -= 10
+    if _macro_scoring_enabled():
+        bias = payload.get("session_bias") or current_session_bias(now_tz())
+        btc_bias = payload.get("btc_bias")
+        if bias == "bearish":
+            sig.score += 10
+        elif bias == "bullish":
+            sig.score -= 10
+        if btc_bias == "bearish":
+            sig.score += 10
+        elif btc_bias == "bullish":
+            sig.score -= 10
     return sig
 
 
@@ -385,16 +416,17 @@ def generate_signals(payload: dict) -> List[Signal]:
         sig = fn(payload)
         if sig:
             # Macro gating: skip conflicting with session bias
-            bias = payload.get("session_bias") or current_session_bias(now_tz())
-            btc_bias = payload.get("btc_bias")
-            if bias == "bearish" and sig.side == "long":
-                continue
-            if bias == "bullish" and sig.side == "short":
-                continue
-            if btc_bias == "bearish" and sig.side == "long":
-                continue
-            if btc_bias == "bullish" and sig.side == "short":
-                continue
+            if _macro_gating_enabled():
+                bias = payload.get("session_bias") or current_session_bias(now_tz())
+                btc_bias = payload.get("btc_bias")
+                if bias == "bearish" and sig.side == "long":
+                    continue
+                if bias == "bullish" and sig.side == "short":
+                    continue
+                if btc_bias == "bearish" and sig.side == "long":
+                    continue
+                if btc_bias == "bullish" and sig.side == "short":
+                    continue
             # Spot long-only
             if payload.get("market") == "spot" and sig.side == "short":
                 continue

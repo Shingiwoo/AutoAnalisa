@@ -72,6 +72,11 @@ class LevelsTF(BaseModel):
     resistance: List[float] = Field(default_factory=list)
 
 
+class LevelsContainer(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    confluence: Optional[List[dict]] = None
+
+
 class Derivatives(BaseModel):
     funding_rate: Optional[float] = None
     next_funding_ts: Optional[str] = None
@@ -103,7 +108,7 @@ class PayloadV1(BaseModel):
     account: Account
     tf: Dict[str, TFIndicators]
     structure: Dict[str, StructureTF]
-    levels: Dict[str, LevelsTF]
+    levels: LevelsContainer
     derivatives: Optional[Derivatives] = None
     orderbook: Optional[Orderbook] = None
     orderflow: Optional[dict] = None
