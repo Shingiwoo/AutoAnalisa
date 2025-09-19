@@ -160,11 +160,19 @@ async def perform_verify(db: AsyncSession, user_id: str, body: VerifyBody) -> Di
         "risk{risk_per_trade_pct, rr_min}, leverage{lev_default, violates_lev_policy}, macro_notes[], ui_flags{need_rounding, dup_values_cleaned}. "
         "Jangan menambah level baru; pastikan TP ascending dan RR>=rr_min."
     )
-    text, usage = ask_llm_messages([
-        {"role": "system", "content": sys},
-        {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
-        {"role": "assistant", "content": asst},
-    ])
+    try:
+        text, usage = ask_llm_messages([
+            {"role": "system", "content": sys},
+            {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
+            {"role": "assistant", "content": asst},
+        ])
+    except Exception as e:
+        # Gracefully convert provider errors into a 502 for the client
+        raise HTTPException(502, detail={
+            "error_code": "llm_error",
+            "message": "Gagal menghubungi penyedia LLM atau konfigurasi tidak valid",
+            "reason": str(e)[:240],
+        })
 
     ringkas = ""
     hasil = {}
