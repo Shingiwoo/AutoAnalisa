@@ -207,7 +207,45 @@ class PayloadBuilder:
                         "distance": float(best_distance or 0.0),
                         "tol": float(tol_rep),
                     })
+        # FVG-edge tagging when enabled
+        if self.cfg.use_fvg:
+            for tf in tf_blocks.keys():
+                try:
+                    interval = tf_to_binance_interval(tf)
+                    df_tf = self.ds.get_klines(self.cfg.symbol, interval, limit=300, tz_str=self.cfg.tz)
+                except Exception:
+                    df_tf = None
+                if df_tf is None or len(df_tf) < 3:
+                    continue
+                fvgs = detect_fvg(df_tf, max_lookback=50, tf=tf)
+                if not fvgs:
+                    continue
+                tb = tf_blocks.get(tf)
+                if not tb:
+                    continue
+                atr15 = float(tf_blocks.get("15m").atr14) if tf_blocks.get("15m") else 0.0
+                atr1h = float(tf_blocks.get("1H").atr14) if tf_blocks.get("1H") else 0.0
+                tick = float(self.precision.price)
+                last_price = float(tb.last)
+                for f in fvgs[-5:]:  # only recent few
+                    for edge in (float(f.get("top")), float(f.get("bottom"))):
+                        dist, tol = distance_tol(last_price, edge, tf, atr15, atr1h, tick,
+                                                 tol_pct_min_5_15m, tol_pct_min_1h_4h, tol_atr_mult_5_15m, tol_atr_mult_1h_4h, ticksize_mult)
+                        if dist <= tol:
+                            tags = ["FVG-edge", f"FVG-{f.get('dir')}", f"FVG-{tf}"]
+                            conf = confidence_from_tags(tags, dist, tol, weights, scale=5.0, cap=100)
+                            results.append({
+                                "tf": tf,
+                                "price": edge,
+                                "tags": tags,
+                                "confidence": conf,
+                                "distance": dist,
+                                "tol": tol,
+                            })
+
         return results
+
+        
 
     def build(self) -> dict:
         tf_blocks: Dict[str, TFIndicators] = {}

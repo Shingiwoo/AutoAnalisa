@@ -90,3 +90,49 @@ def test_insufficient_history_flag(monkeypatch):
     payload = build_payload("IMXUSDT", market="spot", contract="perp", tfs=["1D", "4H", "1H", "15m"], tz="Asia/Jakarta", use_fvg=False)
     assert payload["insufficient_history"] is True
 
+
+def test_fvg_edge_confluence_when_enabled(monkeypatch):
+    import autoanalisa.datasource.binance_spot as bs
+    import pandas as pd
+    # craft 15m df with a bull FVG on the last bar: low[n] > high[n-2]
+    times = pd.date_range("2025-09-15T00:00:00+07:00", periods=20, freq="15min")
+    high = [0.90, 0.905, 0.902, 0.903, 0.904, 0.905, 0.906, 0.907, 0.908, 0.909, 0.91, 0.911, 0.912, 0.913, 0.914, 0.915, 0.916, 0.917, 0.918, 0.919]
+    low =  [0.89, 0.895, 0.892, 0.893, 0.894, 0.895, 0.896, 0.897, 0.898, 0.899, 0.9, 0.901, 0.902, 0.903, 0.904, 0.905, 0.906, 0.907, 0.908, 0.909]
+    # adjust highs to ensure high[-3] <= 0.905 and low[-1]=0.906 > high[-3]
+    high[-3] = 0.904
+    low[-1] = 0.906
+    close = [0.895, 0.9, 0.898, 0.9, 0.901, 0.902, 0.904, 0.905, 0.906, 0.907, 0.908, 0.909, 0.91, 0.911, 0.912, 0.913, 0.914, 0.915, 0.9065, 0.9062]
+    openp = close
+    vol = [1000]*20
+    df15 = pd.DataFrame({
+        "open_time": times,
+        "open": openp,
+        "high": high,
+        "low": low,
+        "close": close,
+        "volume": vol,
+        "close_time": times
+    })
+    # 1H df (simple)
+    times1h = pd.date_range("2025-09-15T00:00:00+07:00", periods=20, freq="1h")
+    df1h = pd.DataFrame({
+        "open_time": times1h,
+        "open": [0.9]*20, "high": [0.92]*20, "low": [0.88]*20, "close": [0.905]*20, "volume": [1000]*20,
+        "close_time": times1h
+    })
+
+    monkeypatch.setattr(bs, "get_exchange_info", lambda s: {"precision": {"price": 0.0001, "qty": 0.1, "min_notional": 5.0}, "fees": {"maker": 0.001, "taker": 0.001}})
+
+    def fake_klines(symbol, interval, limit=300, tz_str="Asia/Jakarta"):
+        if interval == "15m":
+            return df15
+        else:
+            return df1h
+
+    monkeypatch.setattr(bs, "get_klines", fake_klines)
+    monkeypatch.setattr(bs, "get_depth", lambda symbol, limit=5: {"best_bid": 0.9, "best_ask": 0.901, "spread": 0.001, "ob_imbalance_5": 0.5})
+
+    payload = build_payload("IMXUSDT", market="spot", contract="perp", tfs=["1H", "15m"], tz="Asia/Jakarta", use_fvg=True)
+    confl = (payload.get("levels") or {}).get("confluence") or []
+    has_fvg = any("FVG-edge" in (c.get("tags") or []) for c in confl)
+    assert has_fvg
