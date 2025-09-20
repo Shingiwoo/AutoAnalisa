@@ -47,6 +47,60 @@ def _tick_size_for(symbol: str) -> float | None:
     return None
 
 
+def _step_size_for(symbol: str) -> float | None:
+    """Return step size (amount precision) if available via ccxt metadata.
+    Falls back to None when offline.
+    """
+    _load_markets_safe()
+    if not _markets_loaded:
+        return None
+    try:
+        m = _ex.market(_norm_symbol(symbol))
+        # precision.amount as decimals → step = 10^-dec
+        if m and m.get("precision") and "amount" in m["precision"] and isinstance(m["precision"]["amount"], int):
+            prec = int(m["precision"]["amount"]) or 0
+            return float(10 ** (-prec)) if prec > 0 else 1.0
+        # fallback: limits.amount.min as a proxy (not exact step)
+        lim = (m or {}).get("limits", {}).get("amount", {})
+        if lim and lim.get("min"):
+            return float(lim["min"]) or None
+    except Exception:
+        return None
+    return None
+
+
+def precision_for(symbol: str) -> dict | None:
+    """Return a compact precision dict for a symbol: {tickSize, stepSize, priceDecimals, amountDecimals}.
+    Returns None if markets not available.
+    """
+    _load_markets_safe()
+    if not _markets_loaded:
+        return None
+    out: dict = {}
+    try:
+        m = _ex.market(_norm_symbol(symbol))
+        if not m:
+            return None
+        pd = None
+        ad = None
+        try:
+            if m.get("precision") and isinstance(m["precision"].get("price"), int):
+                pd = int(m["precision"]["price"])
+            if m.get("precision") and isinstance(m["precision"].get("amount"), int):
+                ad = int(m["precision"]["amount"])
+        except Exception:
+            pd = ad = None
+        out["tickSize"] = _tick_size_for(symbol)
+        out["stepSize"] = _step_size_for(symbol)
+        if pd is not None:
+            out["priceDecimals"] = pd
+        if ad is not None:
+            out["amountDecimals"] = ad
+        return out
+    except Exception:
+        return None
+
+
 def _decimals_from_tick(step: float | None) -> int:
     if step is None or step <= 0:
         return 6

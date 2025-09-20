@@ -14,8 +14,7 @@ import os
 
 router = APIRouter(prefix="/futures", tags=["futures"])
 
-@router.get("/plan/{symbol}")
-async def build_plan(symbol: str, db: AsyncSession = Depends(get_db), use_llm: bool = Query(False, description="Gunakan LLM fix-pass JSON strict"), user=Depends(require_user)):
+async def _build_futures(symbol: str, db: AsyncSession, user, use_llm: bool = False):
     bundle = await fetch_bundle(symbol, tfs=("4h","1h","15m","5m"), market="futures")
     feat = Features(bundle); feat.enrich()
     sig = await latest_signals(db, symbol)
@@ -110,3 +109,33 @@ async def build_plan(symbol: str, db: AsyncSession = Depends(get_db), use_llm: b
         "llm_used": llm_used_flag,
         "usage": {"prompt_tokens": int(usage.get("prompt_tokens") or 0), "completion_tokens": int(usage.get("completion_tokens") or 0)} if (use_llm and allow_llm) else None,
     }
+
+
+@router.get("/plan/{symbol}")
+async def build_plan(symbol: str, db: AsyncSession = Depends(get_db), use_llm: bool = Query(False, description="Gunakan LLM fix-pass JSON strict"), user=Depends(require_user)):
+    return await _build_futures(symbol, db, user, use_llm=use_llm)
+
+
+@router.post("/analyze")
+async def analyze(body: dict, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
+    symbol = (body.get("symbol") or "").upper()
+    if not symbol:
+        raise HTTPException(422, "symbol wajib diisi")
+    use_llm = bool(body.get("use_llm") or False)
+    return await _build_futures(symbol, db, user, use_llm=use_llm)
+
+
+@router.post("/analyze-batch")
+async def analyze_batch(body: dict, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
+    symbols = [str(s).upper() for s in (body.get("symbols") or []) if s]
+    if not symbols:
+        raise HTTPException(422, "symbols[] wajib diisi")
+    use_llm = bool(body.get("use_llm") or False)
+    results = []
+    for sym in symbols:
+        try:
+            res = await _build_futures(sym, db, user, use_llm=use_llm)
+        except Exception as e:
+            res = {"ok": False, "symbol": sym, "error": str(e)}
+        results.append(res)
+    return {"ok": True, "count": len(results), "results": results}

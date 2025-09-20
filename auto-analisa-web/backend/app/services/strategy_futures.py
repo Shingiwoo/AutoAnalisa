@@ -386,9 +386,17 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
         "score": 0,
     }
 
-    # Round prices to futures tick using ccxt meta
+    # Round prices to futures tick using ccxt meta and expose precision
     try:
         plan = round_futures_prices(symbol or "BTCUSDT", plan)
+        # attach tick/step size to metrics if available
+        from .rounding import precision_for
+        prec = precision_for(symbol or "BTCUSDT") or {}
+        plan.setdefault("metrics", {})
+        if prec.get("tickSize") is not None:
+            plan["metrics"]["tick_size"] = float(prec.get("tickSize"))
+        if prec.get("stepSize") is not None:
+            plan["metrics"]["step_size"] = float(prec.get("stepSize"))
     except Exception:
         pass
 
