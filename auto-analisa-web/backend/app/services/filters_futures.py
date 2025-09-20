@@ -23,6 +23,13 @@ def _atr_pct_ok(atr_1h: float, last_1h: float, lo: float = 1.0, hi: float = 8.0)
     except Exception:
         return False
 
+
+def _vol_ok(vol_ma10_15m: float, min_usdt: float = 20000.0) -> bool:
+    try:
+        return float(vol_ma10_15m or 0.0) >= float(min_usdt)
+    except Exception:
+        return False
+
 # Simple gating from cached futures signals
 def gating_signals_ok(side: str, sig: Dict[str, Any]) -> Tuple[bool, List[str], Dict[str, Any]]:
     rs: List[str] = []
@@ -88,6 +95,16 @@ def gating_signals_ok(side: str, sig: Dict[str, Any]) -> Tuple[bool, List[str], 
         if atr_1h is not None and last_1h is not None:
             if not _atr_pct_ok(float(atr_1h), float(last_1h)):
                 ok = False; rs.append("ATR% tidak wajar (chop/spike)")
+    except Exception:
+        pass
+
+    # Optional: volume gating if upstream supplies volume MA in USDT
+    try:
+        vol_ctx = sig.get("volume") or {}
+        # prefer explicit USDT MA for 15m
+        ma10 = vol_ctx.get("ma10_15m_usdt") or vol_ctx.get("ma10_15m")
+        if ma10 is not None and not _vol_ok(ma10):
+            ok = False; rs.append("Volume 15m di bawah ambang")
     except Exception:
         pass
 

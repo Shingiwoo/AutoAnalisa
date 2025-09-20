@@ -10,6 +10,7 @@ from .rounding import round_futures_prices
 from .validator_futures import compute_rr_min_futures
 from .llm import ask_llm_messages
 from .filters_futures import gating_signals_ok
+from .utils_num import nearest_round, round_to_step
 
 # --- Core helpers ---------------------------------------------------------
 
@@ -74,15 +75,24 @@ def _range_15m(df15: pd.DataFrame, window: int = 48) -> tuple[float, float] | No
         return None
 
 
-def _round_number_near(price: float) -> float:
-    # Find nearest round number (0.05 or 0.1 steps) for altcoins
+def _round_number_near(price: float, symbol: str | None = None) -> float:
+    """Nearest round number using tick-size-aware band when possible.
+    Falls back to coarse 0.1/0.01 steps when tick is unavailable.
+    """
+    try:
+        from .rounding import _tick_size_for  # reuse ccxt meta if online
+        tick = _tick_size_for(symbol) if symbol else None
+    except Exception:
+        tick = None
+    if tick and float(tick) > 0:
+        return float(nearest_round(float(price), float(tick)))
+    # fallback heuristic
     try:
         p = float(price)
-        # choose step based on magnitude
         step = 0.1 if p >= 1 else 0.01
         return round(round(p / step) * step, 6)
     except Exception:
-        return price
+        return float(price)
 
 
 def _candidate_plan(side: str, entries: List[float], invalid: float, tp: List[float], setup: str, notes: List[str]) -> Dict[str, Any]:
@@ -186,12 +196,37 @@ def _make_setups(bundle: Dict[str, pd.DataFrame], feat: Features) -> List[Dict[s
         pass
     # S3 — False-Break Angka Bulat (SHORT)
     try:
-        rn = _round_number_near(price)
+        tick5 = None
+        try:
+            from .rounding import _tick_size_for
+            tick5 = _tick_size_for(ctx_symbol) if (ctx_symbol := None) else None
+        except Exception:
+            tick5 = None
+        rn = _round_number_near(price, symbol=None)
+        # if we have tick, recompute rn precisely
+        if tick5 and float(tick5) > 0:
+            rn = float(nearest_round(price, float(tick5)))
+        # RSI6 roll-down condition if available
+        rsi_ok = True
+        try:
+            if "rsi6" in df5.columns and len(df5) >= 2:
+                r_now = float(df5.iloc[-1].rsi6)
+                r_prev = float(df5.iloc[-2].rsi6)
+                rsi_ok = (r_prev > 70.0) and (r_now < r_prev)
+        except Exception:
+            rsi_ok = True
         # simple false-break check: high pierced rn but close back below rn
-        if float(df5.iloc[-1].high) > rn and float(df5.iloc[-1].close) < rn:
-            e1 = rn
-            e2 = rn - 0.2 * atr15
-            sl = rn + 0.6 * (float(getattr(df5.iloc[-1], "atr14", atr15)) or atr15)
+        if float(df5.iloc[-1].high) > rn and float(df5.iloc[-1].close) < rn and rsi_ok:
+            atr5 = float(getattr(df5.iloc[-1], "atr14", atr15)) or atr15
+            tol = max(0.1 * atr5, 2.0 * (float(tick5) if tick5 else 0.0))
+            e1 = rn - 0.1 * atr5
+            e2 = rn - 0.2 * atr5
+            sl = rn + 0.6 * atr5
+            # snap to tick if available
+            if tick5 and float(tick5) > 0:
+                e1 = round_to_step(e1, float(tick5))
+                e2 = round_to_step(e2, float(tick5))
+                sl = round_to_step(sl, float(tick5))
             tp1, tp2 = price * 0.983, price * 0.97
             cands.append(_candidate_plan("SHORT", [e1, e2], sl, [tp1, tp2], "S3", ["False-break angka bulat"]))
     except Exception:
