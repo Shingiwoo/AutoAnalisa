@@ -53,10 +53,14 @@ def auto_suggest_futures(
 
     entries_nums: List[float] = []
     for e in entries:
-        entries_nums.append(_first_num(e if not isinstance(e, dict) else e.get("range")))
+        num = _first_num(e if not isinstance(e, dict) else e.get("range"))
+        if num is not None:
+            entries_nums.append(num)
     tp_nums: List[float] = []
     for t in tps:
-        tp_nums.append(_first_num(t if not isinstance(t, dict) else t.get("range")))
+        num = _first_num(t if not isinstance(t, dict) else t.get("range"))
+        if num is not None:
+            tp_nums.append(num)
 
     tick = None
     try:
@@ -105,9 +109,9 @@ def auto_suggest_futures(
     except Exception:
         slippage_bp = 5.0
     try:
-        e_nums = [x for x in entries_nums if isinstance(x, (int, float))]
+        e_nums = [float(x) for x in entries_nums if isinstance(x, (int, float))]
         tp1 = next((x for x in tp_nums if isinstance(x, (int, float))), None)
-        rr = compute_rr_min_futures(side, e_nums, tp1, hard_1h, fee_bp, slippage_bp)
+        rr = compute_rr_min_futures(side, e_nums, tp1 if tp1 is not None else 0.0, hard_1h if hard_1h is not None else 0.0, fee_bp, slippage_bp)
     except Exception:
         rr = None
 

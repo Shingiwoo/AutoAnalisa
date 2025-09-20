@@ -24,7 +24,7 @@ async def build_plan_async(db, bundle, feat: "Features", score: int, mode: str =
 
     # Derive invalid bertingkat (tactical 5m, soft 15m, hard 1h, struct 4h[opsional])
     try:
-        hard_1h = float(plan.get("invalid")) if plan.get("invalid") is not None else None
+        hard_1h = float(plan.get("invalid", 0.0)) if plan.get("invalid") is not None else None
         # Soft 15m: sedikit lebih longgar di atas hard_1h (buffer kecil berbasis ATR15m)
         try:
             atr15 = float(bundle["15m"].iloc[-1].atr14)
@@ -35,6 +35,7 @@ async def build_plan_async(db, bundle, feat: "Features", score: int, mode: str =
         # Tactical 5m: buffer lebih kecil dari soft
         tac_5m = (hard_1h + (buf or 0.0) * 0.5) if hard_1h is not None else None
         # Struct 4h (opsional): gunakan support struktur lebih dalam (s2) sebagai acuan konservatif
+        s2 = None  # Define s2 or replace with appropriate logic
         struct_4h = float(s2) if s2 is not None else None
         plan["invalid_tactical_5m"] = round(float(tac_5m), 6) if tac_5m is not None else None
         plan["invalid_soft_15m"] = round(float(soft_15m), 6) if soft_15m is not None else None

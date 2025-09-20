@@ -15,6 +15,7 @@ def bb(series: pd.Series, n: int = 20, k: float = 2.0):
 
 def rsi(series: pd.Series, n: int = 14):
     delta = series.diff()
+    delta = pd.to_numeric(delta, errors='coerce')
     gain = np.where(delta > 0, delta, 0.0)
     loss = np.where(delta < 0, -delta, 0.0)
     roll_up = pd.Series(gain, index=series.index).rolling(n).mean()
