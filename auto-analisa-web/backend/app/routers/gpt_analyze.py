@@ -20,7 +20,7 @@ class AnalyzeBody(BaseModel):
     opts: Optional[Dict[str, Any]] = None
 
 
-router = APIRouter(prefix="/gpt/futures", tags=["gpt-futures"])
+router = APIRouter(prefix="/api/gpt/futures", tags=["gpt-futures"])
 
 
 @router.post("/analyze")
