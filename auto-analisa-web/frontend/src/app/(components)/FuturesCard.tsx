@@ -438,3 +438,4 @@ function tryFormatGptText(out:any){
   }catch{
     try{ return JSON.stringify(out, null, 2) }catch{ return String(out) }
   }
+}
