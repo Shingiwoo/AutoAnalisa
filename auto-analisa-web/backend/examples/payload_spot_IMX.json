@@ -1,0 +1,10 @@
+{
+  "symbol": "IMXUSDT",
+  "trade_type": "spot",
+  "precision": {"price": 0.0001, "qty": 0.01},
+  "fees": {"maker": 0.0002, "taker": 0.0005},
+  "balance": {"usdt": 5000.0, "coin": 0.0},
+  "bundle": {"15m": {}, "1h": {}, "4h": {}, "1d": {}},
+  "indicators": {"ema": true, "bb": true, "atr": true},
+  "notes": "Isi OHLC+indikator sesuai adapter"
+}

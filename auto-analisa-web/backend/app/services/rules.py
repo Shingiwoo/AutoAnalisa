@@ -1,4 +1,4 @@
-from .indicators import ema, bb, rsi, macd, atr
+from .indicators import ema, bb, rsi, macd, atr, rsi_n
 
 
 class Features:
@@ -14,6 +14,11 @@ class Features:
             df["ema200"] = ema(df.close, 200)
             df["mb"], df["ub"], df["dn"] = bb(df.close)
             df["rsi14"] = rsi(df.close, 14)
+            # Short RSI window for scalping (e.g., divergence checks on 5m)
+            try:
+                df["rsi6"] = rsi_n(df.close, 6)
+            except Exception:
+                df["rsi6"] = df["rsi14"]
             m, s, h = macd(df.close)
             df["macd"], df["signal"], df["hist"] = m, s, h
             df["atr14"] = atr(df, 14)
@@ -51,3 +56,14 @@ def make_levels(feat: "Features"):
         "resistance": [res1, res2],
     }
 
+
+# Optional helper for 5-bar lookback (used by scalping setups)
+def last5(series):
+    try:
+        vals = series.tail(5).tolist()
+    except Exception:
+        try:
+            vals = list(series)[-5:]
+        except Exception:
+            vals = []
+    return [float(x) for x in vals]

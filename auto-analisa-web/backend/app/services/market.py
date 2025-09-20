@@ -104,3 +104,20 @@ async def fetch_bundle(symbol: str, tfs=("4h", "1h", "15m", "5m"), market: str =
             # compatibility with tests that monkeypatch fetch_klines(symbol, tf, limit)
             out[tf] = await fetch_klines(symbol, tf, 300 if tf == "15m" else 600)
     return out
+
+
+async def fetch_spread(symbol: str, market: str = "futures") -> float:
+    """Fetch absolute spread (best_ask - best_bid) from order book.
+    Falls back to 0.0 on failure. This is synchronous under ccxt, so
+    calling from async is acceptable for local use.
+    """
+    try:
+        client = ex_usdm if str(market).lower() == "futures" else ex
+        ob = client.fetch_order_book(_normalize_symbol(symbol), limit=5)
+        best_ask = float(ob['asks'][0][0]) if ob.get('asks') else None
+        best_bid = float(ob['bids'][0][0]) if ob.get('bids') else None
+        if best_ask is None or best_bid is None:
+            return 0.0
+        return max(0.0, best_ask - best_bid)
+    except Exception:
+        return 0.0

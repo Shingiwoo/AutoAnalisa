@@ -43,7 +43,7 @@ def compute_rr_min(entries: List[float], invalid: float, tp1: float) -> float:
     return float(min(rr_vals)) if rr_vals else 0.0
 
 
-def normalize_and_validate(plan: Dict) -> Tuple[Dict, List[str]]:
+def normalize_and_validate(plan: Dict, rr_target: float = 1.6) -> Tuple[Dict, List[str]]:
     """Normalize numeric fields, enforce basic invariants, compute rr_min.
 
     Returns (sanitized_plan, warnings)
@@ -111,9 +111,9 @@ def normalize_and_validate(plan: Dict) -> Tuple[Dict, List[str]]:
     except Exception:
         pass
 
-    # Auto-adjust: if rr_min < 1.2, tighten invalid slightly toward entries to reach threshold
+    # Auto-adjust: if rr_min < rr_target, tighten invalid slightly toward entries to reach threshold
     try:
-        RR_TH = 1.2
+        RR_TH = float(rr_target or 1.6)
         if entries and tp and invalid is not None and rr_min < RR_TH:
             min_entry = float(min(entries))
             # For each entry e: need invalid' <= e - (tp1 - e)/RR => invalid' >= e - (tp1 - e)/RR
@@ -133,7 +133,7 @@ def normalize_and_validate(plan: Dict) -> Tuple[Dict, List[str]]:
                 rr_min = compute_rr_min(entries, invalid, tp1)
                 p["invalid"] = invalid
                 p["rr_min"] = round(float(rr_min), 6)
-                warns.append("auto-adjusted invalid to meet rr_min")
+                warns.append(f"auto-adjusted invalid to meet rr>={RR_TH}")
     except Exception:
         pass
 

@@ -5,13 +5,17 @@ import math
 import numpy as np
 import pandas as pd
 
-from .rules import Features, make_levels
+from .rules import Features, make_levels, last5
 from .rounding import round_futures_prices
 from .validator_futures import compute_rr_min_futures
 from .llm import ask_llm_messages
 from .filters_futures import gating_signals_ok
 
 # --- Core helpers ---------------------------------------------------------
+
+# Tunables for early patch rollout
+SCORE_THRESHOLD = 60
+USE_MACRO_GATING = False
 
 def _atr(df: pd.DataFrame, period: int = 14) -> float:
     high = df["high"].astype(float).to_numpy()
@@ -44,6 +48,205 @@ def _levels_from_feature(feat: Features) -> Tuple[float, float, float, float]:
     s1, s2 = float(lv["support"][0]), float(lv["support"][1])
     r1, r2 = float(lv["resistance"][0]), float(lv["resistance"][1])
     return s1, s2, r1, r2
+
+
+def _swing_low(df: pd.DataFrame, lookback: int = 5) -> float | None:
+    try:
+        lows = df["low"].tail(lookback)
+        return float(lows.min()) if len(lows) else None
+    except Exception:
+        return None
+
+
+def _swing_high(df: pd.DataFrame, lookback: int = 5) -> float | None:
+    try:
+        highs = df["high"].tail(lookback)
+        return float(highs.max()) if len(highs) else None
+    except Exception:
+        return None
+
+
+def _range_15m(df15: pd.DataFrame, window: int = 48) -> tuple[float, float] | None:
+    try:
+        sl = df15.tail(window)
+        return float(sl["low"].min()), float(sl["high"].max())
+    except Exception:
+        return None
+
+
+def _round_number_near(price: float) -> float:
+    # Find nearest round number (0.05 or 0.1 steps) for altcoins
+    try:
+        p = float(price)
+        # choose step based on magnitude
+        step = 0.1 if p >= 1 else 0.01
+        return round(round(p / step) * step, 6)
+    except Exception:
+        return price
+
+
+def _candidate_plan(side: str, entries: List[float], invalid: float, tp: List[float], setup: str, notes: List[str]) -> Dict[str, Any]:
+    return {
+        "side": side,
+        "entries": [float(entries[0]), float(entries[1] if len(entries) > 1 else entries[0])],
+        "weights": [0.4, 0.6],
+        "invalid": float(invalid),
+        "tp": [float(tp[0]), float(tp[1] if len(tp) > 1 else tp[0])],
+        "setup": setup,
+        "notes": notes,
+    }
+
+
+def _make_setups(bundle: Dict[str, pd.DataFrame], feat: Features) -> List[Dict[str, Any]]:
+    """Build L1–L3 (long) and S1–S3 (short) candidates from 5m/15m + 1h context.
+    Returns list of candidate dicts or empty if none.
+    """
+    cands: List[Dict[str, Any]] = []
+    df5 = bundle.get("5m") or bundle.get("15m")
+    df15 = bundle.get("15m") or list(bundle.values())[0]
+    df1 = bundle.get("1h") or df15
+    price = float(df15.iloc[-1].close)
+    atr15 = float(getattr(df15.iloc[-1], "atr14", 0.0) or 0.0)
+    atr1h = float(getattr(df1.iloc[-1], "atr14", atr15) or atr15)
+    ema50_15 = float(getattr(df15.iloc[-1], "ema50", price)) if "ema50" in df15.columns else price
+    ema20_1h = float(getattr(df1.iloc[-1], "ema20", price)) if "ema20" in df1.columns else price
+    ema50_1h = float(getattr(df1.iloc[-1], "ema50", price)) if "ema50" in df1.columns else price
+    # L1 — Pullback ke EMA20 1H + Reclaim EMA50 15m (LONG)
+    try:
+        trend_up = (getattr(df1.iloc[-1], "ema20", ema20_1h) > getattr(df1.iloc[-1], "ema50", ema50_1h))
+        trend_up = trend_up and (getattr(bundle.get("4h", df1).iloc[-1], "ema20", ema20_1h) >= getattr(bundle.get("4h", df1).iloc[-1], "ema50", ema50_1h))
+        touch = abs(price - ema20_1h) <= 0.2 * atr1h
+        reclaim = price > ema50_15
+        if trend_up and touch and reclaim:
+            sl = min(_swing_low(df15) or price - atr15, price - 0.8 * atr15)
+            e1 = max(ema20_1h - 0.2 * atr1h, price - 0.6 * atr15)
+            e2 = min(price, ema20_1h + 0.2 * atr1h)
+            tp1 = price * 1.012 if price > 0 else price + 1.2 * atr15
+            tp2 = price * 1.022 if price > 0 else price + 2.2 * atr15
+            cands.append(_candidate_plan("LONG", [e1, e2], sl, [tp1, tp2], "L1", ["Reclaim EMA50 15m di zona EMA20 1H"]))
+    except Exception:
+        pass
+    # L2 — Oversold Bounce + Divergence (LONG)
+    try:
+        if df5 is not None and "rsi6" in df5.columns:
+            r6 = last5(df5["rsi6"]) or []
+            lows5 = last5(df5["low"]) or []
+            if r6 and lows5 and min(r6) < 20.0:
+                # Simple higher low check
+                if len(lows5) >= 3 and lows5[-1] > min(lows5[-3:]):
+                    midbb5 = float(getattr(df5.iloc[-1], "mb", price)) if "mb" in df5.columns else price
+                    e1 = min(price, midbb5)
+                    e2 = min(price, price - 0.6 * (float(getattr(df5.iloc[-1], "atr14", atr15)) or atr15))
+                    sl = min(_swing_low(df5) or price - atr15, price - 0.6 * atr15)
+                    tp1, tp2 = price * 1.012, price * 1.022
+                    cands.append(_candidate_plan("LONG", [e1, e2], sl, [tp1, tp2], "L2", ["RSI6 < 20 & bounce oversold"]))
+    except Exception:
+        pass
+    # L3 — Rebreak Range High 15m + Retest (LONG)
+    try:
+        rng = _range_15m(df15, 64)
+        if rng:
+            lo, hi = rng
+            if price > hi * 1.001:  # close above range
+                e1 = hi
+                e2 = hi + 0.1 * atr15
+                sl = hi - 0.7 * atr15
+                tp1, tp2 = price * 1.012, price * 1.022
+                cands.append(_candidate_plan("LONG", [e1, e2], sl, [tp1, tp2], "L3", ["Rebreak RH 15m & retest"]))
+    except Exception:
+        pass
+    # S1 — Breakdown & Retest Gagal EMA50 15m (SHORT)
+    try:
+        below = price < ema50_15
+        near = abs(price - ema50_15) <= 0.1 * atr15
+        macd_hist_5m = float(getattr(df5.iloc[-1], "hist", 0.0)) if (df5 is not None and "hist" in df5.columns) else 0.0
+        if below and near and macd_hist_5m <= 0:
+            e1 = max(price, ema50_15)
+            e2 = e1 + 0.25 * atr15
+            sl = max(_swing_high(df15) or price + atr15, e2 + 0.8 * atr15)
+            tp1 = price * 0.983 if price > 0 else price - 0.017 * abs(price)
+            tp2 = price * 0.97 if price > 0 else price - 0.03 * abs(price)
+            cands.append(_candidate_plan("SHORT", [e1, e2], sl, [tp1, tp2], "S1", ["Retest gagal EMA50 15m; MACD melemah"]))
+    except Exception:
+        pass
+    # S2 — Reject Cluster EMA20 1H (SHORT)
+    try:
+        ema10_1h = float(getattr(df1.iloc[-1], "ema20", ema20_1h))  # fallback ema20 as ema10 not available
+        cl_low = min(ema10_1h, ema20_1h)
+        cl_high = max(ema10_1h, ema20_1h)
+        # Sweep above cluster then close back below
+        if price < cl_low and (df15.iloc[-2].close if len(df15) >= 2 else price) > cl_low:
+            e1 = cl_low
+            e2 = cl_high
+            sl = cl_high + 0.6 * atr15
+            tp1 = price * 0.983
+            tp2 = price * 0.97
+            cands.append(_candidate_plan("SHORT", [e1, e2], sl, [tp1, tp2], "S2", ["Reject cluster EMA20 1H"]))
+    except Exception:
+        pass
+    # S3 — False-Break Angka Bulat (SHORT)
+    try:
+        rn = _round_number_near(price)
+        # simple false-break check: high pierced rn but close back below rn
+        if float(df5.iloc[-1].high) > rn and float(df5.iloc[-1].close) < rn:
+            e1 = rn
+            e2 = rn - 0.2 * atr15
+            sl = rn + 0.6 * (float(getattr(df5.iloc[-1], "atr14", atr15)) or atr15)
+            tp1, tp2 = price * 0.983, price * 0.97
+            cands.append(_candidate_plan("SHORT", [e1, e2], sl, [tp1, tp2], "S3", ["False-break angka bulat"]))
+    except Exception:
+        pass
+    return [c for c in cands if c]
+
+
+def score_candidate(c: Dict[str, Any], ctx: Dict[str, Any]) -> int:
+    side = (c.get("side") or "LONG").upper()
+    score = 0
+    reasons: List[str] = []
+    # Gating signals (funding/LSR/basis/taker/spread)
+    ok, rs, _dump = gating_signals_ok(side, ctx.get("fut_signals") or {})
+    if ok:
+        score += 30
+    else:
+        reasons.extend(rs)
+    # Confluence: proximity to EMA / ranges
+    try:
+        bundle = ctx.get("bundle") or {}
+        df15 = bundle.get("15m")
+        last = df15.iloc[-1] if df15 is not None and len(df15) else None
+        ema50_15 = float(getattr(last, "ema50", 0.0)) if last is not None else 0.0
+        ema20_1h = float(getattr((bundle.get("1h") or df15).iloc[-1], "ema20", 0.0)) if (bundle.get("1h") or df15) is not None else 0.0
+        e_avg = sum(c.get("entries", []) or [0]) / max(1, len(c.get("entries", [])))
+        d1 = abs(e_avg - ema50_15) / max(ema50_15, 1e-9) if ema50_15 else 1.0
+        d2 = abs(e_avg - ema20_1h) / max(ema20_1h, 1e-9) if ema20_1h else 1.0
+        near = 0
+        near += 8 if d1 < 0.002 else (4 if d1 < 0.005 else 0)
+        near += 7 if d2 < 0.003 else (3 if d2 < 0.006 else 0)
+        score += near
+    except Exception:
+        pass
+    # Structure alignment (trend filter)
+    try:
+        if _ema_stack_ok(ctx.get("bundle"), side):
+            score += 15
+        else:
+            score -= 15
+    except Exception:
+        pass
+    # Derivatif health bonus (basis/td/oi if present)
+    try:
+        sig = ctx.get("fut_signals") or {}
+        basis_ok = ((sig.get("basis") or {}).get("bp") or 0.0) >= -15.0 if side == "LONG" else ((sig.get("basis") or {}).get("bp") or 0.0) <= 40.0
+        td_ok = ((sig.get("taker_delta") or {}).get("m15") or 0.0) >= -0.05 if side == "LONG" else ((sig.get("taker_delta") or {}).get("m15") or 0.0) <= 0.08
+        if basis_ok:
+            score += 5
+        if td_ok:
+            score += 5
+    except Exception:
+        pass
+    c["_reasons"] = reasons
+    c["_score"] = int(score)
+    return int(score)
 
 # --- Public API -----------------------------------------------------------
 
@@ -157,6 +360,50 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
     if fut_signals is not None:
         gates_ok, reasons, dumps = gating_signals_ok(side, fut_signals)
         plan["gates"] = {"checked": True, "ok": bool(gates_ok), "reasons": reasons, "snapshot": dumps}
+
+    # Patch 3/4: Setup candidates (L1-L3/S1-S3) + scoring & conflict resolution
+    try:
+        cands = _make_setups(bundle, feat)
+        if cands:
+            ctx = {"bundle": bundle, "fut_signals": fut_signals or {}}
+            for c in cands:
+                c["score"] = score_candidate(c, ctx)
+            # Pick best by score
+            best = sorted(cands, key=lambda x: x.get("score", 0), reverse=True)
+            top = best[0]
+            # Conflict resolver: if two best are opposite sides and close score (<5), skip trade
+            if len(best) >= 2 and (best[0].get("side") != best[1].get("side")) and abs(best[0].get("score", 0) - best[1].get("score", 0)) < 5:
+                # mark no-trade by lowering weights and adding note
+                plan.setdefault("notes", []).append("Resolver: kandidat berlawanan skor <5 → no-trade")
+            elif top.get("score", 0) >= SCORE_THRESHOLD:
+                # adopt candidate into plan while preserving FE shape
+                side = top["side"]
+                entries = [float(x) for x in (top.get("entries") or entries)]
+                invalid = float(top.get("invalid", invalid))
+                tp1, tp2 = float((top.get("tp") or [tp1, tp2])[0]), float((top.get("tp") or [tp1, tp2])[1] if len(top.get("tp") or []) > 1 else (tp2))
+                weights = [0.4, 0.6]
+                tp = [
+                    {"name": "TP1", "range": [float(tp1), float(tp1 + (0.2 * atr15 if side == "LONG" else -0.2 * atr15))]},
+                    {"name": "TP2", "range": [float(tp2), float(tp2 + (0.3 * atr15 if side == "LONG" else -0.3 * atr15))]},
+                ]
+                rr_now = compute_rr_min_futures(side, entries, float(tp1), float(invalid), fee_bp, slippage_bp)
+                plan.update({
+                    "side": side,
+                    "entries": entries,
+                    "weights": weights,
+                    "invalids": {"hard_1h": float(invalid)},
+                    "tp": tp,
+                })
+                plan.setdefault("metrics", {})["rr_min"] = float(rr_now)
+                plan.setdefault("notes", []).append(f"Setup {top.get('setup')} skor {top.get('score')}")
+                if top.get("notes"):
+                    plan["notes"].extend(top.get("notes"))
+                # Gating again with final side
+                if fut_signals is not None:
+                    gates_ok, reasons, dumps = gating_signals_ok(side, fut_signals)
+                    plan["gates"] = {"checked": True, "ok": bool(gates_ok), "reasons": reasons, "snapshot": dumps}
+    except Exception:
+        pass
 
     # Optional LLM fix pass (must return plan-like dict)
     if use_llm_fixes:

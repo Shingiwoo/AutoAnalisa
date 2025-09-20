@@ -24,6 +24,13 @@ def rsi(series: pd.Series, n: int = 14):
     return pd.Series(rsi_val, index=series.index)
 
 
+def rsi_n(series: pd.Series, n: int) -> pd.Series:
+    """Helper to compute RSI with arbitrary period.
+    This mirrors rsi(series, n) but provides a clearer semantic for callers.
+    """
+    return rsi(series, n)
+
+
 def macd(series: pd.Series):
     ema12 = series.ewm(span=12, adjust=False).mean()
     ema26 = series.ewm(span=26, adjust=False).mean()
@@ -45,4 +52,3 @@ def atr(df: pd.DataFrame, n: int = 14):
         axis=1,
     ).max(axis=1)
     return tr.rolling(n).mean()
-

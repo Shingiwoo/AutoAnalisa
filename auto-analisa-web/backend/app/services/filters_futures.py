@@ -2,6 +2,27 @@
 from __future__ import annotations
 from typing import Dict, Any, Tuple, List
 
+
+def _spread_ok(spread_abs: float, last_price: float, max_pct: float = 0.0005) -> bool:
+    """Ensure absolute spread is within a fraction of last price.
+    max_pct default 0.05% (0.0005 fractional).
+    """
+    try:
+        return (float(spread_abs) / max(float(last_price), 1e-9)) < float(max_pct)
+    except Exception:
+        return False
+
+
+def _atr_pct_ok(atr_1h: float, last_1h: float, lo: float = 1.0, hi: float = 8.0) -> bool:
+    """ATR% sanity for 1H regime: keep within [lo, hi] percent.
+    Out-of-range may indicate extreme chop or spike conditions to avoid.
+    """
+    try:
+        pct = (float(atr_1h) / max(float(last_1h), 1e-9)) * 100.0
+        return float(lo) <= pct <= float(hi)
+    except Exception:
+        return False
+
 # Simple gating from cached futures signals
 def gating_signals_ok(side: str, sig: Dict[str, Any]) -> Tuple[bool, List[str], Dict[str, Any]]:
     rs: List[str] = []
@@ -54,10 +75,28 @@ def gating_signals_ok(side: str, sig: Dict[str, Any]) -> Tuple[bool, List[str], 
     except Exception:
         pass
 
+    # Optional: absolute spread and ATR% gating when provided upstream
+    try:
+        spread_abs = sig.get("spread_abs")
+        last_1h = sig.get("last_1h")
+        atr_1h = sig.get("atr_1h")
+        # If absolute spread is provided with a last price, gate it strictly
+        if spread_abs is not None and last_1h is not None:
+            if not _spread_ok(float(spread_abs), float(last_1h)):
+                ok = False; rs.append("Spread terlalu lebar")
+        # If ATR% context available, avoid extreme chop/spike
+        if atr_1h is not None and last_1h is not None:
+            if not _atr_pct_ok(float(atr_1h), float(last_1h)):
+                ok = False; rs.append("ATR% tidak wajar (chop/spike)")
+    except Exception:
+        pass
+
     return ok, rs, {
         "funding": sig.get("funding"),
         "lsr": sig.get("lsr"),
         "basis": sig.get("basis"),
         "taker_delta": sig.get("taker_delta"),
         "orderbook": sig.get("orderbook"),
+        "spread_abs": sig.get("spread_abs"),
+        "atr_ctx": {"atr_1h": sig.get("atr_1h"), "last_1h": sig.get("last_1h")},
     }

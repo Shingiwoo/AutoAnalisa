@@ -1,4 +1,6 @@
 from .rules import make_levels, Features
+from .regime import detect_regime
+from .strategies_spot import assemble
 from .fvg import detect_fvg
 from .supply_demand import detect_zones
 from .budget import get_or_init_settings
@@ -8,54 +10,17 @@ from .rounding import round_plan_prices
 
 async def build_plan_async(db, bundle, feat: "Features", score: int, mode: str = "auto"):
     lv = make_levels(feat)
-    s1, s2 = lv["support"]
-    r1, r2 = lv["resistance"]
-    price = float(bundle["15m"].iloc[-1].close)
-    # ATR-aware spacing for PB mode
-    try:
-        atr15 = float(bundle["15m"].iloc[-1].atr14)
-    except Exception:
-        atr15 = 0.0
-    # default spacing factors when ATR available
-    if atr15 and atr15 > 0:
-        pb1 = max(s1, round(price - 0.5 * atr15, 6))
-        pb2 = max(s2, round(price - 1.0 * atr15, 6))
-    else:
-        pb1, pb2 = max(s1, price * 0.995), max(s2, price * 0.99)
-    invalid = min(s2, pb2 * 0.995)
-    tp1, tp2 = r1, r2
-    if mode == "BO" or (mode == "auto" and price > r1 * 0.995):
-        trig = round(r1 * 1.001, 6)
-        entries = [trig]
-        weights = [1.0]
-        out_mode = "BO"
-    else:
-        entries = [round(pb1, 6), round(pb2, 6)]
-        # use default weight profile from settings if available
-        try:
-            from .budget import get_or_init_settings
-            import asyncio
-            # This function is sync; weights will be finalized later in build_spot2_from_plan
-            # Keep a reasonable default DCA (0.4/0.6)
-            weights = [0.4, 0.6]
-        except Exception:
-            weights = [0.4, 0.6]
-        out_mode = "PB"
-    bias = "Bullish intraday selama struktur 1H bertahan di atas %.4f–%.4f." % (s1, s2)
-    # Baseline plan
+    reg = detect_regime(bundle)
+    # Use new regime-aware assembly for SPOT baseline plan
+    assembled = assemble(bundle, lv, reg.get("regime", "TREND"))
     plan = {
-        "bias": bias,
-        "support": [s1, s2],
-        "resistance": [r1, r2],
-        "mode": out_mode,
-        "entries": entries,
-        "weights": weights,
-        "invalid": round(invalid, 6),
-        "tp": [round(tp1, 6), round(tp2, 6)],
+        **assembled,
         "score": score,
+        "regime": reg,
     }
     # Normalize and compute rr_min
-    plan, _warns = normalize_and_validate(plan)
+    # Enforce rr_min target ≥ 1.6 when normalizing
+    plan, _warns = normalize_and_validate(plan, rr_target=1.6)
 
     # Derive invalid bertingkat (tactical 5m, soft 15m, hard 1h, struct 4h[opsional])
     try:
