@@ -49,7 +49,7 @@ class Analysis(Base):
     payload_json: Mapped[dict] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String, default="active")  # active|archived
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
-    __table_args__ = (UniqueConstraint("user_id", "symbol", name="uniq_user_symbol"),)
+    __table_args__ = (UniqueConstraint("user_id", "symbol", "trade_type", name="uniq_user_symbol_trade"),)
 
 
 class ApiUsage(Base):
