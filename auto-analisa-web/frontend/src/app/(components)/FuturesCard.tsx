@@ -20,6 +20,10 @@ export default function FuturesCard({plan, onUpdate, llmEnabled, llmRemaining, o
   const [prevList,setPrevList]=useState<any[]|null>(null)
   const [fut,setFut]=useState<any|null>(null)
   const [futErr,setFutErr]=useState<string>('')
+  // SERI L (GPT Analyze) state
+  const [gptMode,setGptMode]=useState<'scalping'|'swing'>('scalping')
+  const [gptBusy,setGptBusy]=useState(false)
+  const [gptOut,setGptOut]=useState<any|null>(null)
 
   const createdWIB = useMemo(()=>{
     try{ return new Date(plan.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB' }catch{ return new Date(plan.created_at).toLocaleString('id-ID') }
@@ -54,6 +58,35 @@ export default function FuturesCard({plan, onUpdate, llmEnabled, llmRemaining, o
   },[lastClose, invalids])
   const srExtra = useSRExtra(tab, ohlcv)
   const computeSRCombined = () => ([...(p.support||[]), ...(p.resistance||[]), ...srExtra])
+  // Map GPT overlay to ghost format (price-only)
+  const gptGhost = useMemo(()=>{
+    const out = gptOut || null
+    if(!out || !out.overlay) return null
+    const ov = out.overlay || {}
+    const entries:number[] = []
+    const tp:number[] = []
+    let invalid:number|undefined
+    try{
+      if(Array.isArray(ov.lines)){
+        for(const l of ov.lines){
+          const label = (l?.label||l?.type||'').toString().toUpperCase()
+          const price = typeof l?.price==='number'? l.price : undefined
+          if(typeof price!=='number') continue
+          if(label.includes('TP')) tp.push(price)
+          if(label.includes('SL') || label.includes('INVALID')) invalid = price
+        }
+      }
+      if(Array.isArray(ov.zones)){
+        for(const z of ov.zones){
+          if((z?.type||'').toUpperCase()==='ENTRY' && Array.isArray(z?.range)){
+            const [a,b] = z.range
+            if(typeof a==='number' && typeof b==='number') entries.push((a+b)/2)
+          }
+        }
+      }
+    }catch{}
+    return { entries, tp, invalid }
+  },[JSON.stringify(gptOut)])
 
   return (
     <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 shadow-sm p-4 md:p-6 space-y-4 text-zinc-900 dark:text-zinc-100">
@@ -106,7 +139,7 @@ export default function FuturesCard({plan, onUpdate, llmEnabled, llmRemaining, o
               tp: (fut?.tp||[]).map((t:any)=> Array.isArray(t.range)? t.range[0] : undefined).filter((x:any)=> typeof x==='number'),
               invalid: invalids as any,
               entries: (fut?.entries||[]).map((e:any)=> Array.isArray(e.range)? e.range[0]: undefined).filter((x:any)=> typeof x==='number'),
-              ghost: ghost||undefined,
+              ghost: (ghost || gptGhost || undefined) as any,
               liq: typeof fut?.risk?.liq_price_est==='number' ? fut.risk.liq_price_est : undefined,
               funding: fut?.futures_signals?.funding?.time ? [{ timeMs: Date.parse(fut.futures_signals.funding.time), windowMin: (fut?.risk?.funding_window_min||10) }] : undefined,
             }}
@@ -150,7 +183,7 @@ export default function FuturesCard({plan, onUpdate, llmEnabled, llmRemaining, o
                   tp: (fut?.tp||[]).map((t:any)=> Array.isArray(t.range)? t.range[0] : undefined).filter((x:any)=> typeof x==='number'),
                   invalid: invalids as any,
                   entries: (fut?.entries||[]).map((e:any)=> Array.isArray(e.range)? e.range[0]: undefined).filter((x:any)=> typeof x==='number'),
-                  ghost: ghost||undefined,
+                  ghost: (ghost || gptGhost || undefined) as any,
                   liq: typeof fut?.risk?.liq_price_est==='number' ? fut.risk.liq_price_est : undefined,
                   funding: fut?.futures_signals?.funding?.time ? [{ timeMs: Date.parse(fut.futures_signals.funding.time), windowMin: (fut?.risk?.funding_window_min||10) }] : undefined,
                 }}
@@ -163,7 +196,7 @@ export default function FuturesCard({plan, onUpdate, llmEnabled, llmRemaining, o
       <FuturesSummary fut={fut} />
       <LLMReport analysisId={plan.id} verification={verification} onApplied={()=> onUpdate()} onPreview={setGhost} kind='futures' />
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <button onClick={onUpdate} className="px-3 py-2 rounded-md bg-zinc-900 text-white hover:bg-zinc-800">Update</button>
         <button className="px-3 py-2 rounded-md bg-zinc-800 text-white hover:bg-zinc-700" onClick={async()=>{
           try{ await api.post(`analyses/${plan.id}/save`); alert('Versi disimpan ke arsip') }
@@ -192,6 +225,32 @@ export default function FuturesCard({plan, onUpdate, llmEnabled, llmRemaining, o
             }
           }finally{ setVerifying(false); onAfterVerify?.() }
         }} className="px-3 py-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50">{verifying?'Memverifikasi…':'Tanya GPT (Futures)'}</button>
+        {/* SERI L: Tanya GPT Analyze (Mode Scalping/Swing) */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center rounded-md overflow-hidden ring-1 ring-zinc-200">
+            {(['scalping','swing'] as const).map(m=> (
+              <button key={m} onClick={()=> setGptMode(m)} className={`px-2 py-1 text-sm ${gptMode===m? 'bg-cyan-600 text-white':'bg-white text-zinc-900 hover:bg-zinc-100'}`}>{m}</button>
+            ))}
+          </div>
+          <button disabled={gptBusy || !llmEnabled || (typeof llmRemaining==='number' && llmRemaining<=0)} title={!llmEnabled? 'LLM nonaktif (limit/budget)':'Tanya GPT (Mode)'}
+            onClick={async()=>{
+              try{
+                setGptBusy(true)
+                const payload:any = { symbol: plan.symbol, tf, ohlcv15m: (tf==='15m'? ohlcv: undefined), futures: fut }
+                if(gptMode==='scalping'){
+                  try{ const {data} = await api.get('ohlcv', { params:{ symbol: plan.symbol, tf: '5m', limit: 200, market: 'futures' } }); payload.ohlcv5m = data }catch{}
+                }
+                if(tf!=='15m'){
+                  try{ const {data} = await api.get('ohlcv', { params:{ symbol: plan.symbol, tf: '15m', limit: 200, market: 'futures' } }); payload.ohlcv15m = data }catch{}
+                }
+                const { data } = await api.post('gpt/futures/analyze', { symbol: plan.symbol, mode: gptMode, payload, opts: { timezone: 'Asia/Jakarta' } })
+                setGptOut(data)
+              }catch(e:any){
+                const msg = e?.response?.data?.detail?.message || e?.response?.data?.detail || e?.message || 'Gagal memanggil GPT analyze'
+                alert(msg)
+              }finally{ setGptBusy(false) }
+            }} className="px-3 py-2 rounded-md bg-cyan-600 text-white hover:bg-cyan-500 disabled:opacity-50">{gptBusy? 'Meminta…' : 'Tanya GPT (Mode)'}</button>
+        </div>
       </div>
 
       {prevOpen && prevList && prevList.length>0 && (
@@ -353,3 +412,29 @@ function FuturesSummary({ fut }:{ fut:any }){
   )
 }
 
+function tryFormatGptText(out:any){
+  try{
+    const t = out?.text || {}
+    const s = t.section_scalping || t.section_swing || {}
+    const pos = s.posisi || 'NO-TRADE'
+    const tp = Array.isArray(s.tp)? s.tp : []
+    const sl = s.sl
+    const bybk = Array.isArray(s.bybk)? s.bybk : []
+    const bo = Array.isArray(s.bo)? s.bo : []
+    const strat = Array.isArray(s.strategi_singkat)? s.strategi_singkat : []
+    const fund = Array.isArray(s.fundamental)? s.fundamental : []
+    const lines = [
+      `Posisi : ${pos}`,
+      `TP : ${tp.map((x:any,i:number)=> `${i+1}) ${x}`).join('  ')}`,
+      `SL : ${typeof sl==='number'? sl : '-'}`,
+      bybk.length? `Buy-back (BYBK): ${bybk.map((b:any)=> `[${b?.zone?.[0]}–${b?.zone?.[1]}] ${b?.note||''}`).join('; ')}` : '',
+      bo.length? `Break Out (BO): ${bo.map((b:any)=> `${typeof b?.above==='number'? 'di atas '+b.above: (typeof b?.below==='number'? 'di bawah '+b.below:'')} ${b?.note||''}`).join('; ')}` : '',
+      'Strategi Simple untuk Entry:',
+      ...strat.map((x:string)=> `- ${x}`),
+      fund.length? 'Fundamental:' : '',
+      ...fund.map((x:string)=> `- ${x}`),
+    ].filter(Boolean)
+    return lines.join('\n')
+  }catch{
+    try{ return JSON.stringify(out, null, 2) }catch{ return String(out) }
+  }
