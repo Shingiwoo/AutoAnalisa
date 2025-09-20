@@ -143,6 +143,40 @@ async def init_db():
                 )
         except Exception:
             pass
+        # ensure analyses unique index mencakup trade_type agar spot & futures terpisah
+        try:
+            idx_list = await conn.exec_driver_sql("PRAGMA index_list(analyses)")
+            idx_rows = idx_list.fetchall()
+            has_unique_on_ust = False
+            for ir in idx_rows:
+                try:
+                    if int(ir[2]) != 1:
+                        continue
+                except Exception:
+                    continue
+                iname = ir[1]
+                info = await conn.exec_driver_sql(f"PRAGMA index_info({iname})")
+                cols_idx = [r[2] for r in info.fetchall()]
+                if cols_idx == ["user_id", "symbol", "trade_type"]:
+                    has_unique_on_ust = True
+                    break
+            if not has_unique_on_ust:
+                await conn.exec_driver_sql(
+                    "CREATE TABLE IF NOT EXISTS analyses__new (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, symbol TEXT, trade_type TEXT DEFAULT 'spot', version INTEGER DEFAULT 1, payload_json JSON, status TEXT DEFAULT 'active', created_at DATETIME, UNIQUE(user_id, symbol, trade_type))"
+                )
+                await conn.exec_driver_sql(
+                    "INSERT INTO analyses__new (id, user_id, symbol, trade_type, version, payload_json, status, created_at) SELECT id, user_id, symbol, COALESCE(trade_type, 'spot'), version, payload_json, status, created_at FROM analyses"
+                )
+                await conn.exec_driver_sql("DROP TABLE analyses")
+                await conn.exec_driver_sql("ALTER TABLE analyses__new RENAME TO analyses")
+        except Exception:
+            pass
+        try:
+            await conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_analyses_user_id ON analyses (user_id)")
+            await conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_analyses_symbol ON analyses (symbol)")
+            await conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_analyses_trade_type ON analyses (trade_type)")
+        except Exception:
+            pass
         try:
             res_p = await conn.exec_driver_sql("PRAGMA table_info(plans)")
             cols_p = {row[1] for row in res_p.fetchall()}

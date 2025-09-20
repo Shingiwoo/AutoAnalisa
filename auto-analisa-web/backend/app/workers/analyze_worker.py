@@ -15,30 +15,55 @@ import json
 import os
 
 
-MAX_ACTIVE_CARDS = 4
+MAX_ACTIVE_CARDS: dict[str, int] = {"spot": 4, "futures": 4}
+
+
+def _normalize_trade_type(value: str | None) -> str:
+    try:
+        if str(value).lower() == "futures":
+            return "futures"
+    except Exception:
+        pass
+    return "spot"
 
 
 async def run_analysis(db: AsyncSession, user: User, symbol: str, trade_type: str = "spot") -> Analysis:
     # Check if analysis for this symbol already exists (active)
     sym = symbol.upper()
+    tt = _normalize_trade_type(trade_type)
     q_exist = await db.execute(
-        select(Analysis).where(Analysis.user_id == user.id, Analysis.symbol == sym)
+        select(Analysis).where(
+            Analysis.user_id == user.id,
+            Analysis.symbol == sym,
+            func.coalesce(Analysis.trade_type, "spot") == tt,
+        )
     )
     existing = q_exist.scalar_one_or_none()
 
     # Enforce max 4 active analyses only when creating new symbol
     if not existing:
+        limit = MAX_ACTIVE_CARDS.get(tt, MAX_ACTIVE_CARDS["spot"])
         q = await db.execute(
             select(func.count()).select_from(Analysis).where(
-                Analysis.user_id == user.id, Analysis.status == "active"
+                Analysis.user_id == user.id,
+                Analysis.status == "active",
+                func.coalesce(Analysis.trade_type, "spot") == tt,
             )
         )
         active_cnt = q.scalar_one()
-        if active_cnt >= MAX_ACTIVE_CARDS:
-            raise HTTPException(409, "Maksimum 4 analisa aktif per user. Arsipkan salah satu dulu.")
+        if active_cnt >= limit:
+            label = "Futures" if tt == "futures" else "Spot"
+            raise HTTPException(
+                409,
+                f"Maksimum {limit} analisa aktif {label} per user. Arsipkan salah satu dulu.",
+            )
 
     # compute baseline plan using existing rules engine
-    bundle = await fetch_bundle(symbol, ("4h", "1h", "15m", "5m"), market=("futures" if str(trade_type).lower()=="futures" else "spot"))
+    bundle = await fetch_bundle(
+        symbol,
+        ("4h", "1h", "15m", "5m"),
+        market=("futures" if tt == "futures" else "spot"),
+    )
     feat = Features(bundle).enrich()
     score = score_symbol(feat)
     plan = await build_plan_async(db, bundle, feat, score, "auto")
@@ -59,7 +84,9 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str, trade_type: st
     # compute next version per user+symbol
     q2 = await db.execute(
         select(func.max(Analysis.version)).where(
-            Analysis.user_id == user.id, Analysis.symbol == sym
+            Analysis.user_id == user.id,
+            Analysis.symbol == sym,
+            func.coalesce(Analysis.trade_type, "spot") == tt,
         )
     )
     ver = (q2.scalar_one() or 0) + 1
@@ -69,7 +96,7 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str, trade_type: st
         existing.version = ver
         existing.payload_json = plan
         existing.status = "active"
-        existing.trade_type = str(trade_type or "spot")
+        existing.trade_type = tt
         # bump timestamp so FE shows fresh time
         existing.created_at = datetime.now(timezone.utc)
         a = existing
@@ -77,7 +104,7 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str, trade_type: st
         a = Analysis(
             user_id=user.id,
             symbol=sym,
-            trade_type=str(trade_type or "spot"),
+            trade_type=tt,
             version=ver,
             payload_json=plan,
             status="active",
@@ -91,7 +118,12 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str, trade_type: st
 async def refresh_analysis_rules_only(db: AsyncSession, user: User, analysis: Analysis) -> Analysis:
     """Recompute plan using rules engine only (no LLM), bump version and timestamp."""
     sym = analysis.symbol.upper()
-    bundle = await fetch_bundle(sym, ("4h", "1h", "15m", "5m"), market=("futures" if str(getattr(analysis, 'trade_type', 'spot')).lower()=="futures" else "spot"))
+    tt = _normalize_trade_type(getattr(analysis, "trade_type", "spot"))
+    bundle = await fetch_bundle(
+        sym,
+        ("4h", "1h", "15m", "5m"),
+        market=("futures" if tt == "futures" else "spot"),
+    )
     feat = Features(bundle).enrich()
     score = score_symbol(feat)
     plan = await build_plan_async(db, bundle, feat, score, "auto")
@@ -108,7 +140,9 @@ async def refresh_analysis_rules_only(db: AsyncSession, user: User, analysis: An
     # compute next version per user+symbol and update
     q2 = await db.execute(
         select(func.max(Analysis.version)).where(
-            Analysis.user_id == user.id, Analysis.symbol == sym
+            Analysis.user_id == user.id,
+            Analysis.symbol == sym,
+            func.coalesce(Analysis.trade_type, "spot") == tt,
         )
     )
     ver = (q2.scalar_one() or 0) + 1

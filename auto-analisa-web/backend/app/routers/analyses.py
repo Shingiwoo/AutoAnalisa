@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from app.deps import get_db
 from app.auth import require_user
 from app.models import Analysis, Plan, LLMVerification, Settings
@@ -19,12 +19,22 @@ from app.config import settings
 router = APIRouter(prefix="/api/analyses", tags=["analyses"])
 
 
+def _norm_trade_type(value: str | None) -> str:
+    try:
+        if str(value).lower() == "futures":
+            return "futures"
+    except Exception:
+        pass
+    return "spot"
+
+
 @router.get("")
 async def list_analyses(status: str = "active", trade_type: str | None = None, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     if status == "active":
         conds = [Analysis.user_id == user.id, Analysis.status == "active"]
         if trade_type:
-            conds.append(Analysis.trade_type == trade_type)
+            tt = _norm_trade_type(trade_type)
+            conds.append(func.coalesce(Analysis.trade_type, "spot") == tt)
         q = await db.execute(select(Analysis).where(*conds).order_by(Analysis.created_at.desc()))
         rows = q.scalars().all()
         return [
@@ -41,7 +51,8 @@ async def list_analyses(status: str = "active", trade_type: str | None = None, d
     else:
         conds = [Plan.user_id == user.id]
         if trade_type:
-            conds.append(Plan.trade_type == trade_type)
+            tt = _norm_trade_type(trade_type)
+            conds.append(func.coalesce(Plan.trade_type, "spot") == tt)
         q = await db.execute(select(Plan).where(*conds).order_by(Plan.created_at.desc()))
         rows = q.scalars().all()
         return [
@@ -63,11 +74,12 @@ async def latest(symbol: str, trade_type: str = "spot", db: AsyncSession = Depen
 
     Used by FE to ensure Spot vs Futures data isolation.
     """
+    tt = _norm_trade_type(trade_type)
     conds = [
         Analysis.user_id == user.id,
         Analysis.symbol == symbol.upper(),
         Analysis.status == "active",
-        Analysis.trade_type == trade_type,
+        func.coalesce(Analysis.trade_type, "spot") == tt,
     ]
     q = await db.execute(select(Analysis).where(*conds).order_by(desc(Analysis.created_at)))
     a = q.scalars().first()
@@ -88,7 +100,13 @@ async def save_snapshot(aid: int, db: AsyncSession = Depends(get_db), user=Depen
     if not a or a.user_id != user.id:
         raise HTTPException(404, "Not found")
     # Create a snapshot in Plan table and keep current Analysis active
-    snap = Plan(user_id=user.id, symbol=a.symbol, trade_type=getattr(a, 'trade_type', 'spot'), version=a.version, payload_json=a.payload_json)
+    snap = Plan(
+        user_id=user.id,
+        symbol=a.symbol,
+        trade_type=getattr(a, "trade_type", "spot"),
+        version=a.version,
+        payload_json=a.payload_json,
+    )
     db.add(snap)
     await db.commit()
     return {"ok": True, "active_id": a.id}
@@ -126,7 +144,13 @@ async def refresh_rules(aid: int, db: AsyncSession = Depends(get_db), user=Depen
                 prev_invalidated = True
                 # Archive previous plan as snapshot for reference
                 try:
-                    snap = Plan(user_id=a.user_id, symbol=a.symbol, version=a.version, payload_json=prev_payload)
+                    snap = Plan(
+                        user_id=a.user_id,
+                        symbol=a.symbol,
+                        trade_type=getattr(a, "trade_type", "spot"),
+                        version=a.version,
+                        payload_json=prev_payload,
+                    )
                     db.add(snap)
                     await db.commit()
                 except Exception:
@@ -319,6 +343,7 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
     summary = text
     suggestions = {}
     fundamentals = {}
+    raw_invalid = None
     try:
         parsed = json.loads(text)
         # SPOT II expected
@@ -327,6 +352,16 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
         else:
             # backward: accept wrapper with spot2
             spot2 = parsed.get("spot2") or {}
+        try:
+            rjb_src = parsed.get("rencana_jual_beli")
+            if isinstance(rjb_src, dict) and rjb_src.get("invalid") is not None:
+                raw_invalid = rjb_src.get("invalid")
+            elif isinstance(parsed.get("spot2"), dict):
+                rjb_src = parsed.get("spot2", {}).get("rencana_jual_beli")
+                if isinstance(rjb_src, dict) and rjb_src.get("invalid") is not None:
+                    raw_invalid = rjb_src.get("invalid")
+        except Exception:
+            pass
         # Schema-guard: wajib ada entries[] dan tp[] minimal 1
         rjb = (spot2 or {}).get("rencana_jual_beli") or {}
         ent = list(rjb.get("entries") or [])
@@ -376,6 +411,7 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
                         for i, x in enumerate(suggestions["entries"])
                     ]
                 if suggestions.get("invalid") is not None:
+                    raw_invalid = suggestions.get("invalid")
                     rjb["invalid"] = float(suggestions.get("invalid"))
                 s2["rencana_jual_beli"] = rjb
                 if isinstance(suggestions.get("tp"), list):
@@ -415,6 +451,24 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
         if float(cand2.get("rr_min", 0.0)) < 1.2 and verdict == "confirm":
             verdict = "warning"
             summary = (summary or "") + " (rr_min<1.2)"
+    except Exception:
+        pass
+
+    try:
+        spot2_payload = locals().get("spot2")
+        if isinstance(spot2_payload, dict):
+            rjb_final = dict((spot2_payload.get("rencana_jual_beli") or {}))
+            if rjb_final.get("invalid") is None:
+                candidate = raw_invalid
+                if candidate is None:
+                    candidate = ((spot2_base or {}).get("rencana_jual_beli") or {}).get("invalid")
+                if candidate is not None:
+                    try:
+                        rjb_final["invalid"] = float(candidate)
+                    except Exception:
+                        rjb_final["invalid"] = candidate
+                    spot2_payload["rencana_jual_beli"] = rjb_final
+            spot2 = spot2_payload
     except Exception:
         pass
 
@@ -587,7 +641,14 @@ async def apply_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(r
 @router.get("/{symbol}/spot")
 async def get_spot(symbol: str, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
     q = await db.execute(
-        select(Analysis).where(Analysis.user_id == user.id, Analysis.symbol == symbol.upper(), Analysis.status == "active").order_by(desc(Analysis.created_at))
+        select(Analysis)
+        .where(
+            Analysis.user_id == user.id,
+            Analysis.symbol == symbol.upper(),
+            Analysis.status == "active",
+            func.coalesce(Analysis.trade_type, "spot") == "spot",
+        )
+        .order_by(desc(Analysis.created_at))
     )
     a = q.scalars().first()
     if not a:
