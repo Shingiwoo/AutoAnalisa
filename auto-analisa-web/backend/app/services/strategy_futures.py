@@ -348,6 +348,7 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
         ],
         "gates": {"checked": False, "ok": True, "reasons": []},
         "metrics": {"rr_min": float(rr_now), "atr_pct": float(atr_pct), "rr_raw": float(rr_now)},
+        "score": 0,
     }
 
     # Round prices to futures tick using ccxt meta
@@ -358,7 +359,21 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
 
     # Apply gating based on futures signals snapshot
     if fut_signals is not None:
-        gates_ok, reasons, dumps = gating_signals_ok(side, fut_signals)
+        # attach ATR/last for 1h to support ATR% gating
+        try:
+            last_1h = float(bundle["1h"].iloc[-1].close)
+        except Exception:
+            last_1h = None
+        try:
+            atr_1h = float(bundle["1h"].iloc[-1].atr14)
+        except Exception:
+            atr_1h = None
+        sig2 = dict(fut_signals)
+        if last_1h is not None:
+            sig2["last_1h"] = last_1h
+        if atr_1h is not None:
+            sig2["atr_1h"] = atr_1h
+        gates_ok, reasons, dumps = gating_signals_ok(side, sig2)
         plan["gates"] = {"checked": True, "ok": bool(gates_ok), "reasons": reasons, "snapshot": dumps}
 
     # Patch 3/4: Setup candidates (L1-L3/S1-S3) + scoring & conflict resolution
@@ -393,6 +408,7 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
                     "weights": weights,
                     "invalids": {"hard_1h": float(invalid)},
                     "tp": tp,
+                    "score": int(top.get("score", 0)),
                 })
                 plan.setdefault("metrics", {})["rr_min"] = float(rr_now)
                 plan.setdefault("notes", []).append(f"Setup {top.get('setup')} skor {top.get('score')}")
@@ -400,7 +416,12 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
                     plan["notes"].extend(top.get("notes"))
                 # Gating again with final side
                 if fut_signals is not None:
-                    gates_ok, reasons, dumps = gating_signals_ok(side, fut_signals)
+                    sig2 = dict(fut_signals)
+                    if last_1h is not None:
+                        sig2["last_1h"] = last_1h
+                    if atr_1h is not None:
+                        sig2["atr_1h"] = atr_1h
+                    gates_ok, reasons, dumps = gating_signals_ok(side, sig2)
                     plan["gates"] = {"checked": True, "ok": bool(gates_ok), "reasons": reasons, "snapshot": dumps}
     except Exception:
         pass
