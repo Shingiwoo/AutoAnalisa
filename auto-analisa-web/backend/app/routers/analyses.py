@@ -249,6 +249,13 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
     last = q.scalars().first()
     now_ts = time.time()
     if last and (now_ts - last.created_at.timestamp()) <= cache_ttl:
+        # Jika analisa sudah diperbarui setelah verifikasi terakhir, abaikan cache
+        try:
+            if getattr(a, "created_at", None) and last.created_at < a.created_at:
+                last = None
+        except Exception:
+            pass
+    if last and (now_ts - last.created_at.timestamp()) <= cache_ttl:
         # Count this click against daily usage quota
         await inc_usage(
             db,
@@ -274,6 +281,7 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
                 "summary": last.summary,
                 "suggestions": last.suggestions,
                 "fundamentals": last.fundamentals,
+                "spot2_json": last.spot2_json,
                 "created_at": last.created_at,
                 "cached": True,
             }

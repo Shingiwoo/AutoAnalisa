@@ -181,6 +181,21 @@ class LLMUsage(Base):
     updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, default=None)
 
 
+# Cached GPT futures reports untuk persistensi Patch Seri M
+class GPTReport(Base):
+    __tablename__ = "gpt_reports"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    mode: Mapped[str] = mapped_column(String(16), default="scalping", index=True)
+    text: Mapped[dict] = mapped_column(JSON, default=dict)
+    overlay: Mapped[dict] = mapped_column(JSON, default=dict)
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, default=lambda: dt.datetime.now(dt.timezone.utc)
+    )
+    ttl: Mapped[int] = mapped_column(Integer, default=2700)
+
+
 # Futures metadata and signals cache (skeleton for Futures module)
 class FuturesMeta(Base):
     __tablename__ = "futures_meta"

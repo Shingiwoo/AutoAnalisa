@@ -1,8 +1,10 @@
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Any, Dict, Optional, Literal
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import datetime as dt
 
 from app.deps import get_db
 from app.auth import require_user
@@ -10,7 +12,15 @@ from app.services.gpt_service import build_prompt, call_gpt
 from app.services.llm import should_use_llm
 from app.services.usage import get_today_usage, inc_usage
 from app.services.budget import get_or_init_settings
+from app.models import GPTReport
 import os
+
+
+DEFAULT_TTL_SECONDS = int(os.getenv("GPT_REPORT_TTL_SECONDS", 2700) or 2700)
+
+
+def _utcnow() -> dt.datetime:
+    return dt.datetime.now(dt.timezone.utc)
 
 
 class AnalyzeBody(BaseModel):
@@ -23,8 +33,53 @@ class AnalyzeBody(BaseModel):
 router = APIRouter(prefix="/api/gpt/futures", tags=["gpt-futures"])
 
 
+@router.get("/report")
+async def get_latest_report(
+    symbol: str,
+    mode: Literal["scalping", "swing"] = "scalping",
+    nocache: int = Query(0, ge=0, le=1),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_user),
+):
+    sym = symbol.upper()
+    if nocache:
+        raise HTTPException(
+            404, detail={"error_code": "nocache", "message": "Cache dilewati"}
+        )
+    stmt = (
+        select(GPTReport)
+        .where(GPTReport.symbol == sym, GPTReport.mode == mode)
+        .order_by(GPTReport.created_at.desc())
+    )
+    res = await db.execute(stmt)
+    item = res.scalars().first()
+    if not item:
+        raise HTTPException(
+            404, detail={"error_code": "report_not_found", "message": "Belum ada report"}
+        )
+    ttl = int(getattr(item, "ttl", DEFAULT_TTL_SECONDS) or DEFAULT_TTL_SECONDS)
+    created = getattr(item, "created_at", None) or _utcnow()
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=dt.timezone.utc)
+    if created + dt.timedelta(seconds=ttl) < _utcnow():
+        raise HTTPException(
+            404, detail={"error_code": "report_expired", "message": "Report kedaluwarsa"}
+        )
+    return {
+        "report_id": item.id,
+        "symbol": item.symbol,
+        "mode": item.mode,
+        "text": item.text or {},
+        "overlay": item.overlay or {},
+        "meta": item.meta or {},
+        "created_at": created.isoformat(),
+        "ttl": ttl,
+    }
+
+
 @router.post("/analyze")
 async def gpt_analyze(body: AnalyzeBody, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
+    sym = body.symbol.upper()
     allowed, reason = await should_use_llm(db)
     if not allowed:
         raise HTTPException(409, detail={"error_code": "llm_disabled", "message": reason or "LLM nonaktif"})
@@ -38,7 +93,7 @@ async def gpt_analyze(body: AnalyzeBody, db: AsyncSession = Depends(get_db), use
 
     # Compose payload with opts for the template
     template_payload = {"payload": body.payload, "opts": (body.opts or {})}
-    prompt = build_prompt(body.symbol.upper(), body.mode, template_payload)
+    prompt = build_prompt(sym, body.mode, template_payload)
     data, usage = call_gpt(prompt)
     if not isinstance(data, dict) or not data:
         raise HTTPException(502, detail={"error_code": "bad_llm_output", "message": "Jawaban GPT tidak valid (bukan JSON)"})
@@ -59,7 +114,40 @@ async def gpt_analyze(body: AnalyzeBody, db: AsyncSession = Depends(get_db), use
         meta = data.setdefault("meta", {}) if isinstance(data, dict) else {}
         meta.setdefault("engine", os.getenv("OPENAI_MODEL", "gpt-5-chat-latest"))
     except Exception:
-        pass
+        meta = {}
 
+    # Persist ke tabel cache
+    try:
+        overlay = data.get("overlay") if isinstance(data, dict) else {}
+        text = data.get("text") if isinstance(data, dict) else {}
+    except Exception:
+        overlay = {}
+        text = {}
+    report = GPTReport(
+        symbol=sym,
+        mode=body.mode,
+        text=text or {},
+        overlay=overlay or {},
+        meta=meta or {},
+        ttl=DEFAULT_TTL_SECONDS,
+    )
+    db.add(report)
+    await db.flush()
+    try:
+        await db.commit()
+        await db.refresh(report)
+    except Exception:
+        await db.rollback()
+        raise
+    created = report.created_at or _utcnow()
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=dt.timezone.utc)
+    data["report_id"] = report.id
+    meta_out = data.setdefault("meta", {})
+    meta_out.setdefault("engine", os.getenv("OPENAI_MODEL", "gpt-5-chat-latest"))
+    meta_out["cached_at"] = created.isoformat()
+    meta_out["ttl_seconds"] = int(report.ttl or DEFAULT_TTL_SECONDS)
+    data["created_at"] = created.isoformat()
+    data["ttl"] = report.ttl or DEFAULT_TTL_SECONDS
     return data
 
