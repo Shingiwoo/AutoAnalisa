@@ -17,6 +17,11 @@ type LLMLine = { type?: string, label?: string, price?: number }
 type LLMZone = { type?: string, range?: [number, number], note?: string }
 type LLMMarker = { type?: string, price?: number, label?: string, note?: string }
 
+function rangesEqual(a?: [number, number], b?: [number, number], tol = 0) {
+  if (!a || !b) return false
+  return Math.abs(a[0] - b[0]) <= tol && Math.abs((a[1] ?? a[0]) - (b[1] ?? b[0])) <= tol
+}
+
 export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], overlays?: { sr?: number[], tp?: number[], invalid?: InvalidMulti, entries?: number[], fvg?: FVG[], zones?: Zone[], ghost?: GhostOverlay, liq?: number, funding?: FundingWin[], llm?: { lines?: LLMLine[], zones?: LLMZone[], markers?: LLMMarker[] } | null }, className?: string }){
   const ref = useRef<HTMLDivElement>(null)
   useEffect(()=>{
@@ -38,6 +43,66 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
     const mapped: CandlestickData[] = data.map(d=>({ time: d.t/1000 as any, open:d.o, high:d.h, low:d.l, close:d.c }))
     series.setData(mapped)
     const llmOverlay = overlays?.llm || null
+    const lastClose = data && data.length ? data[data.length - 1].c : 1
+    const tol = Math.max(minMove * 2, lastClose * 0.0003)
+    const rawZones: LLMZone[] = llmOverlay && Array.isArray(llmOverlay.zones) ? llmOverlay.zones : []
+    const zonesEntry = rawZones.filter((z) => (z?.type || '').toString().toUpperCase() === 'ENTRY')
+    const zonesBybk = rawZones.filter((z) => (z?.type || '').toString().toUpperCase() === 'BYBK')
+
+    type RenderZone = { kind: 'ENTRY' | 'BYBK' | 'ENTRY_BYBK'; range: [number, number]; note?: string }
+    const used = new Set<number>()
+    const renderZones: RenderZone[] = []
+
+    const normalizeRange = (zone?: LLMZone): [number, number] | null => {
+      if (!zone || !Array.isArray(zone.range)) return null
+      const lo = typeof zone.range[0] === 'number' ? zone.range[0] : undefined
+      const hiRaw = zone.range.length > 1 ? zone.range[1] : undefined
+      const hi = typeof hiRaw === 'number' ? hiRaw : lo
+      if (typeof lo !== 'number' || typeof hi !== 'number') return null
+      const min = Math.min(lo, hi)
+      const max = Math.max(lo, hi)
+      return [min, max]
+    }
+
+    zonesEntry.forEach((entryZone) => {
+      const entryRange = normalizeRange(entryZone)
+      if (!entryRange) return
+      const mateIdx = zonesBybk.findIndex((bybkZone, idx) => {
+        if (used.has(idx)) return false
+        const bybkRange = normalizeRange(bybkZone)
+        if (!bybkRange) return false
+        return rangesEqual(entryRange, bybkRange, tol)
+      })
+      if (mateIdx >= 0) {
+        used.add(mateIdx)
+        const pair = zonesBybk[mateIdx]
+        const pairRange = normalizeRange(pair)
+        if (!pairRange) return
+        const lo = Math.min(entryRange[0], pairRange[0])
+        const hi = Math.max(entryRange[1], pairRange[1])
+        renderZones.push({
+          kind: 'ENTRY_BYBK',
+          range: [lo, hi],
+          note: [entryZone?.note, pair?.note].filter(Boolean).join(' | ') || undefined,
+        })
+      } else {
+        renderZones.push({ kind: 'ENTRY', range: entryRange, note: entryZone?.note })
+      }
+    })
+
+    zonesBybk.forEach((bybkZone, idx) => {
+      if (used.has(idx)) return
+      const bybkRange = normalizeRange(bybkZone)
+      if (!bybkRange) return
+      renderZones.push({ kind: 'BYBK', range: bybkRange, note: bybkZone?.note })
+    })
+
+    renderZones.forEach((zone) => {
+      const mid = (zone.range[0] + zone.range[1]) / 2
+      const title = zone.kind === 'ENTRY_BYBK' ? 'Entry/BYBK' : zone.kind === 'ENTRY' ? 'Entry' : 'BYBK'
+      const color = zone.kind === 'BYBK' ? '#f97316' : zone.kind === 'ENTRY' ? '#0ea5e9' : '#9333ea'
+      series.createPriceLine({ price: mid, color, lineWidth: 1, lineStyle: 2, title })
+    })
 
     // Invalid overlays (single or bertingkat)
     if (typeof overlays?.invalid === 'number'){
@@ -161,31 +226,29 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
         div.style.borderBottom = `1px dotted ${z.type==='supply' ? '#f59e0b' : '#8b5cf6'}`
         overlay.appendChild(div)
       })
-      const llmZones: LLMZone[] = llmOverlay && Array.isArray(llmOverlay.zones) ? llmOverlay.zones : []
-      llmZones.forEach((z: LLMZone)=>{
-        if(!Array.isArray(z?.range)) return
-        const lo = typeof z.range[0]==='number'? z.range[0] : null
-        const hi = typeof z.range[1]==='number'? z.range[1] : lo
-        if(typeof lo!=='number' || typeof hi!=='number') return
-        const y1:number = priceToY(Math.max(lo, hi))
-        const y2:number = priceToY(Math.min(lo, hi))
-        if(typeof y1!=='number' || typeof y2!=='number') return
-        const left = 0
+      renderZones.forEach((zone)=>{
+        const top = priceToY(Math.max(zone.range[0], zone.range[1]))
+        const bottom = priceToY(Math.min(zone.range[0], zone.range[1]))
+        if (typeof top !== 'number' || typeof bottom !== 'number') return
         const div = document.createElement('div')
-        div.style.position='absolute'
-        div.style.left = `${left}px`
-        div.style.right = `0px`
-        div.style.top = `${Math.min(y1,y2)}px`
-        div.style.height = `${Math.abs(y2-y1)}px`
-        const type = (z?.type || '').toString().toUpperCase()
-        if(type==='BYBK'){
+        div.style.position = 'absolute'
+        div.style.left = '0px'
+        div.style.right = '0px'
+        div.style.top = `${Math.min(top, bottom)}px`
+        div.style.height = `${Math.abs(top - bottom)}px`
+        div.style.pointerEvents = 'none'
+        if(zone.kind==='ENTRY'){
+          div.style.background = 'rgba(14,165,233,0.15)'
+          div.style.borderTop = '1px dashed rgba(14,165,233,0.45)'
+          div.style.borderBottom = '1px dashed rgba(14,165,233,0.45)'
+        }else if(zone.kind==='BYBK'){
           div.style.background = 'rgba(249,115,22,0.18)'
           div.style.borderTop = '1px dashed rgba(249,115,22,0.45)'
           div.style.borderBottom = '1px dashed rgba(249,115,22,0.45)'
         }else{
-          div.style.background = 'rgba(14,165,233,0.15)'
-          div.style.borderTop = '1px dashed rgba(14,165,233,0.45)'
-          div.style.borderBottom = '1px dashed rgba(14,165,233,0.45)'
+          div.style.background = 'rgba(147,51,234,0.16)'
+          div.style.borderTop = '1px dashed rgba(147,51,234,0.45)'
+          div.style.borderBottom = '1px dashed rgba(147,51,234,0.45)'
         }
         overlay.appendChild(div)
       })
