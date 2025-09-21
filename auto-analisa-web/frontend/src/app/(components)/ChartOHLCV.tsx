@@ -13,7 +13,11 @@ type FundingWin = { timeMs: number, windowMin: number }
 
 type InvalidMulti = number | { m5?: number, m15?: number, h1?: number, h4?: number }
 
-export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], overlays?: { sr?: number[], tp?: number[], invalid?: InvalidMulti, entries?: number[], fvg?: FVG[], zones?: Zone[], ghost?: GhostOverlay, liq?: number, funding?: FundingWin[] }, className?: string }){
+type LLMLine = { type?: string, label?: string, price?: number }
+type LLMZone = { type?: string, range?: [number, number], note?: string }
+type LLMMarker = { type?: string, price?: number, label?: string, note?: string }
+
+export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], overlays?: { sr?: number[], tp?: number[], invalid?: InvalidMulti, entries?: number[], fvg?: FVG[], zones?: Zone[], ghost?: GhostOverlay, liq?: number, funding?: FundingWin[], llm?: { lines?: LLMLine[], zones?: LLMZone[], markers?: LLMMarker[] } | null }, className?: string }){
   const ref = useRef<HTMLDivElement>(null)
   useEffect(()=>{
     if(!ref.current) return
@@ -33,6 +37,7 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
     const series = chart.addCandlestickSeries({ priceFormat: { type: 'price', precision: prec, minMove } })
     const mapped: CandlestickData[] = data.map(d=>({ time: d.t/1000 as any, open:d.o, high:d.h, low:d.l, close:d.c }))
     series.setData(mapped)
+    const llmOverlay = overlays?.llm || null
 
     // Invalid overlays (single or bertingkat)
     if (typeof overlays?.invalid === 'number'){
@@ -59,6 +64,25 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
       if (typeof g.invalid === 'number') series.createPriceLine({ price: g.invalid, color: '#0ea5e9', lineWidth: 2, lineStyle: 2, title: 'LLM Invalid' })
       if (Array.isArray(g.tp)) for (const t of g.tp){ series.createPriceLine({ price: t, color: '#22c55e', lineWidth: 1, lineStyle: 2, title: 'LLM TP' }) }
       if (Array.isArray(g.entries)) for (const e of g.entries){ series.createPriceLine({ price: e, color: '#06b6d4', lineWidth: 1, lineStyle: 2, title: 'LLM Entry' }) }
+    }
+    if (llmOverlay && Array.isArray(llmOverlay.lines)){
+      for (const ln of llmOverlay.lines){
+        if (typeof ln?.price !== 'number') continue
+        const label = (ln?.label || ln?.type || '').toString().toUpperCase()
+        let color = '#2563eb'
+        let width = 1
+        let style = 0
+        if (label.includes('SL')){ color = '#ff4d4f'; width = 2; style = 0 }
+        else if (label.includes('TP')){ color = '#16a34a'; width = 2; style = 0 }
+        series.createPriceLine({ price: ln.price, color, lineWidth: width, lineStyle: style, title: ln?.label || label || 'LLM' })
+      }
+    }
+    if (llmOverlay && Array.isArray(llmOverlay.markers)){
+      for (const mk of llmOverlay.markers){
+        if (typeof mk?.price !== 'number') continue
+        const title = mk?.label || mk?.note || 'BO'
+        series.createPriceLine({ price: mk.price, color: '#2563eb', lineWidth: 1, lineStyle: 2, title })
+      }
     }
     // FVG overlay: render band boundaries as lines (box-lite)
     if (overlays?.fvg){
@@ -135,6 +159,34 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
         div.style.background = (z.type==='supply' ? 'rgba(245,158,11,0.10)' : 'rgba(139,92,246,0.10)')
         div.style.borderTop = `1px dotted ${z.type==='supply' ? '#f59e0b' : '#8b5cf6'}`
         div.style.borderBottom = `1px dotted ${z.type==='supply' ? '#f59e0b' : '#8b5cf6'}`
+        overlay.appendChild(div)
+      })
+      const llmZones: LLMZone[] = llmOverlay && Array.isArray(llmOverlay.zones) ? llmOverlay.zones : []
+      llmZones.forEach((z: LLMZone)=>{
+        if(!Array.isArray(z?.range)) return
+        const lo = typeof z.range[0]==='number'? z.range[0] : null
+        const hi = typeof z.range[1]==='number'? z.range[1] : lo
+        if(typeof lo!=='number' || typeof hi!=='number') return
+        const y1:number = priceToY(Math.max(lo, hi))
+        const y2:number = priceToY(Math.min(lo, hi))
+        if(typeof y1!=='number' || typeof y2!=='number') return
+        const left = 0
+        const div = document.createElement('div')
+        div.style.position='absolute'
+        div.style.left = `${left}px`
+        div.style.right = `0px`
+        div.style.top = `${Math.min(y1,y2)}px`
+        div.style.height = `${Math.abs(y2-y1)}px`
+        const type = (z?.type || '').toString().toUpperCase()
+        if(type==='BYBK'){
+          div.style.background = 'rgba(249,115,22,0.18)'
+          div.style.borderTop = '1px dashed rgba(249,115,22,0.45)'
+          div.style.borderBottom = '1px dashed rgba(249,115,22,0.45)'
+        }else{
+          div.style.background = 'rgba(14,165,233,0.15)'
+          div.style.borderTop = '1px dashed rgba(14,165,233,0.45)'
+          div.style.borderBottom = '1px dashed rgba(14,165,233,0.45)'
+        }
         overlay.appendChild(div)
       })
     }

@@ -70,5 +70,11 @@ async def require_user(req: Request, db: AsyncSession = Depends(get_db)) -> User
     Admin endpoints should still use strict checks (e.g., require_admin).
     """
     if not settings.REQUIRE_LOGIN:
+        try:
+            token = get_token_from_request(req)
+            if token:
+                return await get_current_user(req, db)
+        except HTTPException:
+            pass
         return _PublicUser()  # type: ignore[return-value]
     return await get_current_user(req, db)

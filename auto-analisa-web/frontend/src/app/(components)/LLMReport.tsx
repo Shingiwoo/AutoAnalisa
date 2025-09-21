@@ -2,6 +2,124 @@
 import { useMemo, useState } from 'react'
 import { api } from '../api'
 
+type ReportMode = 'scalping' | 'swing'
+
+export function GptReportBox({ symbol, mode, report, loading }:{ symbol:string, mode:ReportMode, report:any|null, loading?:boolean }){
+  const created = useMemo(()=>{
+    try{
+      const iso = report?.created_at || report?.meta?.cached_at
+      return iso ? new Date(iso).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : ''
+    }catch{return ''}
+  },[report?.created_at, report?.meta?.cached_at])
+  const section = useMemo(()=> pickGptSection(report?.text, mode), [report?.text, mode])
+  const decimals = useMemo(()=> inferDecimals(section), [JSON.stringify(section)])
+  const fmtNum = (n:any)=> typeof n==='number' ? n.toFixed(decimals) : n
+  const tpList = Array.isArray(section?.tp) ? section!.tp : []
+  const sl = section?.sl
+  const strategi = Array.isArray(section?.strategi_singkat)? section!.strategi_singkat : []
+  const fundamental = Array.isArray(section?.fundamental)? section!.fundamental : []
+  const bybk = Array.isArray(section?.bybk)? section!.bybk : []
+  const bo = Array.isArray(section?.bo)? section!.bo : []
+  const rekom = report?.text?.recommendation || {}
+  const probability = report?.meta?.probability ?? report?.text?.probability
+
+  const bodyLines = useMemo(()=>{
+    if(!section) return [`Belum ada laporan GPT untuk mode ${mode}.`]
+    const lines:string[] = []
+    lines.push(`Analisa Coin ${symbol.toUpperCase()} :`)
+    lines.push(`Posisi : ${section.posisi || '-'}`)
+    if (tpList && tpList.length>0){
+      const arr = tpList.slice(0,3).map((v:any,i:number)=> `${i+1}) ${fmtNum(v)}`)
+      lines.push(`TP : ${arr.join('  ')}`)
+    }else{
+      lines.push('TP : -')
+    }
+    lines.push(`SL : ${typeof sl==='number'? fmtNum(sl): (sl || '-')}`)
+    if (bybk && bybk.length>0){
+      const arr = bybk.map((z:any)=>{
+        const rng = Array.isArray(z?.zone)? z.zone : z?.range
+        const lo = typeof rng?.[0]==='number'? fmtNum(rng[0]) : '-'
+        const hi = typeof rng?.[1]==='number'? fmtNum(rng[1]) : lo
+        return `[${lo}–${hi}] ${z?.note||''}`.trim()
+      })
+      lines.push(`Buy-back (BYBK): ${arr.join('; ')}`)
+    }else{
+      lines.push('Buy-back (BYBK): -')
+    }
+    if (bo && bo.length>0){
+      const arr = bo.map((b:any)=>{
+        const above = typeof b?.above==='number'? fmtNum(b.above) : null
+        const below = typeof b?.below==='number'? fmtNum(b.below) : null
+        const dir = above? `Above ${above}` : below? `Below ${below}` : ''
+        return `${dir}${dir?' : ':''}${b?.note||''}`.trim()
+      })
+      lines.push(`Break Out (BO): ${arr.join('; ')}`)
+    }else{
+      lines.push('Break Out (BO): -')
+    }
+    lines.push(`Strategi ${mode==='scalping'?'Simple':'Detail'} untuk Entry:`)
+    if (strategi.length>0){ strategi.forEach((s:string)=> lines.push(`- ${s}`)) }
+    else lines.push('- -')
+    if (fundamental.length>0){
+      lines.push('Fundamental jika ada:')
+      fundamental.forEach((f:string)=> lines.push(`- ${f}`))
+    }
+    if (rekom && (rekom.leverage_suggest || rekom.risk_per_trade || rekom.catatan)){
+      lines.push('Saran Risiko & Leverage:')
+      if (rekom.leverage_suggest) lines.push(`- Leverage: ${rekom.leverage_suggest}`)
+      if (rekom.risk_per_trade) lines.push(`- Risk/Trade: ${rekom.risk_per_trade}`)
+      if (rekom.catatan) lines.push(`- Catatan: ${rekom.catatan}`)
+    }
+    if (probability){
+      lines.push(`Probabilitas: ${probability}%`)
+    }
+    return lines
+  },[section, tpList, sl, strategi, fundamental, bybk, bo, fmtNum, rekom, probability, mode, symbol])
+
+  if (loading){
+    return <div className="rounded-xl ring-1 ring-sky-200/60 bg-sky-50/60 dark:bg-sky-950/40 dark:ring-sky-500/20 p-4 text-sm text-zinc-500">Memuat laporan GPT…</div>
+  }
+  if (!report){
+    return <div className="rounded-xl ring-1 ring-sky-200/60 bg-sky-50/60 dark:bg-sky-950/40 dark:ring-sky-500/20 p-4 text-sm text-zinc-500">Belum ada laporan GPT untuk mode {mode}. Klik <b>Tanya GPT</b> untuk memulai.</div>
+  }
+  return (
+    <details className="rounded-xl ring-1 ring-sky-200/60 bg-sky-50/60 dark:bg-sky-950/40 dark:ring-sky-500/20 p-4" open>
+      <summary className="flex items-center gap-2 text-sm font-semibold text-sky-700 dark:text-sky-200 cursor-pointer">
+        <span>LLM Report ({mode})</span>
+        {created && <span className="text-xs font-normal text-sky-500/80">{created} WIB</span>}
+      </summary>
+      <div className="mt-3 text-sm">
+        <pre className="whitespace-pre-wrap font-mono text-[13px] leading-6 text-sky-900 dark:text-sky-100">
+          {bodyLines.join('\n')}
+        </pre>
+      </div>
+    </details>
+  )
+}
+
+function pickGptSection(text:any, mode:ReportMode){
+  if(!text) return null
+  if(mode==='scalping') return text?.section_scalping || null
+  return text?.section_swing || text?.section_scalping || null
+}
+
+function inferDecimals(section:any){
+  try{
+    const nums:number[] = []
+    if (Array.isArray(section?.tp)) section.tp.forEach((v:any)=> { if (typeof v==='number') nums.push(v) })
+    if (typeof section?.sl==='number') nums.push(section.sl)
+    if (Array.isArray(section?.bybk)) section.bybk.forEach((z:any)=>{ const rng = Array.isArray(z?.zone)? z.zone : z?.range; if (Array.isArray(rng)) rng.forEach((n:any)=> typeof n==='number' && nums.push(n)) })
+    const sample = nums.find((v)=> typeof v==='number' && isFinite(v)) || 1
+    if (sample >= 1000) return 2
+    if (sample >= 100) return 2
+    if (sample >= 10) return 3
+    if (sample >= 1) return 4
+    if (sample >= 0.1) return 5
+    return 6
+  }catch{}
+  return 4
+}
+
 export default function LLMReport({ analysisId, verification, onApplied, onPreview, kind }:{ analysisId:number, verification:any|null, onApplied:()=>void, onPreview:(ghost:{entries?:number[],tp?:number[],invalid?:number}|null)=>void, kind?: 'spot'|'futures' }){
   const [busy,setBusy]=useState(false)
   const [view,setView]=useState<'summary'|'json'>('summary')

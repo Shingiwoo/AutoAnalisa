@@ -1,441 +1,628 @@
 "use client"
-import { useEffect, useMemo, useState } from 'react'
-import { api } from '../../app/api'
-import ChartOHLCV from './ChartOHLCV'
-import LLMReport from './LLMReport'
 
-export default function FuturesCard({plan, onUpdate, llmEnabled, llmRemaining, onAfterVerify}:{plan:any,onUpdate:()=>void, llmEnabled?:boolean, llmRemaining?:number, onAfterVerify?:()=>void}){
-  const p = plan.payload || {}
-  const [tab,setTab]=useState<'tren'|'5m'|'15m'|'1h'|'4h'>(()=> 'tren')
-  const [tf,setTf]=useState<'5m'|'15m'|'1h'|'4h'>(()=> '15m')
-  const [ohlcv,setOhlcv]=useState<any[]>([])
-  const [loading,setLoading]=useState(false)
-  const [verifying,setVerifying]=useState(false)
-  const [verification,setVerification]=useState<any|null>(null)
-  const [expanded,setExpanded]=useState(false)
-  const [ghost,setGhost]=useState<any|null>(null)
-  const [err,setErr]=useState<{code?:string,message?:string,retry?:string}|null>(null)
-  const [prevOpen,setPrevOpen]=useState(false)
-  const [prevPlan,setPrevPlan]=useState<any|null>(null)
-  const [prevList,setPrevList]=useState<any[]|null>(null)
-  const [fut,setFut]=useState<any|null>(null)
-  const [futErr,setFutErr]=useState<string>('')
-  // SERI L (GPT Analyze) state
-  const [gptMode,setGptMode]=useState<'scalping'|'swing'>('scalping')
-  const [gptBusy,setGptBusy]=useState(false)
-  const [gptOut,setGptOut]=useState<any|null>(null)
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { api } from "../../app/api"
+import ChartOHLCV from "./ChartOHLCV"
+import { GptReportBox } from "./LLMReport"
 
-  const createdWIB = useMemo(()=>{
-    try{ return new Date(plan.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB' }catch{ return new Date(plan.created_at).toLocaleString('id-ID') }
-  },[plan.created_at])
+import type { AxiosError } from "axios"
 
-  useEffect(()=>{ const t = (tab==='tren'? '15m' : tab) as '5m'|'15m'|'1h'|'4h'; setTf(t) },[tab])
-  useEffect(()=>{ (async()=>{
-    try{ setLoading(true); const {data}=await api.get('ohlcv', { params:{ symbol:plan.symbol, tf, limit:200, market: 'futures' } }); setOhlcv(data) }catch{} finally{ setLoading(false) }
-  })() },[tf, plan.symbol])
-  useEffect(()=>{ (async()=>{
-    try{ setFutErr(''); const {data}=await api.get(`analyses/${plan.symbol}/futures`); setFut(data) }
-    catch(e:any){ setFut(null); setFutErr(e?.response?.data?.detail||'Futures tidak tersedia') }
-  })() },[plan.symbol])
+type Tf = "5m" | "15m" | "1h" | "4h"
+type Mode = "scalping" | "swing"
 
-  const lastClose = (ohlcv && ohlcv.length>0) ? ohlcv[ohlcv.length-1].c : undefined
-  const invalids = useMemo(()=>{
-    const inv = fut?.invalids || {}
-    return {
-      m5: typeof inv.tactical_5m==='number'? inv.tactical_5m : undefined,
-      m15: typeof inv.soft_15m==='number'? inv.soft_15m : undefined,
-      h1: typeof inv.hard_1h==='number'? inv.hard_1h : undefined,
-      h4: typeof inv.struct_4h==='number'? inv.struct_4h : undefined,
-    }
-  },[JSON.stringify(fut?.invalids)])
-  const breach = useMemo(()=>{
-    if(typeof lastClose !== 'number') return null
-    const invH1 = invalids.h1
-    const invM15 = invalids.m15
-    if(typeof invH1 === 'number' && lastClose <= invH1){ return { type:'hard', text:'Invalidated — cek ulang setup (1H)' } }
-    if(typeof invM15 === 'number' && lastClose <= invM15){ return { type:'soft', text:'Rawan — cek ulang 15m' } }
-    return null
-  },[lastClose, invalids])
+type Props = {
+  symbol: string
+  llmEnabled?: boolean
+  llmRemaining?: number
+  onRefreshQuota?: () => void
+}
+
+type GptReport = {
+  report_id?: number
+  text?: any
+  overlay?: any
+  meta?: any
+  created_at?: string
+  ttl?: number
+  cached_at?: string
+}
+
+type FuturesPlan = any
+
+type OverlaySummary = {
+  sl?: number
+  tp?: number[]
+  entries?: number[]
+  bybk?: { range: [number, number]; note?: string }[]
+  bo?: { price?: number; note?: string; direction?: "above" | "below" }[]
+}
+
+const LOCAL_PREFIX = "gpt_report"
+const DEFAULT_TTL_SECONDS = 2700
+
+export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefreshQuota }: Props) {
+  const [tab, setTab] = useState<Tf>("15m")
+  const [ohlcv, setOhlcv] = useState<any[]>([])
+  const [loadingOhlcv, setLoadingOhlcv] = useState(false)
+  const [plan, setPlan] = useState<FuturesPlan | null>(null)
+  const [planErr, setPlanErr] = useState<string>("")
+  const [mode, setMode] = useState<Mode>("scalping")
+  const [reports, setReports] = useState<{ scalping?: GptReport | null; swing?: GptReport | null }>({})
+  const [reportLoading, setReportLoading] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string>("")
+  const [applied, setApplied] = useState<OverlaySummary | null>(null)
+
+  const tf = tab
+  const activeReport = (reports[mode] ?? null) as GptReport | null
+  const overlayTf = activeReport?.overlay?.tf
   const srExtra = useSRExtra(tab, ohlcv)
-  const computeSRCombined = () => ([...(p.support||[]), ...(p.resistance||[]), ...srExtra])
-  // Map GPT overlay to ghost format (price-only)
-  const gptGhost = useMemo(()=>{
-    const out = gptOut || null
-    if(!out || !out.overlay) return null
-    const ov = out.overlay || {}
-    const entries:number[] = []
-    const tp:number[] = []
-    let invalid:number|undefined
-    try{
-      if(Array.isArray(ov.lines)){
-        for(const l of ov.lines){
-          const label = (l?.label||l?.type||'').toString().toUpperCase()
-          const price = typeof l?.price==='number'? l.price : undefined
-          if(typeof price!=='number') continue
-          if(label.includes('TP')) tp.push(price)
-          if(label.includes('SL') || label.includes('INVALID')) invalid = price
+
+  // Default mode mengikuti tab
+  useEffect(() => {
+    if (tab === "5m" || tab === "15m") setMode((prev) => (prev === "scalping" ? prev : "scalping"))
+    else setMode((prev) => (prev === "swing" ? prev : "swing"))
+  }, [tab])
+
+  // Fetch futures baseline plan
+  useEffect(() => {
+    let cancelled = false
+    async function loadPlan() {
+      try {
+        setPlanErr("")
+        const { data } = await api.get(`analyses/${symbol}/futures`)
+        if (!cancelled) {
+          setPlan(data)
+        }
+      } catch (e: any) {
+        const msg = e?.response?.data?.detail || "Gagal memuat data futures"
+        if (!cancelled) {
+          setPlan(null)
+          setPlanErr(msg)
         }
       }
-      if(Array.isArray(ov.zones)){
-        for(const z of ov.zones){
-          if((z?.type||'').toUpperCase()==='ENTRY' && Array.isArray(z?.range)){
-            const [a,b] = z.range
-            if(typeof a==='number' && typeof b==='number') entries.push((a+b)/2)
+    }
+    loadPlan()
+    return () => {
+      cancelled = true
+    }
+  }, [symbol])
+
+  // Fetch OHLCV data
+  useEffect(() => {
+    let cancelled = false
+    async function loadOhlcv() {
+      try {
+        setLoadingOhlcv(true)
+        const { data } = await api.get("ohlcv", { params: { symbol, tf, limit: 200, market: "futures" } })
+        if (!cancelled) setOhlcv(data)
+      } catch (e) {
+        if (!cancelled) setOhlcv([])
+      } finally {
+        if (!cancelled) setLoadingOhlcv(false)
+      }
+    }
+    loadOhlcv()
+    return () => {
+      cancelled = true
+    }
+  }, [symbol, tf])
+
+  // Hydrate dari localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const next: { scalping?: GptReport | null; swing?: GptReport | null } = {}
+    next.scalping = loadLocalReport(symbol, "scalping")
+    next.swing = loadLocalReport(symbol, "swing")
+    setReports(next)
+    setMessage("")
+    setApplied(null)
+  }, [symbol])
+
+  // Fetch cache terbaru saat mode berubah
+  useEffect(() => {
+    let cancelled = false
+    async function fetchCache() {
+      if (!symbol) return
+      try {
+        setReportLoading(true)
+        const { data } = await api.get("gpt/futures/report", { params: { symbol, mode } })
+        if (cancelled) return
+        const normalized = normalizeReport(data)
+        setReports((prev) => ({ ...prev, [mode]: normalized }))
+        saveLocalReport(symbol, mode, normalized)
+        logEngine(normalized?.meta)
+        setMessage(checkNoTrade(normalized, mode))
+      } catch (err) {
+        if (!cancelled) {
+          const ax = err as AxiosError<any>
+          if (ax?.response?.status === 404) {
+            setReports((prev) => ({ ...prev, [mode]: null }))
           }
         }
+      } finally {
+        if (!cancelled) setReportLoading(false)
       }
-    }catch{}
-    return { entries, tp, invalid }
-  },[JSON.stringify(gptOut)])
+    }
+    fetchCache()
+    return () => {
+      cancelled = true
+    }
+  }, [symbol, mode])
+
+  const decimals = useMemo(() => {
+    const d = plan?.price_decimals
+    if (typeof d === "number" && d >= 0) return d
+    try {
+      const sample = (() => {
+        const arr: number[] = []
+        ;(plan?.entries || []).forEach((e: any) => {
+          const v = Array.isArray(e?.range) ? e.range[0] : undefined
+          if (typeof v === "number") arr.push(v)
+        })
+        if (typeof plan?.invalids?.hard_1h === "number") arr.push(plan.invalids.hard_1h)
+        return arr.find((x) => typeof x === "number") ?? 1
+      })()
+      if (sample >= 1000) return 2
+      if (sample >= 100) return 2
+      if (sample >= 10) return 3
+      if (sample >= 1) return 4
+      if (sample >= 0.1) return 5
+      return 6
+    } catch {
+      return 5
+    }
+  }, [plan])
+
+  const tickSize = useMemo(() => {
+    if (plan?.precision?.tickSize && typeof plan.precision.tickSize === "number") {
+      return plan.precision.tickSize
+    }
+    return Math.pow(10, -decimals)
+  }, [plan, decimals])
+
+  const overlayInfo = useMemo(() => {
+    if (!activeReport) return extractOverlay(null, tickSize, decimals)
+    if (message) return extractOverlay(null, tickSize, decimals)
+    return extractOverlay(activeReport.overlay, tickSize, decimals)
+  }, [activeReport, tickSize, decimals, message])
+
+  const chartOverlays = useMemo(() => {
+    const sr = [...(plan?.support || []), ...(plan?.resistance || []), ...srExtra]
+    const invalids = plan?.invalids || {}
+    const entries = (plan?.entries || []).map((e: any) => (Array.isArray(e?.range) ? e.range[0] : undefined)).filter((x: any) => typeof x === "number")
+    const tpBase = (plan?.tp || []).map((t: any) => (Array.isArray(t?.range) ? t.range[0] : undefined)).filter((x: any) => typeof x === "number")
+    return {
+      sr,
+      invalid: invalids,
+      entries,
+      tp: tpBase,
+      ghost: undefined,
+      liq: plan?.risk?.liq_price_est,
+      llm: activeReport?.overlay && !message ? activeReport.overlay : null,
+    }
+  }, [plan, tab, ohlcv, activeReport, message, srExtra])
+
+  const handleAnalyze = useCallback(async () => {
+    if (!llmEnabled || (typeof llmRemaining === "number" && llmRemaining <= 0)) {
+      alert("LLM tidak tersedia atau kuota habis.")
+      return
+    }
+    try {
+      setBusy(true)
+      const payload: any = {
+        symbol,
+        tf,
+        futures: plan,
+      }
+      if (tf !== "15m") {
+        try {
+          const { data } = await api.get("ohlcv", { params: { symbol, tf: "15m", limit: 200, market: "futures" } })
+          payload.ohlcv15m = data
+        } catch {}
+      }
+      if (mode === "scalping") {
+        try {
+          const { data } = await api.get("ohlcv", { params: { symbol, tf: "5m", limit: 200, market: "futures" } })
+          payload.ohlcv5m = data
+        } catch {}
+      }
+      const opts = {
+        timezone: "Asia/Jakarta",
+        tick_size: tickSize,
+        step_size: plan?.precision?.stepSize,
+        round: true,
+      }
+      const { data } = await api.post("gpt/futures/analyze", {
+        symbol,
+        mode,
+        payload,
+        opts,
+      })
+      const normalized = normalizeReport(data)
+      setReports((prev) => ({ ...prev, [mode]: normalized }))
+      saveLocalReport(symbol, mode, normalized)
+      logEngine(normalized?.meta)
+      setMessage(checkNoTrade(normalized, mode))
+      setApplied(null)
+      onRefreshQuota?.()
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail?.message || e?.response?.data?.detail || e?.message || "Gagal memanggil GPT"
+      alert(msg)
+    } finally {
+      setBusy(false)
+    }
+  }, [symbol, mode, tf, plan, tickSize, llmEnabled, llmRemaining, onRefreshQuota])
+
+  const handleApply = useCallback(() => {
+    const info = overlayInfo
+    if (!info || (!info.tp || info.tp.length === 0) || !activeReport) {
+      alert("Overlay belum tersedia.")
+      return
+    }
+    setApplied(info)
+    setMessage(checkNoTrade(activeReport, mode))
+  }, [overlayInfo, activeReport, mode])
+
+  const appliedPlan = useMemo(() => {
+    if (!plan) return null
+    if (!applied) return plan
+    const next = { ...plan }
+    if (applied.entries && applied.entries.length > 0) {
+      next.entries = applied.entries.map((v) => ({ range: [v, v], weight: 50, type: "ENTRY" }))
+    }
+    if (applied.tp && applied.tp.length > 0) {
+      next.tp = applied.tp.map((v, idx) => ({ name: `TP${idx + 1}`, range: [v, v], reduce_only_pct: idx === 0 ? 40 : 60 }))
+    }
+    if (applied.sl) {
+      next.invalids = { ...(next.invalids || {}), hard_1h: applied.sl }
+    }
+    try {
+      const posisi = pickModeSection(activeReport?.text, mode)?.posisi
+      if (posisi) next.side = posisi
+    } catch {}
+    return next
+  }, [plan, applied, activeReport, mode])
+
+  useEffect(() => {
+    if (!activeReport) return
+    setMessage(checkNoTrade(activeReport, mode))
+  }, [activeReport, mode])
+
+  const planDisplay = appliedPlan || plan
 
   return (
     <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 shadow-sm p-4 md:p-6 space-y-4 text-zinc-900 dark:text-zinc-100">
-      <div className="flex items-center justify-between">
+      <header className="flex items-center justify-between">
         <div className="text-lg font-semibold flex items-center gap-2">
-          <span>{plan.symbol} • v{plan.version}</span>
-          <span className="px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-xs" title="tf_base">{fut?.tf_base||'15m'}</span>
+          <span>{symbol.toUpperCase()}</span>
+          {plan?.tf_base && (
+            <span className="px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-xs">{plan.tf_base}</span>
+          )}
         </div>
-        <div className="text-xs text-zinc-500" title={new Date(plan.created_at).toISOString()}>{createdWIB}</div>
-      </div>
-
-      <div className="rounded-xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white/5 p-3 text-sm">
-        {fut ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <div className="text-zinc-500">Side • Leverage</div>
-              <div>{fut?.side||'-'} • isolated x={fut?.leverage_suggested?.x ?? '-'}</div>
-            </div>
-            <div>
-              <div className="text-zinc-500">Risk</div>
-              <div>risk/trade: {fut?.risk?.risk_per_trade_pct ?? '-'}% • rr_min: {fut?.risk?.rr_min||'-'}</div>
-            </div>
+        {activeReport?.created_at && (
+          <div className="text-xs text-zinc-500">
+            Cache {new Date(activeReport.created_at).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })} WIB
           </div>
-        ) : (
-          <div className="text-zinc-500">{futErr||'Memuat Futures…'}</div>
+        )}
+      </header>
+
+      <div className="flex items-center gap-2 text-sm" role="tablist" aria-label="TF">
+        {(["5m", "15m", "1h", "4h"] as Tf[]).map((t) => (
+          <button
+            key={t}
+            role="tab"
+            aria-selected={tab === t}
+            onClick={() => setTab(t)}
+            className={`px-2.5 py-1 rounded-md transition ${tab === t ? "bg-indigo-600 text-white" : "bg-white text-zinc-900 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-white/90"}`}
+          >
+            {t}
+          </button>
+        ))}
+        {overlayTf && overlayTf !== tf && !message && (
+          <span className="text-xs text-amber-500">Overlay dihitung untuk TF {overlayTf}</span>
         )}
       </div>
 
-      <div className="flex items-center gap-2 text-sm" role="tablist" aria-label="Analisa Tabs">
-        {(['tren','5m','15m','1h','4h'] as const).map(t=> (
-          <button key={t} role="tab" aria-selected={tab===t} onClick={()=>setTab(t)}
-            className={`px-2.5 py-1 rounded-md transition ${tab===t? 'bg-indigo-600 text-white':'bg-white text-zinc-900 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-white/90'} `}>
-            {t==='tren'? 'Tren Utama' : t}
-          </button>
-        ))}
-      </div>
-
-      {breach && (
-        <div className={`p-2 rounded text-sm ${breach.type==='hard'?'bg-rose-50 border border-rose-200 text-rose-700':'bg-amber-50 border border-amber-200 text-amber-800'}`}>{breach.text}</div>
-      )}
+      {planErr && <div className="p-2 rounded bg-rose-50 border border-rose-200 text-rose-700 text-sm">{planErr}</div>}
+      {message && !planErr && <div className="p-2 rounded bg-amber-50 border border-amber-200 text-amber-700 text-sm">{message}</div>}
 
       <div className="rounded-none overflow-hidden ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-950 relative">
         <div className="aspect-[16/9] md:aspect-[21/9]">
-          <ChartOHLCV
-            key={`${plan.symbol}-futures-${tf}-${expanded?'x':''}`}
-            className="h-full"
-            data={ohlcv}
-            overlays={{
-              sr: computeSRCombined(),
-              tp: (fut?.tp||[]).map((t:any)=> Array.isArray(t.range)? t.range[0] : undefined).filter((x:any)=> typeof x==='number'),
-              invalid: invalids as any,
-              entries: (fut?.entries||[]).map((e:any)=> Array.isArray(e.range)? e.range[0]: undefined).filter((x:any)=> typeof x==='number'),
-              ghost: (ghost || gptGhost || undefined) as any,
-              liq: typeof fut?.risk?.liq_price_est==='number' ? fut.risk.liq_price_est : undefined,
-              funding: fut?.futures_signals?.funding?.time ? [{ timeMs: Date.parse(fut.futures_signals.funding.time), windowMin: (fut?.risk?.funding_window_min||10) }] : undefined,
-            }}
-          />
+          <ChartOHLCV data={ohlcv} overlays={chartOverlays as any} className="h-full" />
         </div>
-        {loading && (
+        {loadingOhlcv && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/5 dark:bg-white/5">
             <div className="text-xs text-zinc-700 dark:text-zinc-200">Memuat {tf}…</div>
           </div>
         )}
-        <button onClick={()=>setExpanded(true)} className="absolute top-2 right-2 text-xs px-2 py-1 rounded bg-zinc-900/80 text-white hover:bg-zinc-900">Perbesar</button>
       </div>
 
-      {/* Funding soon banner */}
-      {(()=>{
-        try{
-          const thr = Number(fut?.risk?.funding_threshold_bp)||3
-          const rate = Math.abs(Number(fut?.futures_signals?.funding?.now)||0)*10000
-          const t = fut?.futures_signals?.funding?.time ? Date.parse(fut.futures_signals.funding.time) : null
-          const mins = t ? Math.abs((t - Date.now())/60000) : null
-          const enabled = (fut?.risk?.funding_alert_enabled!==false)
-          const win = Number(fut?.risk?.funding_alert_window_min ?? fut?.risk?.funding_window_min ?? 30)
-          if(enabled && t && mins!==null && mins < win && rate > thr){
-            return <div className="p-2 rounded text-sm bg-blue-50 border border-blue-200 text-blue-800">Funding soon — pertimbangkan hindari entry ±{Math.round(Number(fut?.risk?.funding_window_min)||10)} menit</div>
-          }
-        }catch{}
-        return null
-      })()}
-
-      {expanded && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={()=>setExpanded(false)}>
-          <div className="w-full max-w-7xl h-[80vh] bg-zinc-950 ring-1 ring-white/10 rounded-none relative" onClick={e=>e.stopPropagation()}>
-            <button onClick={()=>setExpanded(false)} className="absolute top-3 right-3 px-2 py-1 rounded bg-zinc-800 text-white text-sm">Tutup</button>
-            <div className="absolute inset-0">
-              <ChartOHLCV
-                key={`${plan.symbol}-futures-modal-${tf}`}
-                className="w-full h-full"
-                data={ohlcv}
-                overlays={{
-                  sr: computeSRCombined(),
-                  tp: (fut?.tp||[]).map((t:any)=> Array.isArray(t.range)? t.range[0] : undefined).filter((x:any)=> typeof x==='number'),
-                  invalid: invalids as any,
-                  entries: (fut?.entries||[]).map((e:any)=> Array.isArray(e.range)? e.range[0]: undefined).filter((x:any)=> typeof x==='number'),
-                  ghost: (ghost || gptGhost || undefined) as any,
-                  liq: typeof fut?.risk?.liq_price_est==='number' ? fut.risk.liq_price_est : undefined,
-                  funding: fut?.futures_signals?.funding?.time ? [{ timeMs: Date.parse(fut.futures_signals.funding.time), windowMin: (fut?.risk?.funding_window_min||10) }] : undefined,
-                }}
-              />
-            </div>
-          </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center rounded-md overflow-hidden ring-1 ring-zinc-200">
+          {(["scalping", "swing"] as Mode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`px-3 py-1 text-sm ${mode === m ? "bg-cyan-600 text-white" : "bg-white text-zinc-900 hover:bg-zinc-100"}`}
+            >
+              {m}
+            </button>
+          ))}
         </div>
-      )}
-
-      <FuturesSummary fut={fut} />
-      <LLMReport analysisId={plan.id} verification={verification} onApplied={()=> onUpdate()} onPreview={setGhost} kind='futures' />
-
-      <div className="flex items-center gap-2 flex-wrap">
-        <button onClick={onUpdate} className="px-3 py-2 rounded-md bg-zinc-900 text-white hover:bg-zinc-800">Update</button>
-        <button className="px-3 py-2 rounded-md bg-zinc-800 text-white hover:bg-zinc-700" onClick={async()=>{
-          try{ await api.post(`analyses/${plan.id}/save`); alert('Versi disimpan ke arsip') }
-          catch(e:any){ alert(e?.response?.data?.detail||'Gagal menyimpan versi') }
-        }}>Simpan Versi</button>
-        <button disabled={verifying || !llmEnabled || (typeof llmRemaining==='number' && llmRemaining<=0)} title={!llmEnabled? 'LLM nonaktif (limit/budget)':'Tanya GPT (Futures)'}
-          onClick={async()=>{
-          try{
-            setVerifying(true)
-            const {data} = await api.post(`analyses/${plan.id}/futures/verify`)
-            setVerification(data.verification)
-          }catch(e:any){
-            const resp = e?.response
-            const data = resp?.data
-            const det = data?.detail
-            if(det && typeof det==='object'){
-              setErr({ code: det.error_code, message: det.message, retry: det.retry_hint })
-            }else if(typeof det === 'string'){
-              setErr({ message: det })
-            }else if(typeof data?.message === 'string'){
-              setErr({ message: data.message })
-            }else if(typeof e?.message === 'string'){
-              setErr({ message: e.message })
-            }else{
-              setErr({ message: 'Verifikasi Futures gagal' })
-            }
-          }finally{ setVerifying(false); onAfterVerify?.() }
-        }} className="px-3 py-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50">{verifying?'Memverifikasi…':'Tanya GPT (Futures)'}</button>
-        {/* SERI L: Tanya GPT Analyze (Mode Scalping/Swing) */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center rounded-md overflow-hidden ring-1 ring-zinc-200">
-            {(['scalping','swing'] as const).map(m=> (
-              <button key={m} onClick={()=> setGptMode(m)} className={`px-2 py-1 text-sm ${gptMode===m? 'bg-cyan-600 text-white':'bg-white text-zinc-900 hover:bg-zinc-100'}`}>{m}</button>
-            ))}
-          </div>
-          <button disabled={gptBusy || !llmEnabled || (typeof llmRemaining==='number' && llmRemaining<=0)} title={!llmEnabled? 'LLM nonaktif (limit/budget)':'Tanya GPT (Mode)'}
-            onClick={async()=>{
-              try{
-                setGptBusy(true)
-                const payload:any = { symbol: plan.symbol, tf, ohlcv15m: (tf==='15m'? ohlcv: undefined), futures: fut }
-                if(gptMode==='scalping'){
-                  try{ const {data} = await api.get('ohlcv', { params:{ symbol: plan.symbol, tf: '5m', limit: 200, market: 'futures' } }); payload.ohlcv5m = data }catch{}
-                }
-                if(tf!=='15m'){
-                  try{ const {data} = await api.get('ohlcv', { params:{ symbol: plan.symbol, tf: '15m', limit: 200, market: 'futures' } }); payload.ohlcv15m = data }catch{}
-                }
-                const { data } = await api.post('gpt/futures/analyze', { symbol: plan.symbol, mode: gptMode, payload, opts: { timezone: 'Asia/Jakarta' } })
-                setGptOut(data)
-              }catch(e:any){
-                const msg = e?.response?.data?.detail?.message || e?.response?.data?.detail || e?.message || 'Gagal memanggil GPT analyze'
-                alert(msg)
-              }finally{ setGptBusy(false) }
-            }} className="px-3 py-2 rounded-md bg-cyan-600 text-white hover:bg-cyan-500 disabled:opacity-50">{gptBusy? 'Meminta…' : 'Tanya GPT (Mode)'}</button>
-        </div>
+        <button
+          disabled={busy || !llmEnabled || (typeof llmRemaining === "number" && llmRemaining <= 0)}
+          className="px-3 py-2 rounded-md bg-cyan-600 text-white hover:bg-cyan-500 disabled:opacity-50"
+          onClick={handleAnalyze}
+        >
+          {busy ? "Meminta…" : `Tanya GPT (${mode})`}
+        </button>
+        <button
+          className="px-3 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
+          onClick={handleApply}
+          disabled={!overlayInfo || !overlayInfo.tp || overlayInfo.tp.length === 0 || !!message}
+        >
+          Terapkan Saran
+        </button>
       </div>
 
-      {prevOpen && prevList && prevList.length>0 && (
-        <div className="rounded-xl ring-1 ring-amber-500/20 bg-amber-500/5 p-3 space-y-2">
-          <div className="text-xs text-amber-400">Pilih versi:</div>
-          <div className="flex flex-wrap gap-2 text-xs">
-            {prevList.map((it:any)=> (
-              <button key={it.id} className={`px-2 py-1 rounded ${prevPlan?.id===it.id? 'bg-amber-600 text-white':'bg-zinc-800 text-white/90'}`} onClick={()=> setPrevPlan(it)}>
-                v{it.version} • {new Date(it.created_at).toLocaleString('id-ID',{ timeZone:'Asia/Jakarta'})}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="flex items-center gap-2">
-        <button className="px-2.5 py-1.5 rounded bg-zinc-800 text-white text-xs" onClick={async()=>{
-          const next = !prevOpen
-          setPrevOpen(next)
-          if(next && !prevPlan){
-            try{
-              const { data } = await api.get('analyses', { params:{ status:'archived', trade_type: 'futures' } })
-              const same = (data||[]).filter((x:any)=> x.symbol===plan.symbol)
-              setPrevList(same)
-              const prev = same.find((x:any)=> new Date(x.created_at) < new Date(plan.created_at)) || same[0]
-              setPrevPlan(prev||null)
-            }catch{}
-          }
-        }}>{prevOpen? 'Sembunyikan versi sebelumnya':'Tampilkan versi sebelumnya'}</button>
-      </div>
+      <GptReportBox symbol={symbol} mode={mode} report={activeReport} loading={reportLoading} />
 
-      {err && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={()=>setErr(null)}>
-          <div className="max-w-md w-full rounded-xl bg-zinc-900 text-white ring-1 ring-white/10 p-4 space-y-2" onClick={(e)=>e.stopPropagation()}>
-            <div className="text-sm font-semibold">Verifikasi Gagal</div>
-            {err.code && <div className="text-xs opacity-70">Kode: {err.code}</div>}
-            <div className="text-sm">{err.message||'Gagal memverifikasi rencana.'}</div>
-            {err.retry && <div className="text-xs opacity-70">Saran: {err.retry}</div>}
-            <div className="flex items-center gap-2 pt-1">
-              <button className="px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-sm" onClick={()=>{
-                const text = JSON.stringify(err)
-                navigator.clipboard?.writeText(text)
-              }}>Salin Log</button>
-              <button className="px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-sm" onClick={()=> setErr(null)}>Tutup</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <FuturesMetrics plan={planDisplay} overlay={overlayInfo} />
     </div>
   )
 }
 
-function computePivots(rows:any[], left=15, right=15){
-  const highs:number[]=[]; const lows:number[]=[]
-  for(let i=left;i<rows.length-right;i++){
-    let isHigh=true, isLow=true
-    for(let j=i-left;j<=i+right;j++){
-      if(rows[j].h>rows[i].h) isHigh=false
-      if(rows[j].l<rows[i].l) isLow=false
-      if(!isHigh && !isLow) break
+function pickModeSection(text: any, mode: Mode) {
+  if (!text) return null
+  if (mode === "scalping") return text?.section_scalping || null
+  return text?.section_swing || null
+}
+
+function checkNoTrade(report: GptReport | null, mode: Mode): string {
+  try {
+    const sec =
+      pickModeSection(report?.text, mode) ||
+      pickModeSection(report?.text, (report?.overlay?.mode as Mode) || mode) ||
+      pickModeSection(report?.text, "scalping")
+    if (!sec) return ""
+    if ((sec.posisi || "").toUpperCase() === "NO-TRADE") {
+      return "Tidak ada setup valid; tunggu retest/konfirmasi."
     }
-    if(isHigh) highs.push(rows[i].h)
-    if(isLow) lows.push(rows[i].l)
+  } catch {}
+  return ""
+}
+
+function normalizeReport(data: any): GptReport {
+  if (!data || typeof data !== "object") return {}
+  const out: GptReport = { ...data }
+  if (data?.meta?.cached_at && !data.created_at) out.created_at = data.meta.cached_at
+  if (!out.ttl && data?.meta?.ttl_seconds) out.ttl = data.meta.ttl_seconds
+  return out
+}
+
+function buildKey(symbol: string, mode: Mode) {
+  return `${LOCAL_PREFIX}:${symbol.toUpperCase()}:${mode}`
+}
+
+function loadLocalReport(symbol: string, mode: Mode): GptReport | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = localStorage.getItem(buildKey(symbol, mode))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    const createdIso = parsed?.created_at || parsed?.meta?.cached_at
+    const createdMs = createdIso ? Date.parse(createdIso) : parsed?.saved_at
+    const ttl = (parsed?.ttl ?? parsed?.meta?.ttl_seconds ?? DEFAULT_TTL_SECONDS) * 1000
+    if (!createdMs || Date.now() - createdMs > ttl) {
+      localStorage.removeItem(buildKey(symbol, mode))
+      return null
+    }
+    return parsed
+  } catch {
+    localStorage.removeItem(buildKey(symbol, mode))
+    return null
   }
-  const round=(x:number)=> +x.toFixed(6)
-  const uniq=(arr:number[])=>{
-    const out:number[]=[]
-    arr.sort((a,b)=>a-b)
-    for(const v of arr){ if(out.length===0 || Math.abs(v-out[out.length-1])>1e-6) out.push(v) }
+}
+
+function saveLocalReport(symbol: string, mode: Mode, data: any) {
+  if (typeof window === "undefined") return
+  const payload = {
+    ...data,
+    saved_at: Date.now(),
+  }
+  try {
+    localStorage.setItem(buildKey(symbol, mode), JSON.stringify(payload))
+  } catch {}
+}
+
+function logEngine(meta: any) {
+  try {
+    if (!meta) return
+    const engine = meta.engine || meta.model
+    const version = meta.version || meta.rev
+    if (engine) console.info("[GPT Futures] engine", engine, version ? `(${version})` : "")
+  } catch {}
+}
+
+function extractOverlay(overlay: any, tickSize: number, decimals: number): OverlaySummary | null {
+  if (!overlay || typeof overlay !== "object") return null
+  const info: OverlaySummary = {}
+  try {
+    if (Array.isArray(overlay.lines)) {
+      const tp: number[] = []
+      overlay.lines.forEach((line: any) => {
+        const label = String(line?.label || line?.type || "").toUpperCase()
+        const price = typeof line?.price === "number" ? roundTo(line.price, tickSize, decimals) : undefined
+        if (!price) return
+        if (label.includes("TP")) tp.push(price)
+        if (label.includes("SL")) info.sl = price
+      })
+      if (tp.length > 0) info.tp = tp
+    }
+    if (Array.isArray(overlay.zones)) {
+      const entries: number[] = []
+      const bybk: { range: [number, number]; note?: string }[] = []
+      overlay.zones.forEach((zone: any) => {
+        if (!Array.isArray(zone?.range)) return
+        const lo = typeof zone.range[0] === "number" ? roundTo(zone.range[0], tickSize, decimals) : undefined
+        const hi = typeof zone.range[1] === "number" ? roundTo(zone.range[1], tickSize, decimals) : lo
+        if (zone?.type?.toUpperCase() === "ENTRY" && typeof lo === "number") {
+          entries.push(lo)
+        }
+        if (zone?.type?.toUpperCase() === "BYBK" && typeof lo === "number" && typeof hi === "number") {
+          bybk.push({ range: [lo, hi], note: zone?.note })
+        }
+      })
+      if (entries.length > 0) info.entries = entries
+      if (bybk.length > 0) info.bybk = bybk
+    }
+    if (Array.isArray(overlay.markers)) {
+      const markers: { price?: number; note?: string; direction?: "above" | "below" }[] = []
+      overlay.markers.forEach((mk: any) => {
+        const price = typeof mk?.price === "number" ? roundTo(mk.price, tickSize, decimals) : undefined
+        const label = String(mk?.label || mk?.note || "")
+        const type = String(mk?.type || "").toUpperCase()
+        if (type === "BO" && price) {
+          const dir = label.toLowerCase().includes("below") ? "below" : "above"
+          markers.push({ price, note: label, direction: dir })
+        }
+      })
+      if (markers.length > 0) info.bo = markers
+    }
+  } catch {}
+  return info
+}
+
+function roundTo(value: number, tick: number, decimals: number) {
+  if (!isFinite(value)) return value
+  if (!tick || tick <= 0) return parseFloat(value.toFixed(decimals))
+  const snapped = Math.round(value / tick) * tick
+  return parseFloat(snapped.toFixed(decimals))
+}
+
+function computePivots(rows: any[], left = 15, right = 15) {
+  const highs: number[] = []
+  const lows: number[] = []
+  for (let i = left; i < rows.length - right; i++) {
+    let isHigh = true
+    let isLow = true
+    for (let j = i - left; j <= i + right; j++) {
+      if (rows[j].h > rows[i].h) isHigh = false
+      if (rows[j].l < rows[i].l) isLow = false
+      if (!isHigh && !isLow) break
+    }
+    if (isHigh) highs.push(rows[i].h)
+    if (isLow) lows.push(rows[i].l)
+  }
+  const round = (x: number) => +x.toFixed(6)
+  const uniq = (arr: number[]) => {
+    const out: number[] = []
+    arr.sort((a, b) => a - b)
+    for (const v of arr) {
+      if (out.length === 0 || Math.abs(v - out[out.length - 1]) > 1e-6) out.push(v)
+    }
     return out
   }
   return { highs: uniq(highs.map(round)).slice(-6), lows: uniq(lows.map(round)).slice(-6) }
 }
-function useSRExtra(tab:'tren'|'5m'|'15m'|'1h'|'4h', rows:any[]){
-  return useMemo(()=>{
-    if(tab==='tren' || !rows || rows.length===0) return [] as number[]
-    const { highs, lows } = computePivots(rows, 15, 15)
-    return [...highs, ...lows]
-  },[tab, JSON.stringify(rows?.slice(-220))])
+
+function useSRExtra(tab: Tf, rows: any[]) {
+  return useMemo(() => {
+    if (!rows || rows.length === 0) return [] as number[]
+    if (tab === "5m" || tab === "15m" || tab === "1h" || tab === "4h") {
+      const piv = computePivots(rows, 15, 15)
+      return [...piv.highs, ...piv.lows]
+    }
+    return [] as number[]
+  }, [tab, JSON.stringify(rows?.slice(-220))])
 }
 
-function FuturesSummary({ fut }:{ fut:any }){
-  if(!fut) return <div className="text-sm text-zinc-500">Futures tidak tersedia.</div>
-  const s = fut || {}
-  const rr = s?.risk||{}
-  const sig = s?.futures_signals||{}
-  const tp = s?.tp||[]
-  const ents = s?.entries||[]
-  const dec = typeof s?.price_decimals==='number' ? s.price_decimals : 5
-  const fmt = (n:number)=> typeof n==='number' ? n.toFixed(dec) : n
-  const fundingColor = typeof sig?.funding?.now==='number' ? (sig.funding.now>0 ? 'text-rose-500' : 'text-emerald-500') : 'text-zinc-600'
-  const oiH1 = Number(sig?.oi?.h1)
-  const oiH4 = Number(sig?.oi?.h4)
-  const oiH1Color = isFinite(oiH1) ? (oiH1>0?'text-emerald-500':oiH1<0?'text-rose-500':'text-zinc-600') : 'text-zinc-600'
-  const oiH4Color = isFinite(oiH4) ? (oiH4>0?'text-emerald-500':oiH4<0?'text-rose-500':'text-zinc-600') : 'text-zinc-600'
-  const basisBp = typeof sig?.basis?.bp==='number' ? sig.basis.bp : null
-  const basisColor = basisBp!==null ? (basisBp>0?'text-emerald-500':'text-amber-600') : 'text-zinc-600'
+function FuturesMetrics({ plan, overlay }: { plan: FuturesPlan | null; overlay: OverlaySummary | null }) {
+  if (!plan) return <div className="text-sm text-zinc-500">Data futures belum tersedia.</div>
+  const rr = plan?.risk || {}
+  const sig = plan?.futures_signals || {}
+  const tpOverlay = overlay?.tp || []
+  const slOverlay = overlay?.sl
+  const fmt = (n: number | undefined) => (typeof n === "number" ? n.toFixed(plan?.price_decimals ?? 4) : "-")
+  const fundingColor = typeof sig?.funding?.now === "number" ? (sig.funding.now > 0 ? "text-rose-500" : "text-emerald-500") : "text-zinc-600"
+  const basisBp = typeof sig?.basis?.bp === "number" ? sig.basis.bp : null
+  const basisColor = basisBp !== null ? (basisBp > 0 ? "text-emerald-500" : "text-amber-600") : "text-zinc-600"
+  const oiH1 = Number(sig?.oi?.h1 ?? sig?.oi?.d1 ?? 0)
+  const oiH4 = Number(sig?.oi?.h4 ?? 0)
+  const oiH1Color = isFinite(oiH1) ? (oiH1 > 0 ? "text-emerald-500" : oiH1 < 0 ? "text-rose-500" : "text-zinc-600") : "text-zinc-600"
+  const oiH4Color = isFinite(oiH4) ? (oiH4 > 0 ? "text-emerald-500" : oiH4 < 0 ? "text-rose-500" : "text-zinc-600") : "text-zinc-600"
   return (
-    <section className="rounded-xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white/5 p-3 text-sm space-y-2">
+    <section className="rounded-xl ring-1 ring-indigo-200/60 dark:ring-indigo-500/20 bg-indigo-50/60 dark:bg-indigo-950/40 p-4 text-sm space-y-3">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <div className="text-zinc-500">Side • Leverage</div>
-          <div>{s?.side||'-'} • isolated x={s?.leverage_suggested?.x ?? '-'}</div>
+          <div>{plan?.side || "-"} • isolated x={plan?.leverage_suggested?.x ?? "-"}</div>
         </div>
         <div>
           <div className="text-zinc-500">Risk</div>
-          <div>risk/trade: {rr?.risk_per_trade_pct ?? '-'}% • rr_min: {rr?.rr_min||'-'}</div>
-          <div>liq est: {typeof rr?.liq_price_est==='number' ? rr.liq_price_est : '-'}</div>
+          <div>
+            risk/trade: {rr?.risk_per_trade_pct ?? "-"}% • rr_min: {rr?.rr_min ?? "-"}
+          </div>
+          <div>liq est: {typeof rr?.liq_price_est === "number" ? rr.liq_price_est : "-"}</div>
         </div>
         <div>
           <div className="text-zinc-500">Entries</div>
-          <div>{ents.map((e:any)=> (Array.isArray(e.range)? fmt(e.range[0]): '-')).join(' · ')||'-'}</div>
+          <div>{overlay?.entries?.map((v) => fmt(v)).join(" · ") || "-"}</div>
         </div>
         <div>
-          <div className="text-zinc-500">Invalid (tiers)</div>
-          <div>{['tactical_5m','soft_15m','hard_1h','struct_4h'].map((k)=> s?.invalids?.[k]).filter((x:any)=> typeof x==='number').map((x:number)=> fmt(x)).join(' · ')||'-'}</div>
+          <div className="text-zinc-500">SL</div>
+          <div className="text-rose-500">{slOverlay ? fmt(slOverlay) : "-"}</div>
         </div>
         <div className="md:col-span-2">
-          <div className="text-zinc-500">TP (reduce-only)</div>
-          <div className="text-emerald-600">{tp.map((t:any)=> `${(t?.range||[]).map((x:number)=>fmt(x)).join('–')} (${typeof t?.reduce_only_pct==='number'? t.reduce_only_pct: '-' }%)`).join(' → ')||'-'}</div>
+          <div className="text-zinc-500">TP Ladder</div>
+          <div className="text-emerald-600">{tpOverlay.length > 0 ? tpOverlay.map((v) => fmt(v)).join(" → ") : "-"}</div>
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
-          <div className="text-zinc-500">Funding <span title="Warna hijau: rate negatif (cenderung baik untuk long). Merah: positif.">ⓘ</span></div>
-          <div className={fundingColor} title="Nilai funding saat ini (perpetual)">now: {sig?.funding?.now ?? '-'} • next: {sig?.funding?.next ?? '-'}</div>
-          <div title="Perkiraan waktu funding berikutnya (UTC)">time: {sig?.funding?.time ?? '-'}</div>
+          <div className="text-zinc-500">Funding</div>
+          <div className={fundingColor}>now: {sig?.funding?.now ?? "-"} • next: {sig?.funding?.next ?? "-"}</div>
+          <div>time: {sig?.funding?.time ?? "-"}</div>
         </div>
         <div>
-          <div className="text-zinc-500">Open Interest <span title="Panah hijau ▲: kenaikan OI; merah ▼: penurunan OI.">ⓘ</span></div>
-          <div title="Open Interest saat ini">now: {sig?.oi?.now ?? '-'}</div>
-          <div title="Perubahan OI dalam 1 jam dan 4 jam terakhir">Δ1h: <span className={oiH1Color}>{isFinite(oiH1)? (oiH1>0?'▲':'▼') : ''} {isFinite(oiH1)? oiH1.toFixed(0): '-'}</span> • Δ4h: <span className={oiH4Color}>{isFinite(oiH4)? (oiH4>0?'▲':'▼') : ''} {isFinite(oiH4)? oiH4.toFixed(0): '-'}</span></div>
+          <div className="text-zinc-500">Open Interest</div>
+          <div>now: {sig?.oi?.now ?? "-"}</div>
+          <div>
+            Δ1h: <span className={oiH1Color}>{isFinite(oiH1) ? oiH1.toFixed(0) : "-"}</span> • Δ4h: <span className={oiH4Color}>{isFinite(oiH4) ? oiH4.toFixed(0) : "-"}</span>
+          </div>
         </div>
         <div>
-          <div className="text-zinc-500">Basis <span title="Basis = Mark−Index; bp positif umumnya bullish">ⓘ</span></div>
-          <div title="Basis absolut & dalam basis points">now: {sig?.basis?.now ?? '-'} {typeof sig?.basis?.bp==='number' && <span className={basisColor}>({sig?.basis?.bp.toFixed(1)} bp)</span>}</div>
+          <div className="text-zinc-500">Basis</div>
+          <div>
+            now: {sig?.basis?.now ?? "-"} {basisBp !== null && <span className={basisColor}>({basisBp.toFixed(1)} bp)</span>}
+          </div>
         </div>
         <div>
           <div className="text-zinc-500">LSR</div>
-          <div>acc: {sig?.lsr?.accounts ?? '-'} • pos: {sig?.lsr?.positions ?? '-'}</div>
+          <div>
+            acc: {sig?.lsr?.accounts ?? "-"} • pos: {sig?.lsr?.positions ?? "-"}
+          </div>
         </div>
-        <div className="md:col-span-2">
+        <div>
           <div className="text-zinc-500">Taker Δ</div>
-          <div>m5: {sig?.taker_delta?.m5 ?? '-'} • m15: {sig?.taker_delta?.m15 ?? '-'} • h1: {sig?.taker_delta?.h1 ?? '-'}</div>
+          <div>
+            m5: {sig?.taker_delta?.m5 ?? "-"} • m15: {sig?.taker_delta?.m15 ?? "-"} • h1: {sig?.taker_delta?.h1 ?? "-"}
+          </div>
         </div>
-        {sig?.orderbook && (
+        {overlay?.bybk && overlay.bybk.length > 0 && (
           <div className="md:col-span-2">
-            <div className="text-zinc-500">Orderbook</div>
-            <div>spread: {typeof sig?.orderbook?.spread_bp==='number' ? `${sig?.orderbook?.spread_bp.toFixed(2)} bp` : '-'}, depth10bp: bid {sig?.orderbook?.depth10bp_bid ?? '-'} • ask {sig?.orderbook?.depth10bp_ask ?? '-'}, imbalance: {typeof sig?.orderbook?.imbalance==='number' ? sig?.orderbook?.imbalance.toFixed(2) : '-'}</div>
+            <div className="text-zinc-500">Buy-back Zone</div>
+            <div>{overlay.bybk.map((z) => `[${z.range.map((v) => v.toFixed(plan?.price_decimals ?? 4)).join("-")}] ${z.note ?? ""}`).join("; ")}</div>
+          </div>
+        )}
+        {overlay?.bo && overlay.bo.length > 0 && (
+          <div className="md:col-span-2">
+            <div className="text-zinc-500">Break Out</div>
+            <div>{overlay.bo.map((b) => `${b.direction === "below" ? "Di bawah" : "Di atas"} ${b.price?.toFixed(plan?.price_decimals ?? 4)} ${b.note ?? ""}`).join("; ")}</div>
           </div>
         )}
       </div>
-      {Array.isArray(s?.jam_pantau_wib) && s.jam_pantau_wib.length>0 && (
-        <div>
-          <div className="text-zinc-500">Jam pantau WIB (signifikan)</div>
-          <div className="flex flex-wrap gap-1 text-xs">{s.jam_pantau_wib.map((h:number)=> <span key={h} className="px-2 py-0.5 rounded bg-emerald-600 text-white">{String(h).padStart(2,'0')}:00</span>)}</div>
-        </div>
-      )}
     </section>
   )
-}
-
-function tryFormatGptText(out:any){
-  try{
-    const t = out?.text || {}
-    const s = t.section_scalping || t.section_swing || {}
-    const pos = s.posisi || 'NO-TRADE'
-    const tp = Array.isArray(s.tp)? s.tp : []
-    const sl = s.sl
-    const bybk = Array.isArray(s.bybk)? s.bybk : []
-    const bo = Array.isArray(s.bo)? s.bo : []
-    const strat = Array.isArray(s.strategi_singkat)? s.strategi_singkat : []
-    const fund = Array.isArray(s.fundamental)? s.fundamental : []
-    const lines = [
-      `Posisi : ${pos}`,
-      `TP : ${tp.map((x:any,i:number)=> `${i+1}) ${x}`).join('  ')}`,
-      `SL : ${typeof sl==='number'? sl : '-'}`,
-      bybk.length? `Buy-back (BYBK): ${bybk.map((b:any)=> `[${b?.zone?.[0]}–${b?.zone?.[1]}] ${b?.note||''}`).join('; ')}` : '',
-      bo.length? `Break Out (BO): ${bo.map((b:any)=> `${typeof b?.above==='number'? 'di atas '+b.above: (typeof b?.below==='number'? 'di bawah '+b.below:'')} ${b?.note||''}`).join('; ')}` : '',
-      'Strategi Simple untuk Entry:',
-      ...strat.map((x:string)=> `- ${x}`),
-      fund.length? 'Fundamental:' : '',
-      ...fund.map((x:string)=> `- ${x}`),
-    ].filter(Boolean)
-    return lines.join('\n')
-  }catch{
-    try{ return JSON.stringify(out, null, 2) }catch{ return String(out) }
-  }
 }
