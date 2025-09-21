@@ -15,12 +15,18 @@ from app.services.budget import get_or_init_settings
 from app.models import GPTReport
 import os
 
-
-DEFAULT_TTL_SECONDS = int(os.getenv("GPT_REPORT_TTL_SECONDS", 2700) or 2700)
-
-
 def _utcnow() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
+
+def _get_mode_ttl(mode: Literal["scalping","swing"]) -> int:
+    """
+    TTL default per mode, overrideable via env:
+    GPT_TTL_SCALPING_SECONDS (default 7200 = 2 jam)
+    GPT_TTL_SWING_SECONDS   (default 43200 = 12 jam)
+    """
+    if mode == "swing":
+        return int(os.getenv("GPT_TTL_SWING_SECONDS", 43200) or 43200)
+    return int(os.getenv("GPT_TTL_SCALPING_SECONDS", 7200) or 7200)
 
 
 class AnalyzeBody(BaseModel):
@@ -57,7 +63,8 @@ async def get_latest_report(
         raise HTTPException(
             404, detail={"error_code": "report_not_found", "message": "Belum ada report"}
         )
-    ttl = int(getattr(item, "ttl", DEFAULT_TTL_SECONDS) or DEFAULT_TTL_SECONDS)
+    # Hormati TTL yang tersimpan; jika kosong gunakan TTL per mode
+    ttl = int(getattr(item, "ttl", 0) or 0) or _get_mode_ttl(mode)
     created = getattr(item, "created_at", None) or _utcnow()
     if created.tzinfo is None:
         created = created.replace(tzinfo=dt.timezone.utc)
@@ -124,12 +131,12 @@ async def gpt_analyze(body: AnalyzeBody, db: AsyncSession = Depends(get_db), use
         overlay = {}
         text = {}
     report = GPTReport(
-        symbol=sym,
-        mode=body.mode,
-        text=text or {},
-        overlay=overlay or {},
-        meta=meta or {},
-        ttl=DEFAULT_TTL_SECONDS,
+         symbol=sym,
+         mode=body.mode,
+         text=text or {},
+         overlay=overlay or {},
+         meta=meta or {},
+        ttl=_get_mode_ttl(body.mode),
     )
     db.add(report)
     await db.flush()
@@ -146,8 +153,8 @@ async def gpt_analyze(body: AnalyzeBody, db: AsyncSession = Depends(get_db), use
     meta_out = data.setdefault("meta", {})
     meta_out.setdefault("engine", os.getenv("OPENAI_MODEL", "gpt-5-chat-latest"))
     meta_out["cached_at"] = created.isoformat()
-    meta_out["ttl_seconds"] = int(report.ttl or DEFAULT_TTL_SECONDS)
+    meta_out["ttl_seconds"] = int(report.ttl or _get_mode_ttl(body.mode))
     data["created_at"] = created.isoformat()
-    data["ttl"] = report.ttl or DEFAULT_TTL_SECONDS
+    data["ttl"] = report.ttl or _get_mode_ttl(body.mode)
     return data
 

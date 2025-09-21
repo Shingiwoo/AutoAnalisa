@@ -38,7 +38,11 @@ type OverlaySummary = {
 }
 
 const LOCAL_PREFIX = "gpt_report"
-const DEFAULT_TTL_SECONDS = 2700
+// Fallback TTL (dipakai hanya jika report tidak membawa ttl dari backend)
+const DEFAULT_SCALPING_TTL =
+  Number(process.env.NEXT_PUBLIC_GPT_TTL_SCALPING_SECONDS ?? 7200) || 7200
+const DEFAULT_SWING_TTL =
+  Number(process.env.NEXT_PUBLIC_GPT_TTL_SWING_SECONDS ?? 43200) || 43200
 
 export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefreshQuota }: Props) {
   const [tab, setTab] = useState<Tf>("15m")
@@ -408,19 +412,22 @@ function buildKey(symbol: string, mode: Mode) {
 }
 
 function loadLocalReport(symbol: string, mode: Mode): GptReport | null {
-  if (typeof window === "undefined") return null
-  try {
-    const raw = localStorage.getItem(buildKey(symbol, mode))
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    const createdIso = parsed?.created_at || parsed?.meta?.cached_at
-    const createdMs = createdIso ? Date.parse(createdIso) : parsed?.saved_at
-    const ttl = (parsed?.ttl ?? parsed?.meta?.ttl_seconds ?? DEFAULT_TTL_SECONDS) * 1000
-    if (!createdMs || Date.now() - createdMs > ttl) {
-      localStorage.removeItem(buildKey(symbol, mode))
-      return null
-    }
-    return parsed
+   if (typeof window === "undefined") return null
+   try {
+     const raw = localStorage.getItem(buildKey(symbol, mode))
+     if (!raw) return null
+     const parsed = JSON.parse(raw)
+     const createdIso = parsed?.created_at || parsed?.meta?.cached_at
+     const createdMs = createdIso ? Date.parse(createdIso) : parsed?.saved_at
+    const fallbackTtl =
+      (mode === "swing" ? DEFAULT_SWING_TTL : DEFAULT_SCALPING_TTL) * 1000
+    const ttl =
+      (parsed?.ttl ?? parsed?.meta?.ttl_seconds) * 1000 || fallbackTtl
+     if (!createdMs || Date.now() - createdMs > ttl) {
+       localStorage.removeItem(buildKey(symbol, mode))
+       return null
+     }
+     return parsed
   } catch {
     localStorage.removeItem(buildKey(symbol, mode))
     return null
