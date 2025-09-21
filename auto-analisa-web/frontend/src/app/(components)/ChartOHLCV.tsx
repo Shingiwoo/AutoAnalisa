@@ -70,10 +70,10 @@ export default function ChartOHLCV({ data, overlays, className }:{ data: Row[], 
         if (typeof ln?.price !== 'number') continue
         const label = (ln?.label || ln?.type || '').toString().toUpperCase()
         let color = '#2563eb'
-        let width = 1
+        let width: 1 | 2 | 3 | 4 = 1
         let style = 0
-        if (label.includes('SL')){ color = '#ff4d4f'; width = 2; style = 0 }
-        else if (label.includes('TP')){ color = '#16a34a'; width = 2; style = 0 }
+        if (label.includes('SL')){ color = '#ff4d4f'; width = 2 as const; style = 0 }
+        else if (label.includes('TP')){ color = '#16a34a'; width = 2 as const; style = 0 }
         series.createPriceLine({ price: ln.price, color, lineWidth: width, lineStyle: style, title: ln?.label || label || 'LLM' })
       }
     }
