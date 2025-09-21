@@ -190,18 +190,20 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
   const chartOverlays = useMemo(() => {
     const sr = [...(plan?.support || []), ...(plan?.resistance || []), ...srExtra]
     const invalids = plan?.invalids || {}
-    const entries = (plan?.entries || []).map((e: any) => (Array.isArray(e?.range) ? e.range[0] : undefined)).filter((x: any) => typeof x === "number")
-    const tpBase = (plan?.tp || []).map((t: any) => (Array.isArray(t?.range) ? t.range[0] : undefined)).filter((x: any) => typeof x === "number")
+    // JANGAN tampilkan TP & Entry default.
+    // Tampilkan hanya saat user klik “Terapkan Saran” (pakai ‘applied’)
+    // atau setelah Tanya GPT (overlay LLM digambar via llm).
+    const entriesFromApplied = applied?.entries && applied.entries.length ? applied.entries : undefined
+    const tpFromApplied = applied?.tp && applied.tp.length ? applied.tp : undefined
     return {
       sr,
       invalid: invalids,
-      entries,
-      tp: tpBase,
-      ghost: undefined,
-      liq: plan?.risk?.liq_price_est,
+      entries: entriesFromApplied,     // <— bukan plan default
+      tp: tpFromApplied,               // <— bukan plan default
+      liq: plan?.risk?.liq_price_est,  // Liq tetap ditampilkan
       llm: activeReport?.overlay && !message ? activeReport.overlay : null,
     }
-  }, [plan, tab, ohlcv, activeReport, message, srExtra])
+  }, [plan, applied, tab, ohlcv, activeReport, message, srExtra])
 
   const handleAnalyze = useCallback(async () => {
     if (!llmEnabled || (typeof llmRemaining === "number" && llmRemaining <= 0)) {
