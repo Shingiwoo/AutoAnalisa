@@ -1,6 +1,6 @@
 from .rules import make_levels, Features
 from .regime import detect_regime
-from .strategies_spot import assemble
+from .strategies_spot import plan_pb, plan_bo, plan_rr, plan_sr, plan_ff, _confirmations
 from .fvg import detect_fvg
 from .supply_demand import detect_zones
 from .budget import get_or_init_settings
@@ -12,28 +12,75 @@ import math
 async def build_plan_async(db, bundle, feat: "Features", score: int, mode: str = "auto"):
     lv = make_levels(feat)
     reg = detect_regime(bundle)
-    # Use new regime-aware assembly for SPOT baseline plan
-    assembled = assemble(bundle, lv, reg.get("regime", "TREND"))
-    plan = {
-        **assembled,
-        "score": score,
-        "regime": reg,
-        "swing_highs": lv.get("swing_highs", []),
-        "swing_lows": lv.get("swing_lows", []),
-    }
-    # Normalize and compute rr_min
-    # Enforce rr_min target ≥ 1.6 when normalizing
-    plan, _warns = normalize_and_validate(plan, rr_target=1.6)
-    # sinkronkan tp_logic dengan angka hasil normalisasi
-    tp_logic = list(assembled.get("tp_logic") or [])
+
+    base_candidates: list[dict] = []
+    base_candidates.append(plan_pb(bundle, lv))
+    base_candidates.append(plan_bo(bundle, lv))
+    base_candidates.append(plan_rr(bundle, lv))
+    base_candidates.append(plan_sr(bundle, lv))
+
+    # deteksi opsional FVG untuk kandidat FF
+    extras = {}
+    try:
+        extras["fvg"] = detect_fvg(bundle.get("15m") or list(bundle.values())[0])[:1]
+    except Exception:
+        extras["fvg"] = []
+    if extras.get("fvg"):
+        base_candidates.append(plan_ff(bundle, lv, fvg=extras["fvg"][0]))
+
+    candidate_results: list[dict] = []
+    for cand in base_candidates:
+        seed = dict(cand)
+        seed.setdefault("confirmations", _confirmations(seed.get("mode")))
+        seed["swing_highs"] = lv.get("swing_highs", [])
+        seed["swing_lows"] = lv.get("swing_lows", [])
+        normalized, warns = normalize_and_validate(
+            seed,
+            rr_target=1.6,
+            rr_target_tp1=1.5,
+            context={"resistance": seed.get("resistance")},
+        )
+        merged = {**seed, **normalized}
+        merged.setdefault("warnings", [])
+        merged["warnings"].extend(warns)
+        merged.setdefault("flags", {}).update((normalized or {}).get("flags") or {})
+        merged["regime"] = reg
+        score_val, score_detail = _score_candidate(merged, reg, bundle)
+        merged["score_computed"] = score_val
+        merged["score_detail"] = score_detail
+        candidate_results.append(merged)
+
+    ordered = sorted(candidate_results, key=lambda x: x.get("score_computed", -1e9), reverse=True)
+    best = ordered[0] if ordered else {}
+    plan = dict(best)
+    plan.setdefault("warnings", [])
+    plan.setdefault("flags", {})
+    plan["candidates"] = [
+        {
+            "mode": c.get("mode"),
+            "score": round(float(c.get("score_computed", 0.0)), 2),
+            "rr_tp1_avg": round(float(c.get("rr_tp1_avg", 0.0)), 2),
+            "rr_min": round(float(c.get("rr_min", 0.0)), 2),
+            "flags": c.get("flags", {}),
+        }
+        for c in ordered[:5]
+    ]
+    plan["score"] = int(round(score + float(plan.get("score_computed", 0.0)) * 10))
+    plan.setdefault("seed_tp_profile", best.get("seed_tp_profile"))
+    plan.setdefault("confirmations", best.get("confirmations"))
+    plan.setdefault("entry_notes", list(best.get("entry_notes") or []))
+    plan.setdefault("tp_logic", list(best.get("tp_logic") or []))
+    plan.setdefault("swing_highs", lv.get("swing_highs", []))
+    plan.setdefault("swing_lows", lv.get("swing_lows", []))
+
     tp_vals = list(plan.get("tp") or [])
+    tp_logic = list(plan.get("tp_logic") or [])
     if tp_vals and tp_logic:
         while len(tp_logic) < len(tp_vals):
             tp_logic.append(tp_logic[-1])
         plan["tp_logic"] = tp_logic[: len(tp_vals)]
     else:
         plan["tp_logic"] = tp_logic
-    plan["entry_notes"] = list(assembled.get("entry_notes") or [])
 
     # Derive invalid bertingkat (tactical 5m, soft 15m, hard 1h, struct 4h[opsional])
     try:
@@ -131,41 +178,60 @@ def _build_buyback(plan: dict, bundle, atr15: float) -> list[dict]:
     sup = list(plan.get("support") or [])
     out: list[dict] = []
     atr = float(atr15 or 0.0)
-    buf1 = atr * 0.25
-    buf2 = atr * 0.35
-    buf3 = atr * 0.45
-    ema50 = None
-    ema100 = None
+    last15 = bundle.get("15m").iloc[-1] if bundle and "15m" in bundle else None
+    last1h = bundle.get("1h").iloc[-1] if bundle and "1h" in bundle else None
+
+    def _node(name: str, center: float, buf: float, note: str) -> dict:
+        return {
+            "name": name,
+            "range": [round(center - buf, 6), round(center + buf, 6)],
+            "note": note,
+        }
+
     try:
-        ema50 = float(bundle["15m"].iloc[-1].ema50)
-        ema100 = float(bundle["15m"].iloc[-1].ema100)
+        vwap15 = float(getattr(last15, "vwap")) if last15 is not None else None
     except Exception:
-        pass
-    if sup:
-        s1 = float(sup[0])
-        out.append({
-            "name": "BB1",
-            "range": [round(s1 - buf1, 6), round(s1 + buf1, 6)],
-            "note": "Support terdekat",
-        })
-    if len(sup) > 1 or ema50:
-        base = float(sup[1]) if len(sup) > 1 else float(ema50 or sup[0])
-        out.append({
-            "name": "BB2",
-            "range": [round(base - buf2, 6), round(base + buf2, 6)],
-            "note": "EMA50 / entry lebih aman",
-        })
+        vwap15 = None
+    try:
+        ema50 = float(getattr(last15, "ema50")) if last15 is not None else None
+    except Exception:
+        ema50 = None
+    try:
+        ema100 = float(getattr(last15, "ema100")) if last15 is not None else None
+    except Exception:
+        ema100 = None
+    try:
+        vwap1h = float(getattr(last1h, "vwap")) if last1h is not None else None
+    except Exception:
+        vwap1h = None
+
+    buf1 = max(atr * 0.22, abs(vwap15 or (sup[0] if sup else 0.0)) * 1e-4)
+    buf2 = max(atr * 0.32, abs(ema50 or (sup[1] if len(sup) > 1 else sup[0] if sup else 0.0)) * 1e-4)
+    buf3 = max(atr * 0.42, abs(ema100 or (sup[2] if len(sup) > 2 else sup[-1] if sup else 0.0)) * 1e-4)
+
+    if vwap15:
+        out.append(_node("BB1", float(vwap15), buf1, "VWAP 15m / mid sesi"))
+    elif sup:
+        out.append(_node("BB1", float(sup[0]), buf1, "Support terdekat"))
+
+    base2 = None
+    if ema50:
+        base2 = float(ema50)
+    elif len(sup) > 1:
+        base2 = float(sup[1])
+    if base2 is not None:
+        out.append(_node("BB2", base2, buf2, "EMA50 15m / buyback layer"))
+
     base3 = None
-    if len(sup) > 2:
-        base3 = float(sup[2])
-    elif ema100:
+    if ema100:
         base3 = float(ema100)
+    elif vwap1h:
+        base3 = float(vwap1h)
+    elif len(sup) > 2:
+        base3 = float(sup[2])
     if base3 is not None:
-        out.append({
-            "name": "BB3",
-            "range": [round(base3 - buf3, 6), round(base3 + buf3, 6)],
-            "note": "EMA100 / support kuat",
-        })
+        out.append(_node("BB3", base3, buf3, "EMA100/VWAP 1H"))
+
     return out[:3]
 
 
@@ -186,6 +252,72 @@ def _macro_notes() -> list[str]:
         "Hindari entry baru di 22:00–01:00 WIB; jika posisi aktif → partial 25-50%.",
         "Pantau DXY & US10Y: risk-on jika melemah; periksa aliran ETF spot BTC & operasi PBOC.",
     ]
+
+
+def _score_candidate(plan: dict, regime: dict, bundle) -> tuple[float, dict]:
+    details: dict = {}
+    total = 0.0
+    rr_avg = float(plan.get("rr_tp1_avg") or 0.0)
+    details["rr_tp1_avg"] = rr_avg
+    if rr_avg >= 1.5:
+        total += (rr_avg - 1.4) * 6.0
+    else:
+        total -= (1.5 - rr_avg) * 8.0
+    rr_min = float(plan.get("rr_min") or 0.0)
+    details["rr_min"] = rr_min
+    if rr_min >= 1.8:
+        total += 2.0
+    elif rr_min < 1.4:
+        total -= 1.5
+
+    reg_name = str((regime or {}).get("regime", "TREND"))
+    mode = str(plan.get("mode") or "").upper()
+    regime_bonus = 0.0
+    if mode == "PB" and reg_name == "TREND":
+        regime_bonus = 2.0
+    elif mode == "BO" and reg_name == "RANGE":
+        regime_bonus = 2.0
+    elif mode in {"SR", "RR", "FF"} and reg_name == "VOLATILE":
+        regime_bonus = 1.5
+    details["regime_bonus"] = regime_bonus
+    total += regime_bonus
+
+    try:
+        last15 = bundle.get("15m").iloc[-1] if bundle and "15m" in bundle else None
+        if last15 is not None:
+            atr15 = float(getattr(last15, "atr14", 0.0) or 0.0)
+            vwap15 = float(getattr(last15, "vwap", getattr(last15, "close", 0.0)) or 0.0)
+            entries = list(plan.get("entries") or [])
+            if entries and atr15:
+                diff = abs(float(entries[0]) - vwap15)
+                confluence = max(0.0, (atr15 * 0.6 - diff) / max(atr15, 1e-9))
+                details["vwap_confluence"] = confluence
+                total += confluence * 1.5
+    except Exception:
+        pass
+
+    try:
+        invalid = float(plan.get("invalid")) if plan.get("invalid") is not None else None
+        swing_lows = plan.get("swing_lows") or []
+        if invalid is not None and swing_lows:
+            nearest = min(float(x) for x in swing_lows if x is not None)
+            buffer = invalid - nearest
+            if buffer > 0 and abs(invalid) > 0:
+                safety = min(buffer / max(abs(invalid), 1e-6), 0.5)
+                details["invalid_buffer"] = safety
+                total += safety
+    except Exception:
+        pass
+
+    if plan.get("confirmations"):
+        details["confirmations"] = 0.5
+        total += 0.5
+
+    if (plan.get("flags") or {}).get("no_trade"):
+        details["penalty_no_trade"] = -5.0
+        total -= 5.0
+
+    return total, details
 
 
 def _macro_score(plan: dict, regime: dict) -> tuple[float, float, str]:
@@ -251,7 +383,8 @@ async def build_spot2_from_plan(db, symbol: str, plan: dict, bundle=None) -> dic
             entry["note"] = entry_notes[i]
         entries_struct.append(entry)
 
-    qty_template = [30, 40, 30]
+    profile_seed = plan.get("seed_tp_profile") or {}
+    qty_template = list(profile_seed.get("qty_pct") or [30, 40, 30])
     tp_struct = []
     for i, price in enumerate(tp_arr):
         val = _f(price)
@@ -293,11 +426,13 @@ async def build_spot2_from_plan(db, symbol: str, plan: dict, bundle=None) -> dic
             "enabled": True,
             "anchor": "HL 15m",
             "offset_atr": 0.6,
+            "breakeven_after_tp1": True,
         },
         "time_exit": {
             "enabled": True,
             "ttl_min": 240,
             "reason": "Stagnan > 4 jam",
+            "reduce_pct": 30,
         },
         "buyback": buyback,
         "macro_gate": {
@@ -306,6 +441,7 @@ async def build_spot2_from_plan(db, symbol: str, plan: dict, bundle=None) -> dic
         },
         "metrics": {
             "rr_min": float(plan.get("rr_min", 0.0) or 0.0),
+            "rr_tp1_avg": float(plan.get("rr_tp1_avg", 0.0) or 0.0),
             "tick_ok": True,
             "macro_score": macro_score,
             "macro_score_threshold": macro_threshold,
@@ -321,6 +457,10 @@ async def build_spot2_from_plan(db, symbol: str, plan: dict, bundle=None) -> dic
             "h1": _f(plan.get("invalid_hard_1h")) or invalid_val,
             "h4": _f(plan.get("invalid_struct_4h")),
         },
+        "tp_profile": profile_seed,
+        "confirmations": plan.get("confirmations") or {},
+        "flags": dict(plan.get("flags") or {}),
+        "candidates": list(plan.get("candidates") or []),
     }
 
     if atr15 is not None:
@@ -330,6 +470,8 @@ async def build_spot2_from_plan(db, symbol: str, plan: dict, bundle=None) -> dic
         spot2["warnings"].append("Macro score < threshold; gunakan mode range (RR) & TP cepat.")
     if float(plan.get("rr_min", 0.0) or 0.0) < 1.8:
         spot2["warnings"].append("RR < 1.8 — pertimbangkan perketat invalid atau kurangi ukuran.")
+    if (plan.get("flags") or {}).get("no_trade"):
+        spot2["warnings"].append("RR TP1 gagal memenuhi syarat. Tandai sebagai NO-TRADE kecuali angka diperbaiki.")
 
     # Jalankan validator SPOT II agar konsisten dengan jalur LLM
     try:

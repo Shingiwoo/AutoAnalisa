@@ -67,6 +67,7 @@ def validate_futures(plan: Dict) -> Dict:
     try:
         s = dict(plan or {})
         side = (s.get("side") or "LONG").upper()
+        profile = str((s.get("profile") or "scalp")).lower()
         rjb = list(s.get("entries") or [])
         entries: List[float] = []
         weights: List[float] = []
@@ -106,7 +107,8 @@ def validate_futures(plan: Dict) -> Dict:
         slippage_bp = float(risk.get("slippage_bp", 0.0) or 0.0)
         liq_price_est = risk.get("liq_price_est")
         liq_buffer_abs = risk.get("liq_buffer_abs")  # numeric absolute buffer (e.g., k*ATR15m)
-        rr_req = 1.5
+        metrics = dict(s.get("metrics") or {})
+        rr_req = float(metrics.get("rr_target") or (1.2 if profile == "scalp" else 1.6))
         tp1 = tp_prices[0] if tp_prices else None
 
         # ensure weights sum=1 and in-range

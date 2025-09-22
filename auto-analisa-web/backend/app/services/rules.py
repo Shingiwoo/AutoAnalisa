@@ -1,4 +1,4 @@
-from .indicators import ema, bb, rsi, macd, atr, rsi_n
+from .indicators import ema, bb, rsi, macd, atr, rsi_n, vwap
 import numpy as np
 
 
@@ -23,6 +23,7 @@ class Features:
             m, s, h = macd(df.close)
             df["macd"], df["signal"], df["hist"] = m, s, h
             df["atr14"] = atr(df, 14)
+            df["vwap"] = vwap(df)
         return self
 
     def latest(self, tf):

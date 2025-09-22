@@ -53,3 +53,20 @@ def atr(df: pd.DataFrame, n: int = 14):
         axis=1,
     ).max(axis=1)
     return tr.rolling(n).mean()
+
+
+def vwap(df: pd.DataFrame, window: int | None = None) -> pd.Series:
+    """Hitung VWAP sederhana menggunakan data harga & volume."""
+    if df is None or df.empty:
+        return pd.Series(dtype=float)
+    price = (df["high"] + df["low"] + df["close"]) / 3.0
+    volume = pd.to_numeric(df.get("volume"), errors="coerce").fillna(0.0)
+    pv = price * volume
+    if window and window > 1:
+        pv_sum = pv.rolling(window, min_periods=1).sum()
+        vol_sum = volume.rolling(window, min_periods=1).sum()
+    else:
+        pv_sum = pv.cumsum()
+        vol_sum = volume.cumsum()
+    out = pv_sum / (vol_sum.replace(0.0, np.nan))
+    return out.fillna(method="ffill").fillna(method="bfill")

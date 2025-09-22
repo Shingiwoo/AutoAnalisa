@@ -1,5 +1,6 @@
 import math
-import os, sys, math
+import os
+import sys
 # ensure backend/app is importable as 'app'
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from app.services.validator import normalize_and_validate, compute_rr_min, validate_spot2
@@ -18,6 +19,7 @@ def test_tp_strict_ascending_and_weights_norm():
     assert fixed["tp"][0] < fixed["tp"][1]
     assert abs(sum(fixed["weights"]) - 1.0) < 1e-6
     assert fixed["rr_min"] >= 0.0
+    assert "rr_tp1_avg" in fixed
 
 
 def test_rr_min_and_auto_tighten_invalid():
@@ -36,8 +38,24 @@ def test_rr_min_and_auto_tighten_invalid():
         "resistance": [],
     }
     fixed, warns = normalize_and_validate(plan)
-    assert fixed["rr_min"] >= 1.2
+    assert fixed["rr_min"] >= 1.6
+    assert fixed["rr_tp1_avg"] >= 1.5
+    assert fixed["flags"].get("rr_tp1_ok") is True
     assert fixed["invalid"] > invalid  # tightened upward
+
+
+def test_rr_tp1_flag_no_trade_when_cannot_meet():
+    plan = {
+        "entries": [100.0],
+        "weights": [1.0],
+        "invalid": 99.4,
+        "tp": [99.8],
+        "support": [],
+        "resistance": [],
+    }
+    fixed, warns = normalize_and_validate(plan)
+    assert fixed["flags"].get("no_trade") is True
+    assert fixed["rr_tp1_avg"] < 1.5
 
 
 def test_validate_spot2_rewrites_tp_and_propagates_rr():
@@ -61,5 +79,7 @@ def test_validate_spot2_rewrites_tp_and_propagates_rr():
     assert all(tps[i] < tps[i+1] for i in range(len(tps)-1))
     # rr_min should be present
     assert "metrics" in fixed and fixed["metrics"].get("rr_min", 0.0) >= 0.0
+    assert fixed.get("flags")
+    assert isinstance(fixed["flags"].get("rr_tp1_ok"), bool)
     # qty pct normalized to 100
     assert round(sum(t.get("qty_pct", 0.0) for t in fixed.get("tp", [])), 2) == 100.0

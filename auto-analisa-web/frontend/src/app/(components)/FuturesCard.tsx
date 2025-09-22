@@ -62,6 +62,14 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
   const overlayTf = activeReport?.overlay?.tf
   const srExtra = useSRExtra(tab, ohlcv)
 
+  const planBase = useMemo(() => {
+    if (!plan) return null
+    if (tab === "1h" || tab === "4h") {
+      return (plan.variants && (plan.variants as any).swing) ? (plan.variants as any).swing : plan
+    }
+    return plan
+  }, [plan, tab])
+
   // Default mode mengikuti tab
   useEffect(() => {
     if (tab === "5m" || tab === "15m") setMode((prev) => (prev === "scalping" ? prev : "scalping"))
@@ -155,16 +163,16 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
   }, [symbol, mode])
 
   const decimals = useMemo(() => {
-    const d = plan?.price_decimals
+    const d = planBase?.price_decimals
     if (typeof d === "number" && d >= 0) return d
     try {
       const sample = (() => {
         const arr: number[] = []
-        ;(plan?.entries || []).forEach((e: any) => {
+        ;(planBase?.entries || []).forEach((e: any) => {
           const v = Array.isArray(e?.range) ? e.range[0] : undefined
           if (typeof v === "number") arr.push(v)
         })
-        if (typeof plan?.invalids?.hard_1h === "number") arr.push(plan.invalids.hard_1h)
+        if (typeof planBase?.invalids?.hard_1h === "number") arr.push(planBase.invalids.hard_1h)
         return arr.find((x) => typeof x === "number") ?? 1
       })()
       if (sample >= 1000) return 2
@@ -176,14 +184,14 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
     } catch {
       return 5
     }
-  }, [plan])
+  }, [planBase])
 
   const tickSize = useMemo(() => {
-    if (plan?.precision?.tickSize && typeof plan.precision.tickSize === "number") {
-      return plan.precision.tickSize
+    if (planBase?.precision?.tickSize && typeof planBase.precision.tickSize === "number") {
+      return planBase.precision.tickSize
     }
     return Math.pow(10, -decimals)
-  }, [plan, decimals])
+  }, [planBase, decimals])
 
   const overlayInfo = useMemo(() => {
     if (!activeReport) return extractOverlay(null, tickSize, decimals)
@@ -192,8 +200,8 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
   }, [activeReport, tickSize, decimals, message])
 
   const chartOverlays = useMemo(() => {
-    const sr = [...(plan?.support || []), ...(plan?.resistance || []), ...srExtra]
-    const invalids = plan?.invalids || {}
+    const sr = [...(planBase?.support || []), ...(planBase?.resistance || []), ...srExtra]
+    const invalids = planBase?.invalids || {}
     // JANGAN tampilkan TP & Entry default.
     // Tampilkan hanya saat user klik “Terapkan Saran” (pakai ‘applied’)
     // atau setelah Tanya GPT (overlay LLM digambar via llm).
@@ -204,10 +212,10 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
       invalid: invalids,
       entries: entriesFromApplied,     // <— bukan plan default
       tp: tpFromApplied,               // <— bukan plan default
-      liq: plan?.risk?.liq_price_est,  // Liq tetap ditampilkan
+      liq: planBase?.risk?.liq_price_est,  // Liq tetap ditampilkan
       llm: activeReport?.overlay && !message ? activeReport.overlay : null,
     }
-  }, [plan, applied, tab, ohlcv, activeReport, message, srExtra])
+  }, [planBase, applied, tab, ohlcv, activeReport, message, srExtra])
 
   const handleAnalyze = useCallback(async () => {
     if (!llmEnabled || (typeof llmRemaining === "number" && llmRemaining <= 0)) {
@@ -216,10 +224,11 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
     }
     try {
       setBusy(true)
+      const planForMode = mode === "swing" ? (plan?.variants?.swing || planBase || plan) : (planBase || plan)
       const payload: any = {
         symbol,
         tf,
-        futures: plan,
+        futures: planForMode,
       }
       if (tf !== "15m") {
         try {
@@ -271,9 +280,9 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
   }, [overlayInfo, activeReport, mode])
 
   const appliedPlan = useMemo(() => {
-    if (!plan) return null
-    if (!applied) return plan
-    const next = { ...plan }
+    if (!planBase) return null
+    if (!applied) return planBase
+    const next = { ...planBase }
     if (applied.entries && applied.entries.length > 0) {
       next.entries = applied.entries.map((v) => ({ range: [v, v], weight: 50, type: "ENTRY" }))
     }
@@ -288,14 +297,14 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
       if (posisi) next.side = posisi
     } catch {}
     return next
-  }, [plan, applied, activeReport, mode])
+  }, [planBase, applied, activeReport, mode])
 
   useEffect(() => {
     if (!activeReport) return
     setMessage(checkNoTrade(activeReport, mode))
   }, [activeReport, mode])
 
-  const planDisplay = appliedPlan || plan
+  const planDisplay = appliedPlan || planBase
 
   return (
     <div className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 shadow-sm p-4 md:p-6 space-y-4 text-zinc-900 dark:text-zinc-100">
@@ -304,6 +313,16 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
           <span>{symbol.toUpperCase()}</span>
           {plan?.tf_base && (
             <span className="px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-xs">{plan.tf_base}</span>
+          )}
+          {planDisplay?.profile && (
+            <span className="px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200 text-xs">
+              {planDisplay.profile.toUpperCase()}
+            </span>
+          )}
+          {typeof planDisplay?.ttl_min === "number" && (
+            <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200 text-xs">
+              TTL {planDisplay.ttl_min}m
+            </span>
           )}
         </div>
         {activeReport?.created_at && (
@@ -561,6 +580,9 @@ function FuturesMetrics({ plan, overlay }: { plan: FuturesPlan | null; overlay: 
   const oiH4 = Number(sig?.oi?.h4 ?? 0)
   const oiH1Color = isFinite(oiH1) ? (oiH1 > 0 ? "text-emerald-500" : oiH1 < 0 ? "text-rose-500" : "text-zinc-600") : "text-zinc-600"
   const oiH4Color = isFinite(oiH4) ? (oiH4 > 0 ? "text-emerald-500" : oiH4 < 0 ? "text-rose-500" : "text-zinc-600") : "text-zinc-600"
+  const profileLabel = plan?.profile_config?.label || (plan?.profile ? String(plan.profile).toUpperCase() : "-")
+  const ttlText = typeof plan?.ttl_min === "number" ? `${plan.ttl_min} menit` : "-"
+  const tpPctText = Array.isArray(plan?.tp_pct) ? plan.tp_pct.join(" / ") : null
   return (
     <section className="rounded-xl ring-1 ring-indigo-200/60 dark:ring-indigo-500/20 bg-indigo-50/60 dark:bg-indigo-950/40 p-4 text-sm space-y-3">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -574,6 +596,11 @@ function FuturesMetrics({ plan, overlay }: { plan: FuturesPlan | null; overlay: 
             risk/trade: {rr?.risk_per_trade_pct ?? "-"}% • rr_min: {rr?.rr_min ?? "-"}
           </div>
           <div>liq est: {typeof rr?.liq_price_est === "number" ? rr.liq_price_est : "-"}</div>
+        </div>
+        <div>
+          <div className="text-zinc-500">Profil</div>
+          <div>{profileLabel}</div>
+          <div className="text-xs text-zinc-500/80">TTL: {ttlText}{tpPctText ? ` • TP ${tpPctText}%` : ""}</div>
         </div>
         <div>
           <div className="text-zinc-500">Entries</div>
