@@ -15,7 +15,7 @@ import os
 router = APIRouter(prefix="/futures", tags=["futures"])
 
 async def _build_futures(symbol: str, db: AsyncSession, user, use_llm: bool = False):
-    bundle = await fetch_bundle(symbol, tfs=("4h","1h","15m","5m"), market="futures")
+    bundle = await fetch_bundle(symbol, tfs=("4h","1h","15m","5m","1m"), market="futures")
     feat = Features(bundle); feat.enrich()
     sig = await latest_signals(db, symbol)
     allow_llm = False

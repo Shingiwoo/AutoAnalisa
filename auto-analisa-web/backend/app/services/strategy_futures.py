@@ -18,26 +18,32 @@ from .utils_num import nearest_round, round_to_step
 SCORE_THRESHOLD = 60
 USE_MACRO_GATING = False
 
-PROFILE_CONFIG = {
+PROFILES = {
     "scalp": {
-        "ttl_min": 120,
-        "atr_tf": "15m",
-        "sl_atr": 0.45,
-        "tp_multipliers": [1.0, 1.6],
-        "tp_pct": [50, 50],
+        "tf_exec": ["1m", "5m"],
+        "tf_context": "15m",
         "min_rr": 1.2,
-        "entry_weights": [0.5, 0.5],
+        "ttl_min": [90, 150],
+        "sl_buf_atr": 0.4,
+        "tp_atr": [1.0, 1.6],
+        "tp_split": [0.5, 0.5],
+        "avoid_news_min": 30,
+        "vol_mult": 1.2,
         "label": "Scalping",
+        "entry_weights": [0.5, 0.5],
     },
     "swing": {
-        "ttl_min": 720,
-        "atr_tf": "1h",
-        "sl_atr": 0.8,
-        "tp_multipliers": [2.0, 3.0],
-        "tp_pct": [40, 60],
+        "tf_exec": ["15m", "1h"],
+        "tf_context": "1h",
         "min_rr": 1.6,
-        "entry_weights": [0.4, 0.6],
+        "ttl_min": [360, 1440],
+        "sl_buf_atr": 0.8,
+        "tp_atr": [2.0, 3.0],
+        "tp_split": [0.4, 0.6],
+        "avoid_news_min": 15,
+        "vol_mult": 1.0,
         "label": "Swing",
+        "entry_weights": [0.4, 0.6],
     },
 }
 
@@ -116,6 +122,423 @@ def _round_number_near(price: float, symbol: str | None = None) -> float:
         return round(round(p / step) * step, 6)
     except Exception:
         return float(price)
+
+
+def _vol_snapshot(bundle: Dict[str, pd.DataFrame], prefer: Tuple[str, ...] = ("1m", "5m")) -> Tuple[float | None, float | None, str | None]:
+    for tf in prefer:
+        df = bundle.get(tf)
+        if df is None or len(df) < 5:
+            continue
+        try:
+            vol = df["volume"].astype(float)
+            if len(vol) < 5:
+                continue
+            current = float(vol.iloc[-1])
+            ma20 = float(vol.tail(20).mean()) if len(vol) >= 20 else float(vol.mean())
+            return current, ma20, tf
+        except Exception:
+            continue
+    return None, None, None
+
+
+def _micro_swing_price(bundle: Dict[str, pd.DataFrame], side: str) -> float | None:
+    try:
+        if side == "LONG":
+            lows: List[float] = []
+            for tf in ("5m", "15m"):
+                df = bundle.get(tf)
+                if df is not None:
+                    val = _swing_low(df, lookback=6)
+                    if val is not None:
+                        lows.append(float(val))
+            return min(lows) if lows else None
+        else:
+            highs: List[float] = []
+            for tf in ("5m", "15m"):
+                df = bundle.get(tf)
+                if df is not None:
+                    val = _swing_high(df, lookback=6)
+                    if val is not None:
+                        highs.append(float(val))
+            return max(highs) if highs else None
+    except Exception:
+        return None
+
+
+def _tp_targets(side: str, avg_entry: float, atr: float, profile_cfg: Dict[str, Any]) -> Tuple[float, float]:
+    mults = list(profile_cfg.get("tp_atr") or [1.0, 1.6])
+    m1 = float(mults[0] if mults else 1.0)
+    m2 = float(mults[1] if len(mults) > 1 else m1 * 1.5)
+    if side == "LONG":
+        return avg_entry + m1 * atr, avg_entry + m2 * atr
+    return avg_entry - m1 * atr, avg_entry - m2 * atr
+
+
+def _apply_sl_buffer(swing_price: float | None, side: str, atr: float, profile_cfg: Dict[str, Any]) -> float | None:
+    if swing_price is None:
+        return None
+    buf = float(profile_cfg.get("sl_buf_atr", 0.4) or 0.0) * float(atr)
+    if side == "LONG":
+        return float(swing_price) - buf
+    return float(swing_price) + buf
+
+
+def _resolve_stop(entries: List[float], sl_seed: float | None, atr: float, price: float, side: str) -> float:
+    buffer_edge = max(0.25 * atr, abs(price) * 1e-4)
+    if side == "LONG":
+        base = min(entries)
+        fallback = base - max(0.6 * atr, abs(price) * 1e-4)
+        sl_val = fallback if sl_seed is None else float(sl_seed)
+        sl_val = min(sl_val, base - buffer_edge)
+        if sl_val >= base:
+            sl_val = base - buffer_edge
+        return float(sl_val)
+    base = max(entries)
+    fallback = base + max(0.6 * atr, abs(price) * 1e-4)
+    sl_val = fallback if sl_seed is None else float(sl_seed)
+    sl_val = max(sl_val, base + buffer_edge)
+    if sl_val <= base:
+        sl_val = base + buffer_edge
+    return float(sl_val)
+
+
+def _candidate(side: str,
+               entries: List[float],
+               invalid: float,
+               tp: List[float],
+               setup: str,
+               notes: List[str],
+               vol_ok: bool = True,
+               meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    return {
+        "side": side,
+        "entries": [float(entries[0]), float(entries[1] if len(entries) > 1 else entries[0])],
+        "invalid": float(invalid),
+        "tp": [float(tp[0]), float(tp[1] if len(tp) > 1 else tp[0])],
+        "setup": setup,
+        "notes": list(notes or []),
+        "vol_ok": bool(vol_ok),
+        "meta": meta or {},
+    }
+
+
+def pick_by_rr_confluence(candidates: List[Dict[str, Any]],
+                          min_rr: float,
+                          fee_bp: float,
+                          slippage_bp: float) -> Optional[Dict[str, Any]]:
+    best: Optional[Dict[str, Any]] = None
+    best_score = -1e9
+    for cand in candidates:
+        side = cand.get("side") or "LONG"
+        entries = cand.get("entries") or []
+        invalid = cand.get("invalid")
+        tp_list = cand.get("tp") or []
+        if not entries or invalid is None or not tp_list:
+            continue
+        tp1 = tp_list[0]
+        rr = compute_rr_min_futures(side, entries, float(tp1), float(invalid), fee_bp, slippage_bp)
+        cand["rr"] = rr
+        score = rr * 10.0
+        if not cand.get("vol_ok", True):
+            score -= 5.0
+        # Tambah sedikit bobot bila setup pullback / reclaim
+        setup = str(cand.get("setup") or "")
+        if "PB" in setup:
+            score += 1.5
+        if rr >= float(min_rr):
+            score += 4.0
+        if score > best_score:
+            best_score = score
+            best = cand
+    return best
+
+
+def _make_scalp_candidates(bundle: Dict[str, pd.DataFrame],
+                           levels: Dict[str, Any],
+                           profile_cfg: Dict[str, Any],
+                           bias: str,
+                           symbol: Optional[str],
+                           vol_ok: bool,
+                           fut_signals: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    df15 = bundle.get("15m")
+    if df15 is None:
+        df15 = next(iter(bundle.values()))
+    df5 = bundle.get("5m")
+    if df5 is None:
+        df5 = df15
+    last15 = df15.iloc[-1]
+    last5 = df5.iloc[-1]
+    price = float(getattr(last5, "close", getattr(last15, "close", 0.0)))
+    atr = float(getattr(last15, "atr14", 0.0) or _atr(df15, 14) or 0.0)
+    atr = max(atr, abs(price) * 1e-4)
+    sup_levels = list(levels.get("support") or [])
+    res_levels = list(levels.get("resistance") or [])
+    sup1 = float(sup_levels[0]) if sup_levels else price * 0.985
+    res1 = float(res_levels[0]) if res_levels else price * 1.015
+    sup_psy = _round_number_near(sup1, symbol)
+    res_psy = _round_number_near(res1, symbol)
+    ema20_15 = float(getattr(last15, "ema20", price))
+    vwap15 = float(getattr(last15, "vwap", ema20_15))
+    ema20_5 = float(getattr(last5, "ema20", getattr(last5, "ema5", price))) if "ema20" in last5.index else price
+    vwap5 = float(getattr(last5, "vwap", ema20_5)) if "vwap" in last5.index else ema20_5
+    prev5 = df5.iloc[-2] if len(df5) >= 2 else last5
+    delta_m5 = None
+    try:
+        delta_m5 = float(((fut_signals or {}).get("taker_delta") or {}).get("m5"))
+    except Exception:
+        delta_m5 = None
+
+    body = abs(float(getattr(last5, "close", price)) - float(getattr(last5, "open", price)))
+    range_total = max(float(getattr(last5, "high", price)) - float(getattr(last5, "low", price)), abs(price) * 1e-6)
+    bullish = float(getattr(last5, "close", price)) > float(getattr(last5, "open", price))
+    bearish = float(getattr(last5, "close", price)) < float(getattr(last5, "open", price))
+    body_ratio = body / range_total if range_total > 0 else 0.0
+    momentum_m5 = bearish and body_ratio >= 0.55
+    momentum_up = bullish and body_ratio >= 0.55
+
+    bo_trigger_long = float(getattr(last5, "high", price)) > res_psy * 1.0002 and float(getattr(last5, "close", price)) > res_psy
+    pb_reclaim = (
+        float(getattr(last15, "close", price)) > ema20_15
+        and float(getattr(last15, "close", price)) > vwap15
+        and bullish
+        and float(getattr(last5, "close", price)) >= max(ema20_5, vwap5)
+    )
+    breakdown_micro = float(getattr(last5, "low", price)) < sup_psy * 0.999 and float(getattr(last5, "close", price)) < sup_psy
+    reversal_micro = (
+        float(getattr(last5, "close", price)) > sup_psy
+        and momentum_up
+        and float(getattr(last5, "close", price)) >= max(ema20_5, vwap5)
+    )
+    bo_trigger_short = float(getattr(last5, "low", price)) < sup_psy * 0.9995 and float(getattr(last5, "close", price)) < sup_psy
+    pb_retest_fail = (
+        float(getattr(prev5, "close", price)) >= sup_psy
+        and float(getattr(last5, "close", price)) < sup_psy
+        and bearish
+        and body_ratio >= 0.4
+    )
+
+    swing_long = _micro_swing_price(bundle, "LONG")
+    swing_short = _micro_swing_price(bundle, "SHORT")
+    sl_long = _apply_sl_buffer(swing_long, "LONG", atr, profile_cfg)
+    sl_short = _apply_sl_buffer(swing_short, "SHORT", atr, profile_cfg)
+
+    vol_meta = {}
+    vol_curr, vol_ma, vol_tf = _vol_snapshot(bundle, tuple(profile_cfg.get("tf_exec") or ("1m", "5m")))
+    if vol_curr is not None:
+        vol_meta = {"tf": vol_tf, "current": vol_curr, "ma20": vol_ma, "mult": float(profile_cfg.get("vol_mult", 1.2))}
+        vol_meta["ok"] = vol_ok
+
+    cands: List[Dict[str, Any]] = []
+    if bias == "LONG":
+        if bo_trigger_long and vol_ok:
+            entry_break = res_psy + max(0.1 * atr, abs(res_psy) * 1e-5)
+            entry_retest = res_psy - max(0.25 * atr, abs(res_psy) * 1e-5)
+            entries = [entry_break, entry_retest]
+            avg_entry = sum(entries) / len(entries)
+            tp1, tp2 = _tp_targets("LONG", avg_entry, atr, profile_cfg)
+            sl_val = _resolve_stop(entries, sl_long, atr, price, "LONG")
+            cands.append(
+                _candidate(
+                    "LONG",
+                    entries,
+                    sl_val,
+                    [tp1, tp2],
+                    "SCALP_BO_LONG",
+                    [
+                        "Stop-limit di atas resistance psikologis 15m",
+                        "Tambahan di retest range tinggi (reduce-only)",
+                    ],
+                    vol_ok=True,
+                    meta={"volume": vol_meta, "trigger": "breakout", "level": res_psy},
+                )
+            )
+        if pb_reclaim and vol_ok:
+            base = min(ema20_15, vwap15)
+            entry1 = base
+            entry2 = base - max(0.35 * atr, abs(base) * 8e-5)
+            entries = [entry1, entry2]
+            avg_entry = sum(entries) / len(entries)
+            tp1, tp2 = _tp_targets("LONG", avg_entry, atr, profile_cfg)
+            sl_val = _resolve_stop(entries, sl_long, atr, price, "LONG")
+            cands.append(
+                _candidate(
+                    "LONG",
+                    entries,
+                    sl_val,
+                    [tp1, tp2],
+                    "SCALP_PB_LONG",
+                    [
+                        "Reclaim EMA20/VWAP 15m + konfirmasi candle M5",
+                        "Entry kedua di pullback ringan EMA50/VWAP",
+                    ],
+                    vol_ok=True,
+                    meta={"volume": vol_meta, "trigger": "pullback", "level": base},
+                )
+            )
+        if breakdown_micro and momentum_m5:
+            entry_break = sup_psy - max(0.12 * atr, abs(sup_psy) * 1e-5)
+            entry_retest = sup_psy
+            entries = [entry_break, entry_retest]
+            avg_entry = sum(entries) / len(entries)
+            tp1, tp2 = _tp_targets("SHORT", avg_entry, atr, profile_cfg)
+            delta_note = "" if delta_m5 is None else f"Δ taker m5 {delta_m5:.2f}"
+            notes = [
+                "Breakdown invalidasi mikro 5m",
+                "Momentum bearish M5 jelas (body dominan)",
+            ]
+            if delta_note:
+                notes.append(delta_note)
+            sl_val = _resolve_stop(entries, sl_short, atr, price, "SHORT")
+            cands.append(
+                _candidate(
+                    "SHORT",
+                    entries,
+                    sl_val,
+                    [tp1, tp2],
+                    "SCALP_BREAK_SHORT",
+                    notes,
+                    vol_ok=vol_ok,
+                    meta={"volume": vol_meta, "trigger": "breakdown", "level": sup_psy},
+                )
+            )
+    else:  # bias SHORT
+        if reversal_micro and vol_ok:
+            base = max(sup_psy, float(getattr(last5, "low", price)))
+            entry1 = base
+            entry2 = base - max(0.3 * atr, abs(base) * 7e-5)
+            entries = [entry1, entry2]
+            avg_entry = sum(entries) / len(entries)
+            tp1, tp2 = _tp_targets("LONG", avg_entry, atr, profile_cfg)
+            sl_val = _resolve_stop(entries, sl_long, atr, price, "LONG")
+            cands.append(
+                _candidate(
+                    "LONG",
+                    entries,
+                    sl_val,
+                    [tp1, tp2],
+                    "SCALP_REV_LONG",
+                    [
+                        "Reversal mikro di atas support kunci",
+                        "Volume konfirmasi & body bullish kuat",
+                    ],
+                    vol_ok=True,
+                    meta={"volume": vol_meta, "trigger": "reversal", "level": base},
+                )
+            )
+        if (bo_trigger_short or pb_retest_fail):
+            entry_break = sup_psy - max(0.1 * atr, abs(sup_psy) * 1e-5)
+            entry_retest = sup_psy + max(0.2 * atr, abs(sup_psy) * 8e-5)
+            entries = [entry_break, entry_retest]
+            avg_entry = sum(entries) / len(entries)
+            tp1, tp2 = _tp_targets("SHORT", avg_entry, atr, profile_cfg)
+            trigger = "breakdown" if bo_trigger_short else "retest_fail"
+            sl_val = _resolve_stop(entries, sl_short, atr, price, "SHORT")
+            cands.append(
+                _candidate(
+                    "SHORT",
+                    entries,
+                    sl_val,
+                    [tp1, tp2],
+                    "SCALP_CONT_SHORT",
+                    [
+                        "Kontinuasi short: gagal bertahan di support",
+                        "Entry kedua di retest naik (swing failure)",
+                    ],
+                    vol_ok=vol_ok,
+                    meta={"volume": vol_meta, "trigger": trigger, "level": sup_psy},
+                )
+            )
+    return cands
+
+
+def _make_swing_candidates(bundle: Dict[str, pd.DataFrame],
+                           levels: Dict[str, Any],
+                           profile_cfg: Dict[str, Any],
+                           bias: str,
+                           symbol: Optional[str],
+                           price_pad_bp: float,
+                           fut_signals: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    df15 = bundle.get("15m")
+    if df15 is None:
+        df15 = next(iter(bundle.values()))
+    df1h = bundle.get("1h")
+    if df1h is None:
+        df1h = df15
+    price = float(df15.iloc[-1].close)
+    atr15 = float(getattr(df15.iloc[-1], "atr14", 0.0) or _atr(df15, 14) or 0.0)
+    atr1h = float(getattr(df1h.iloc[-1], "atr14", atr15) or atr15)
+    atr_ref = atr1h if str(profile_cfg.get("tf_context", "1h")).lower() == "1h" else atr15
+    supports = list(levels.get("support") or [])
+    resistances = list(levels.get("resistance") or [])
+    s1 = float(supports[0]) if supports else price * 0.97
+    s2 = float(supports[1]) if len(supports) > 1 else s1 - max(atr_ref * 0.8, abs(price) * 0.01)
+    r1 = float(resistances[0]) if resistances else price * 1.03
+    r2 = float(resistances[1]) if len(resistances) > 1 else r1 + max(atr_ref * 0.8, abs(price) * 0.01)
+
+    swing_long = _swing_low(df1h, lookback=12) or s2
+    swing_short = _swing_high(df1h, lookback=12) or r2
+    sl_long = float(swing_long) - float(profile_cfg.get("sl_buf_atr", 0.8)) * atr_ref
+    sl_short = float(swing_short) + float(profile_cfg.get("sl_buf_atr", 0.8)) * atr_ref
+
+    pad = max(price * price_pad_bp / 1e4, atr_ref * 0.2)
+    long_e1 = min(price, s1 + pad)
+    long_e2 = min(long_e1 - max(atr_ref * 0.35, abs(price) * 6e-4), s2)
+    short_e1 = max(price, r1 - pad)
+    short_e2 = max(short_e1 + max(atr_ref * 0.35, abs(price) * 6e-4), r2)
+
+    long_entries = [float(long_e1), float(long_e2)]
+    short_entries = [float(short_e1), float(short_e2)]
+    long_avg = sum(long_entries) / len(long_entries)
+    short_avg = sum(short_entries) / len(short_entries)
+    tp1_long, tp2_long = _tp_targets("LONG", long_avg, atr_ref, profile_cfg)
+    tp1_short, tp2_short = _tp_targets("SHORT", short_avg, atr_ref, profile_cfg)
+
+    cands: List[Dict[str, Any]] = []
+    long_notes = [
+        "Pullback ke cluster support utama (EMA/VWAP 1H)",
+        "Invalid di luar swing 1H - buffer ATR",
+    ]
+    short_notes = [
+        "Reaksi di resistance mayor 1H",
+        "Invalid di atas swing lower-high 1H",
+    ]
+    cands.append(
+        _candidate(
+            "LONG",
+            long_entries,
+            sl_long,
+            [tp1_long, tp2_long],
+            "SWING_PULLBACK_LONG",
+            long_notes,
+            vol_ok=True,
+            meta={"level": s1, "atr": atr_ref},
+        )
+    )
+    cands.append(
+        _candidate(
+            "SHORT",
+            short_entries,
+            sl_short,
+            [tp1_short, tp2_short],
+            "SWING_REJECT_SHORT",
+            short_notes,
+            vol_ok=True,
+            meta={"level": r1, "atr": atr_ref},
+        )
+    )
+
+    # Momentum delta tambahan untuk bias
+    try:
+        delta = float(((fut_signals or {}).get("taker_delta") or {}).get("m15"))
+        if delta is not None:
+            if delta > 0:
+                cands[0].setdefault("notes", []).append(f"Taker delta 15m +{delta:.2f}")
+            elif delta < 0:
+                cands[1].setdefault("notes", []).append(f"Taker delta 15m {delta:.2f}")
+    except Exception:
+        pass
+
+    return cands
 
 
 def _candidate_plan(side: str, entries: List[float], invalid: float, tp: List[float], setup: str, notes: List[str]) -> Dict[str, Any]:
@@ -313,154 +736,179 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
                        side_hint: Optional[str] = None,
                        price_pad_bp: float = 8.0,
                        rr_min: float = 0.0,
-                       fee_bp: float = 5.0,          # taker 0.05% default
-                       slippage_bp: float = 2.0,     # conservative
+                       fee_bp: float = 5.0,
+                       slippage_bp: float = 2.0,
                        use_llm_fixes: bool = False,
                        llm_fix_hook=None,
                        fut_signals: Optional[Dict[str, Any]] = None,
                        symbol: Optional[str] = None,
                        profile: str = "scalp") -> Dict[str, Any]:
-    """Return a plan dict suitable for validator_futures + FE overlay.
+    """Bangun rencana Futures (scalp/swing) dengan kandidat dua sisi dan TTL profil."""
+    profile_key = str(profile or "scalp").lower()
+    cfg_raw = dict(PROFILES.get(profile_key, PROFILES["scalp"]))
+    ttl_vals = list(cfg_raw.get("ttl_min") or [120, 120])
+    ttl_avg = int(round(sum(ttl_vals) / len(ttl_vals))) if ttl_vals else 120
+    tp_pct = [int(round(float(x) * 100.0)) for x in (cfg_raw.get("tp_split") or [0.5, 0.5])]
+    if len(tp_pct) < 2:
+        tp_pct = (tp_pct + tp_pct[:1])[:2]
+    weights = list(cfg_raw.get("entry_weights") or [0.5, 0.5])
 
-    Keys:
-    - side: LONG/SHORT
-    - entries: [e1, e2]
-    - weights: [w1, w2]
-    - invalids: {hard_1h: price}
-    - tp: [ {name, range:[lo,hi]}, ... ]
-    - notes: List[str]
-    - gates: Dict[str, Any] (reasons, ok flags)
-    - metrics: {rr_min, atr_pct, rr_raw}
-    """
-    side = (side_hint or "AUTO").upper()
     price = float(bundle["15m"]["close"].iloc[-1])
-
-    # enrich / derive
-    s1, s2, r1, r2 = _levels_from_feature(feat)
     atr15 = _atr(bundle["15m"], 14)
     atr1h = _atr(bundle.get("1h", bundle["15m"]), 14)
-    atr_pct = (atr15 / price) * 100.0 if price > 0 else 0.0
+    atr_pct = (atr15 / price) * 100.0 if price else 0.0
+    atr_context = atr1h if str(cfg_raw.get("tf_context", "15m")).lower() == "1h" else atr15
 
-    profile_key = str(profile or "scalp").lower()
-    cfg = PROFILE_CONFIG.get(profile_key, PROFILE_CONFIG["scalp"])
-    rr_target = float(rr_min or cfg.get("min_rr", 1.2))
-    atr_ref = atr15 if cfg.get("atr_tf") == "15m" else atr1h or atr15
-    weights = list(cfg.get("entry_weights") or [0.4, 0.6])
+    vol_curr, vol_ma, vol_tf = _vol_snapshot(bundle, tuple(cfg_raw.get("tf_exec") or ("1m", "5m")))
+    vol_ok = True
+    if vol_curr is not None and vol_ma not in (None, 0):
+        vol_ok = vol_curr >= float(cfg_raw.get("vol_mult", 1.0)) * float(vol_ma)
 
-    # Decide side if AUTO by trend + futures signals skew
-    if side == "AUTO":
-        long_bias = True
+    hint = (side_hint or "AUTO").upper()
+    if hint in {"LONG", "SHORT"}:
+        bias = hint
+    else:
+        bias = "LONG" if _ema_stack_ok(bundle, "LONG") else "SHORT"
         try:
-            long_bias = _ema_stack_ok(bundle, "LONG")
             if fut_signals:
-                # Taker delta, OI and basis add/subtract bias
-                td = float(fut_signals.get("taker_delta", {}).get("m15") or 0.0)
-                oi = float(fut_signals.get("oi", {}).get("h1") or 0.0)
-                basis_bp = float(fut_signals.get("basis", {}).get("bp") or 0.0)
-                long_bias = long_bias and (td >= -0.05) and (oi >= -0.1) and (basis_bp >= -15.0)
+                td15 = float((fut_signals.get("taker_delta") or {}).get("m15") or 0.0)
+                basis_bp = float((fut_signals.get("basis") or {}).get("bp") or 0.0)
+                if td15 < -0.05 or basis_bp < -20.0:
+                    bias = "SHORT"
+                elif td15 > 0.05 and basis_bp > 5.0:
+                    bias = "LONG"
         except Exception:
             pass
-        side = "LONG" if long_bias else "SHORT"
 
-    # Entries (pullback strategy to mid/ema) and invalid (beyond swing) menyesuaikan profil
-    if side == "LONG":
-        e1 = min(s1 + (price * price_pad_bp / 1e4), price)  # near support/MB/ema20
-        e2 = min(s2 + (price * price_pad_bp * 0.5 / 1e4), e1 - max(0.25 * atr15, price * 5/1e4))
-        invalid = min(e1, e2) - max(atr_ref * cfg.get("sl_atr", 0.45), atr15 * 0.3)
-    else:  # SHORT
-        e1 = max(r1 - (price * price_pad_bp / 1e4), price)
-        e2 = max(r2 - (price * price_pad_bp * 0.5 / 1e4), e1 + max(0.25 * atr15, price * 5/1e4))
-        invalid = max(e1, e2) + max(atr_ref * cfg.get("sl_atr", 0.45), atr15 * 0.3)
-
-    # Compute RR and auto-adjust invalid to satisfy rr_min (conservative)
-    entries = [float(e1), float(e2)]
-    avg_entry = sum(entries) / len(entries)
-    if side == "LONG":
-        tp1 = avg_entry + cfg.get("tp_multipliers", [1.0, 1.6])[0] * atr_ref
-        tp2 = avg_entry + cfg.get("tp_multipliers", [1.0, 1.6])[1] * atr_ref
+    levels = make_levels(feat)
+    if profile_key == "scalp":
+        candidate_list = _make_scalp_candidates(bundle, levels, cfg_raw, bias, symbol, vol_ok, fut_signals)
     else:
-        tp1 = avg_entry - cfg.get("tp_multipliers", [1.0, 1.6])[0] * atr_ref
-        tp2 = avg_entry - cfg.get("tp_multipliers", [1.0, 1.6])[1] * atr_ref
+        candidate_list = _make_swing_candidates(bundle, levels, cfg_raw, bias, symbol, price_pad_bp, fut_signals)
 
-    tp_first = float(tp1)
-    rr_now = compute_rr_min_futures(side, entries, tp_first, float(invalid), fee_bp, slippage_bp)
-    # If RR below threshold, push invalid a bit farther and pull entries a bit better
-    if rr_now < rr_target:
-        k = max(1.0, rr_target / max(rr_now, 1e-6))
-        eps = max(abs(avg_entry) * 1e-5, atr_ref * 0.01, 1e-5)
-        if side == "LONG":
-            e1 = e1 - 0.08 * k * atr_ref
-            e2 = e2 - 0.10 * k * atr_ref
-            invalid = min(invalid + 0.20 * k * atr_ref, min(e1, e2) - eps)
+    rr_target = float(rr_min or cfg_raw.get("min_rr", 1.2 if profile_key == "scalp" else 1.6))
+    best = pick_by_rr_confluence(candidate_list, rr_target, fee_bp, slippage_bp)
+    if best is None and candidate_list:
+        best = max(candidate_list, key=lambda c: c.get("rr", -1e9))
+    if best is None:
+        fallback = _make_swing_candidates(bundle, levels, cfg_raw, bias, symbol, price_pad_bp, fut_signals)
+        best = fallback[0] if bias == "LONG" else fallback[1]
+        best.setdefault("notes", []).append("Fallback: gunakan struktur swing dasar karena sinyal mikro kurang lengkap.")
+
+    side_final = (best.get("side") or bias or "LONG").upper()
+    entries = [float(x) for x in (best.get("entries") or [])][:2]
+    if len(entries) < 2 and entries:
+        entries = entries + entries[:1]
+    if not entries:
+        entries = [price, price]
+    invalid_price = float(best.get("invalid") or (entries[0] - atr_context if side_final == "LONG" else entries[0] + atr_context))
+    tp_vals = [float(x) for x in (best.get("tp") or [])][:2]
+    if len(tp_vals) < 2 and tp_vals:
+        tp_vals = tp_vals + tp_vals[:1]
+    if not tp_vals:
+        tp_vals = list(_tp_targets(side_final, sum(entries) / len(entries), atr_context, cfg_raw))
+
+    avg_entry = sum(entries) / len(entries)
+    gap_min = max(0.2 * atr_context, abs(avg_entry) * 1e-5)
+    if side_final == "LONG":
+        invalid_price = min(invalid_price, min(entries) - gap_min)
+    else:
+        invalid_price = max(invalid_price, max(entries) + gap_min)
+
+    rr_value = compute_rr_min_futures(side_final, entries, tp_vals[0], invalid_price, fee_bp, slippage_bp)
+    if rr_value < rr_target:
+        eps = max(abs(avg_entry) * 1e-5, 1e-5)
+        total_fee = ((fee_bp or 0.0) + (slippage_bp or 0.0)) * 1e-4 * avg_entry
+        if side_final == "LONG":
+            reward = tp_vals[0] - avg_entry
+            reward_net = reward - total_fee
+            if reward_net > 0:
+                max_risk = max(reward_net / rr_target - total_fee, eps)
+                invalid_price = max(invalid_price, avg_entry - max_risk)
+            min_tp1 = avg_entry + total_fee + rr_target * ((avg_entry - invalid_price) + total_fee)
+            if tp_vals[0] < min_tp1:
+                delta = min_tp1 - tp_vals[0]
+                tp_vals[0] = min_tp1
+                tp_vals[1] = max(tp_vals[1], min_tp1 + max(0.6 * atr_context, delta))
         else:
-            e1 = e1 + 0.08 * k * atr_ref
-            e2 = e2 + 0.10 * k * atr_ref
-            invalid = max(invalid - 0.20 * k * atr_ref, max(e1, e2) + eps)
-        entries = [float(e1), float(e2)]
-        rr_now = compute_rr_min_futures(side, entries, tp_first, float(invalid), fee_bp, slippage_bp)
-        if rr_now < rr_target:
-            avg_entry_adj = sum(entries) / len(entries)
-            if side == "LONG":
-                target_invalid = avg_entry_adj - (tp_first - avg_entry_adj) / rr_target
-                invalid = min(target_invalid, min(entries) - eps)
-            else:
-                target_invalid = avg_entry_adj + (avg_entry_adj - tp_first) / rr_target
-                invalid = max(target_invalid, max(entries) + eps)
-            rr_now = compute_rr_min_futures(side, entries, tp_first, float(invalid), fee_bp, slippage_bp)
-
-    # TP nodes with small ranges for FE
-    tp = [
+            reward = avg_entry - tp_vals[0]
+            reward_net = reward - total_fee
+            if reward_net > 0:
+                max_risk = max(reward_net / rr_target - total_fee, eps)
+                invalid_price = min(invalid_price, avg_entry + max_risk)
+            min_tp1 = avg_entry - (total_fee + rr_target * ((invalid_price - avg_entry) + total_fee))
+            if tp_vals[0] > min_tp1:
+                delta = tp_vals[0] - min_tp1
+                tp_vals[0] = min_tp1
+                tp_vals[1] = min(tp_vals[1], min_tp1 - max(0.6 * atr_context, delta))
+        rr_value = compute_rr_min_futures(side_final, entries, tp_vals[0], invalid_price, fee_bp, slippage_bp)
+    tp_nodes = [
         {
             "name": "TP1",
-            "range": [
-                float(tp1),
-                float(tp1 + (0.18 * atr_ref if side == "LONG" else -0.18 * atr_ref)),
-            ],
-            "reduce_only_pct": cfg.get("tp_pct", [50, 50])[0],
+            "range": [tp_vals[0], tp_vals[0] + (0.18 * atr_context if side_final == "LONG" else -0.18 * atr_context)],
+            "reduce_only_pct": tp_pct[0],
         },
         {
             "name": "TP2",
-            "range": [
-                float(tp2),
-                float(tp2 + (0.25 * atr_ref if side == "LONG" else -0.25 * atr_ref)),
-            ],
-            "reduce_only_pct": cfg.get("tp_pct", [50, 50])[1],
+            "range": [tp_vals[1], tp_vals[1] + (0.28 * atr_context if side_final == "LONG" else -0.28 * atr_context)],
+            "reduce_only_pct": tp_pct[1],
         },
     ]
 
+    notes = list(best.get("notes") or [])
+    label = cfg_raw.get("label", profile_key.title())
+    exec_tf = ", ".join(cfg_raw.get("tf_exec") or []) or "-"
+    notes.append(
+        f"Profil {label}: TF eksekusi {exec_tf} konteks {cfg_raw.get('tf_context', '15m').upper()} • TTL {ttl_vals[0]}–{ttl_vals[1]} menit."
+    )
+    if vol_curr is not None and vol_ma is not None and vol_ma not in (0, 0.0):
+        ratio = vol_curr / vol_ma if vol_ma else 0.0
+        notes.append(
+            f"Volume {vol_tf or '1-5m'} {vol_curr:.0f} vs MA20 {vol_ma:.0f} ⇒ {ratio:.2f}× (ambang {cfg_raw.get('vol_mult', 1.0):.2f}×)."
+        )
+    if profile_key == "scalp":
+        notes.append("TP1 tercapai → SL ke BE; TTL habis wajib keluar ≥50% bila momentum hilang.")
+        notes.append("Hindari entry ±30 menit event merah dan cek orderbook sebelum trigger.")
+    else:
+        notes.append("TP1 tercapai → SL ke BE, sisanya mengikuti struktur 1H/4H; TTL habis lakukan reduksi 30%.")
+
     plan = {
-        "side": side,
+        "side": side_final,
         "entries": entries,
-        "weights": weights,
-        "invalids": {"hard_1h": float(invalid)},
-        "tp": tp,
-        "notes": [
-            f"Profil {cfg.get('label')} ({cfg.get('atr_tf').upper()}): TTL {cfg.get('ttl_min')} menit; SL buffer {cfg.get('sl_atr'):.2f}×ATR.",
-            "Setelah TP1 → geser SL ke BE lalu trailing di bawah HL 15m (LONG) / di atas LH 15m (SHORT).",
-            "Periksa spread & orderbook; hindari entry ±15 menit sebelum/after funding.",
-        ],
+        "weights": weights[: len(entries)] if len(weights) == len(entries) else [0.5, 0.5][: len(entries)],
+        "invalids": {"hard_1h": float(invalid_price)},
+        "tp": tp_nodes,
+        "notes": notes,
         "gates": {"checked": False, "ok": True, "reasons": []},
         "metrics": {
-            "rr_min": float(rr_now),
+            "rr_min": float(rr_value),
+            "rr_target": float(rr_target),
             "atr_pct": float(atr_pct),
-            "rr_raw": float(rr_now),
-            "rr_target": rr_target,
+            "atr_ctx": float(atr_context),
+            "volume_ok": bool(vol_ok),
+            "volume_ratio": float(vol_curr / vol_ma) if (vol_curr is not None and vol_ma not in (None, 0)) else None,
         },
-        "score": 0,
+        "score": int(round(float(rr_value) * 10.0)),
         "profile": profile_key,
-        "profile_config": dict(cfg),
-        "ttl_min": cfg.get("ttl_min"),
-        "tp_pct": list(cfg.get("tp_pct", [50, 50])),
+        "profile_config": dict(cfg_raw),
+        "ttl_min": ttl_avg,
+        "ttl_window": ttl_vals,
+        "tp_pct": tp_pct,
+        "tf_exec": cfg_raw.get("tf_exec"),
+        "tf_context": cfg_raw.get("tf_context"),
+        "tf_base": cfg_raw.get("tf_context"),
+        "profile_label": label,
+        "setup": best.get("setup"),
+        "vol_snapshot": {
+            "tf": vol_tf,
+            "current": vol_curr,
+            "ma20": vol_ma,
+            "ok": bool(vol_ok),
+        },
     }
-    if profile_key == "scalp":
-        plan.setdefault("notes", []).append("Ambil 50% reduce-only di TP1, sisanya TP2; fokus eksekusi cepat <150 menit.")
-    else:
-        plan.setdefault("notes", []).append("Ambil 40% di TP1 dan 60% di TP2; tahan posisi mengikuti struktur 1H/4H.")
 
-    # Round prices to futures tick using ccxt meta and expose precision
     try:
         plan = round_futures_prices(symbol or "BTCUSDT", plan)
-        # attach tick/step size to metrics if available
         from .rounding import precision_for
         prec = precision_for(symbol or "BTCUSDT") or {}
         plan.setdefault("metrics", {})
@@ -471,9 +919,7 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
     except Exception:
         pass
 
-    # Apply gating based on futures signals snapshot
     if fut_signals is not None:
-        # attach ATR/last for 1h to support ATR% gating
         try:
             last_1h = float(bundle["1h"].iloc[-1].close)
         except Exception:
@@ -487,164 +933,131 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
             sig2["last_1h"] = last_1h
         if atr_1h is not None:
             sig2["atr_1h"] = atr_1h
-        gates_ok, reasons, dumps = gating_signals_ok(side, sig2, profile=profile_key)
+        gates_ok, reasons, dumps = gating_signals_ok(plan.get("side", side_final), sig2, profile=profile_key)
         plan["gates"] = {"checked": True, "ok": bool(gates_ok), "reasons": reasons, "snapshot": dumps}
 
-    # Patch 3/4: Setup candidates (L1-L3/S1-S3) + scoring & conflict resolution
-    try:
-        cands = _make_setups(bundle, feat)
-        if cands:
-            ctx = {"bundle": bundle, "fut_signals": fut_signals or {}}
-            for c in cands:
-                c["score"] = score_candidate(c, ctx)
-            # Pick best by score
-            best = sorted(cands, key=lambda x: x.get("score", 0), reverse=True)
-            top = best[0]
-            # Conflict resolver: if two best are opposite sides and close score (<5), skip trade
-            if len(best) >= 2 and (best[0].get("side") != best[1].get("side")) and abs(best[0].get("score", 0) - best[1].get("score", 0)) < 5:
-                # mark no-trade by lowering weights and adding note
-                plan.setdefault("notes", []).append("Resolver: kandidat berlawanan skor <5 → no-trade")
-            elif top.get("score", 0) >= SCORE_THRESHOLD:
-                # adopt candidate into plan while preserving FE shape
-                side = top["side"]
-                entries = [float(x) for x in (top.get("entries") or entries)]
-                invalid = float(top.get("invalid", invalid))
-                tp1, tp2 = float((top.get("tp") or [tp1, tp2])[0]), float((top.get("tp") or [tp1, tp2])[1] if len(top.get("tp") or []) > 1 else (tp2))
-                weights = [0.4, 0.6]
-                tp = [
-                    {"name": "TP1", "range": [float(tp1), float(tp1 + (0.2 * atr15 if side == "LONG" else -0.2 * atr15))]},
-                    {"name": "TP2", "range": [float(tp2), float(tp2 + (0.3 * atr15 if side == "LONG" else -0.3 * atr15))]},
-                ]
-                rr_now = compute_rr_min_futures(side, entries, float(tp1), float(invalid), fee_bp, slippage_bp)
-                plan.update({
-                    "side": side,
-                    "entries": entries,
-                    "weights": weights,
-                    "invalids": {"hard_1h": float(invalid)},
-                    "tp": tp,
-                    "score": int(top.get("score", 0)),
-                })
-                plan.setdefault("metrics", {})["rr_min"] = float(rr_now)
-                plan.setdefault("notes", []).append(f"Setup {top.get('setup')} skor {top.get('score')}")
-                if top.get("notes"):
-                    plan["notes"].extend(top.get("notes"))
-                # Gating again with final side
-                if fut_signals is not None:
-                    sig2 = dict(fut_signals)
-                    if last_1h is not None:
-                        sig2["last_1h"] = last_1h
-                    if atr_1h is not None:
-                        sig2["atr_1h"] = atr_1h
-                    gates_ok, reasons, dumps = gating_signals_ok(side, sig2, profile=profile_key)
-                    plan["gates"] = {"checked": True, "ok": bool(gates_ok), "reasons": reasons, "snapshot": dumps}
-    except Exception:
-        pass
-
-    # Optional LLM fix pass (must return plan-like dict)
     if use_llm_fixes:
         def _default_llm_fix_hook(p0: Dict[str, Any], *, bundle: Dict[str, pd.DataFrame], symbol: Optional[str] = None) -> Dict[str, Any]:
-            """Best-effort LLM correction to improve RR while preserving structure.
-            Expects JSON-only output: { entries: [..], tp: [{name,range:[..]},..], invalids:{hard_1h:..}, notes:[..] }
-            """
             try:
-                # Minimal snapshot for context
-                def _safe(v, d=None):
-                    try:
-                        return float(v)
-                    except Exception:
-                        return d
-                snap = {
-                    "price": _safe(bundle["15m"].iloc[-1].close, None),
-                    "ema": {
-                        "1h": {"ema20": _safe(bundle["1h"].iloc[-1].ema20, None), "ema50": _safe(bundle["1h"].iloc[-1].ema50, None)},
-                        "4h": {"ema20": _safe(bundle["4h"].iloc[-1].ema20, None), "ema50": _safe(bundle["4h"].iloc[-1].ema50, None)},
-                    },
-                    "atr15m": _safe(bundle["15m"].iloc[-1].atr14, None),
-                }
-                # Compose strict-JSON instruction
                 import json as _json
-                messages = [
-                    {"role": "system", "content": "Anda asisten strategi Futures. Keluarkan hanya JSON valid (object)."},
-                    {"role": "user", "content": (
-                        "Tugas: Koreksi rencana Futures agar RR >= %.2f, jaga 2 entry & 2 TP.\n"
-                        "Input: {\"snapshot_MTF\": %s, \"plan_awal\": %s, \"fee_bp\": %.3f, \"slippage_bp\": %.3f}\n"
-                        "Output (JSON only): { \"entries\":[..], \"tp\":[{\"name\":\"TP1\",\"range\":[..]},{\"name\":\"TP2\",\"range\":[..]}], \"invalids\":{\"hard_1h\":..}, \"notes\":[..] }\n"
-                        "Aturan: Naikkan RR tanpa memperburuk validitas teknikal; hindari TP menurun; bobot 0.4/0.6 dipertahankan."
-                    ) % (
-                        float(rr_min),
-                        _json.dumps(snap, ensure_ascii=False),
-                        _json.dumps(p0, ensure_ascii=False),
-                        float(fee_bp), float(slippage_bp)
-                    )},
+                snapshot = {
+                    "price": float(bundle["15m"].iloc[-1].close),
+                    "atr15": float(bundle["15m"].iloc[-1].atr14),
+                    "atr_ctx": plan.get("metrics", {}).get("atr_ctx"),
+                    "ema": {
+                        "15m": {
+                            "ema20": float(getattr(bundle["15m"].iloc[-1], "ema20", 0.0)),
+                            "vwap": float(getattr(bundle["15m"].iloc[-1], "vwap", 0.0)),
+                        },
+                        "1h": {
+                            "ema20": float(getattr(bundle.get("1h", bundle["15m"]).iloc[-1], "ema20", 0.0)),
+                            "ema50": float(getattr(bundle.get("1h", bundle["15m"]).iloc[-1], "ema50", 0.0)),
+                        },
+                    },
+                }
+                payload = {
+                    "symbol": symbol or "BTCUSDT",
+                    "precision": plan.get("metrics", {}),
+                    "fees": {"fee_bp": fee_bp, "slippage_bp": slippage_bp},
+                    "profile": {
+                        "name": profile_key,
+                        "min_rr": rr_target,
+                        "sl_buf_atr": cfg_raw.get("sl_buf_atr"),
+                        "tp_atr": cfg_raw.get("tp_atr"),
+                        "ttl_min": ttl_vals,
+                    },
+                    "context": {
+                        "atr15": snapshot.get("atr15"),
+                        "vwap_15m": snapshot["ema"]["15m"]["vwap"],
+                        "ema20_15m": snapshot["ema"]["15m"]["ema20"],
+                        "ema20_1h": snapshot["ema"]["1h"]["ema20"],
+                        "ema50_1h": snapshot["ema"]["1h"]["ema50"],
+                        "volume_ma20_1m5m": plan.get("vol_snapshot", {}).get("ma20"),
+                    },
+                    "draft_plan": {
+                        "side": plan.get("side"),
+                        "entries": plan.get("entries"),
+                        "invalid": plan.get("invalids", {}).get("hard_1h"),
+                        "tp": [tp_nodes[0]["range"][0], tp_nodes[1]["range"][0]],
+                        "notes": plan.get("notes", [])[:4],
+                    },
+                }
+                user_lines = [
+                    "USER INPUT:",
+                    _json.dumps(payload, ensure_ascii=False),
+                    "SCHEMA JSON:",
+                    '{"entries":[{"price":float,"weight":float}],"invalid":float,"tp":[{"name":"TP1","price":float,"qty_pct":int},{"name":"TP2","price":float,"qty_pct":int}],"ttl_min":int}',
+                    "CONSTRAINTS:",
+                    f"- RR TP1 ≥ {rr_target}; SL = swing_micro ± sl_buf_atr×ATR15m; TP1/TP2 = +tp_atr×ATR15m dari avg_entry",
+                    "- qty_pct total = 100; rounding ke tick; invalid < entry (LONG) / invalid > entry (SHORT)",
+                    '- Jika volume < threshold → naikkan entry (BO) atau tolak (kembalikan alasan "no_trade_low_volume")',
                 ]
-                text, _usage = ask_llm_messages(messages)
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "Anda adalah asisten tuning angka untuk rencana FUTURES profil SCALPING. Balas HANYA JSON sesuai schema. Fokus pada efisiensi: TF eksekusi 1–5m, konteks 15m.",
+                    },
+                    {
+                        "role": "user",
+                        "content": "\n".join(user_lines),
+                    },
+                ]
+                text_llm, usage = ask_llm_messages(messages)
                 import json
-                data = json.loads(text or "{}") if text else {}
+                data = json.loads(text_llm or "{}") if text_llm else {}
                 if not isinstance(data, dict) or not data:
                     return p0
-                p1 = dict(p0)
-                # attach usage for upstream accounting (router will log and strip if needed)
-                try:
-                    p1.setdefault("_usage", {})
-                    p1["_usage"].update({
-                        "prompt_tokens": int((_usage or {}).get("prompt_tokens") or 0),
-                        "completion_tokens": int((_usage or {}).get("completion_tokens") or 0),
-                        "total_tokens": int((_usage or {}).get("total_tokens") or 0),
+                plan_new = dict(p0)
+                plan_new.setdefault("_usage", {})
+                if usage:
+                    plan_new["_usage"].update({
+                        "prompt_tokens": int((usage or {}).get("prompt_tokens") or 0),
+                        "completion_tokens": int((usage or {}).get("completion_tokens") or 0),
+                        "total_tokens": int((usage or {}).get("total_tokens") or 0),
                     })
-                except Exception:
-                    pass
-                # Merge entries
-                if isinstance(data.get("entries"), list) and len(data["entries"]) >= 2:
+                if isinstance(data.get("entries"), list) and data["entries"]:
                     try:
-                        e_nums = [float(x) for x in data["entries"][:2]]
-                        p1["entries"] = e_nums
+                        prices = [float(node.get("price")) for node in data["entries"][:2] if node.get("price") is not None]
+                        if prices:
+                            if len(prices) == 1:
+                                prices = prices + prices
+                            plan_new["entries"] = prices[:2]
+                            weights_new = [float(node.get("weight", 0.5)) for node in data["entries"][:2]]
+                            if len(weights_new) == len(prices):
+                                plan_new["weights"] = weights_new[:2]
                     except Exception:
                         pass
-                # Merge invalids.hard_1h
-                inv = data.get("invalids") or {}
-                try:
-                    if inv and inv.get("hard_1h") is not None:
-                        p1.setdefault("invalids", {})
-                        p1["invalids"]["hard_1h"] = float(inv.get("hard_1h"))
-                except Exception:
-                    pass
-                # Merge tp nodes
+                if data.get("invalid") is not None:
+                    try:
+                        plan_new.setdefault("invalids", {})["hard_1h"] = float(data["invalid"])
+                    except Exception:
+                        pass
                 if isinstance(data.get("tp"), list) and data["tp"]:
-                    tps = []
-                    for t in data["tp"][:2]:
+                    tp_new = []
+                    for node in data["tp"][:2]:
                         try:
-                            name = t.get("name") or f"TP{len(tps)+1}"
-                            rng = t.get("range") or []
-                            lo = float(rng[0]); hi = float(rng[1]) if len(rng) > 1 else lo
-                            if lo is not None and hi is not None:
-                                tps.append({"name": name, "range": [lo, hi]})
+                            price_tp = float(node.get("price"))
                         except Exception:
                             continue
-                    if tps:
-                        p1["tp"] = tps
-                # Notes
-                if isinstance(data.get("notes"), list):
-                    try:
-                        p1.setdefault("notes", [])
-                        p1["notes"].extend([str(n) for n in data["notes"]][:4])
-                    except Exception:
-                        pass
-                # Recompute RR; if still below threshold, keep original
-                try:
-                    e_nums = [float(x) for x in (p1.get("entries") or [])]
-                    tp1v = float((p1.get("tp") or [{}])[0].get("range", [None])[0]) if (p1.get("tp") or [{}])[0].get("range") else None
-                    inv_final = float((p1.get("invalids") or {}).get("hard_1h")) if (p1.get("invalids") or {}).get("hard_1h") is not None else None
-                    rr_new = compute_rr_min_futures(p1.get("side") or "LONG", e_nums, tp1v, inv_final, fee_bp, slippage_bp)
-                    p1.setdefault("metrics", {})
-                    p1["metrics"]["rr_min"] = float(rr_new)
-                    if rr_new >= float(rr_min):
-                        return p1
-                    # else, fallback to original but append note
-                    p0 = dict(p0)
-                    p0.setdefault("notes", []).append("LLM fixes diabaikan: RR masih di bawah ambang")
-                    return p0
-                except Exception:
-                    return p1
+                        tp_new.append({
+                            "name": node.get("name") or f"TP{len(tp_new)+1}",
+                            "range": [price_tp, price_tp],
+                            "reduce_only_pct": int(node.get("qty_pct", 50)),
+                        })
+                    if tp_new:
+                        plan_new["tp"] = tp_new
+                if data.get("ttl_min") is not None:
+                    plan_new["ttl_min"] = int(data.get("ttl_min"))
+                rr_new = compute_rr_min_futures(
+                    plan_new.get("side", side_final),
+                    plan_new.get("entries", entries),
+                    plan_new.get("tp", tp_nodes)[0]["range"][0] if plan_new.get("tp") else tp_vals[0],
+                    plan_new.get("invalids", {}).get("hard_1h", invalid_price),
+                    fee_bp,
+                    slippage_bp,
+                )
+                plan_new.setdefault("metrics", {})["rr_min"] = float(rr_new)
+                return plan_new if rr_new >= rr_target else p0
             except Exception:
                 return p0
 
@@ -652,7 +1065,6 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
             hook = llm_fix_hook if callable(llm_fix_hook) else _default_llm_fix_hook
             plan = hook(plan, bundle=bundle, symbol=symbol)
         except Exception:
-            # ignore LLM errors to keep deterministic plan
             pass
 
     return plan

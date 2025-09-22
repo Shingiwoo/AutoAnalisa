@@ -75,7 +75,7 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
         raise HTTPException(404, "Futures dinonaktifkan oleh admin")
 
     # Build a baseline spot plan and adapt to futures format
-    bundle = await fetch_bundle(symbol, ("4h", "1h", "15m", "5m"), market="futures")
+    bundle = await fetch_bundle(symbol, ("4h", "1h", "15m", "5m", "1m"), market="futures")
     feat = Features(bundle).enrich()
     score = score_symbol(feat)
     base_plan = await build_plan_async(db, bundle, feat, score, "auto")
@@ -236,7 +236,7 @@ async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=
         raise HTTPException(403, "Forbidden")
     # Build machine plan from current analysis (reuse get_futures_plan pieces)
     symbol = a.symbol
-    bundle = await fetch_bundle(symbol, ("4h", "1h", "15m", "5m"), market="futures")
+    bundle = await fetch_bundle(symbol, ("4h", "1h", "15m", "5m", "1m"), market="futures")
     feat = Features(bundle).enrich()
     score = score_symbol(feat)
     base_plan = await build_plan_async(db, bundle, feat, score, "auto")

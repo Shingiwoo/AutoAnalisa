@@ -1,19 +1,36 @@
 "use client"
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { Plus, X } from 'lucide-react'
+import { useSymbols, normalizeSymbolInput } from '../../lib/hooks/useSymbols'
 
 export default function WatchlistRow({ quota, onPick, onPickFutures, onDelete, titleLabel, tradeType='spot' }:{ quota?:{limit:number,remaining:number,llm_enabled:boolean}|null, onPick:(s:string)=>void, onPickFutures?:(s:string)=>void, onDelete?: (s:string)=>void, titleLabel?: string, tradeType?: 'spot'|'futures' }){
   const [items,setItems]=useState<string[]>([])
   const [sym,setSym]=useState('')
   const [msg,setMsg]=useState<string>('')
+  const { symbols, loading: loadingSymbols, error: symbolsError } = useSymbols(tradeType)
+  const options = useMemo(()=>{
+    const map = new Map<string,string>()
+    symbols.forEach(raw=>{
+      const value = normalizeSymbolInput(raw)
+      if(!value) return
+      if(!map.has(value)) map.set(value, raw.toUpperCase())
+    })
+    return Array.from(map.entries()).map(([value,label])=>({value,label}))
+  },[symbols])
   async function load(){ try{ const r=await api.get('watchlist', { params:{ trade_type: tradeType } }); setItems(r.data||[]) }catch(e:any){ setMsg(e?.response?.data?.detail||'Gagal memuat watchlist') } }
+  useEffect(()=>{
+    if(options.length===0){ setSym(''); return }
+    setSym(prev=> options.some(opt=>opt.value===prev)? prev : options[0]?.value ?? '')
+  },[options])
+
   async function add(){
-    if(!sym) return
+    if(!sym){ setMsg('Pilih simbol terlebih dahulu.'); return }
     if(items.length >= 4){ setMsg('Maksimal 4 koin dalam watchlist.'); return }
+    if(tradeType==='spot' && sym.includes('.P')){ setMsg('Simbol perpetual (.P) tidak valid untuk Spot.'); return }
     try{
-      await api.post('watchlist/add', null, { params:{ symbol: sym.toUpperCase().trim(), trade_type: tradeType } })
-      setSym(''); setMsg(''); load()
+      await api.post('watchlist/add', null, { params:{ symbol: sym, trade_type: tradeType } })
+      setMsg(''); load()
     }catch(e:any){ setMsg(e?.response?.data?.detail || 'Gagal menambah simbol') }
   }
   async function del(s:string){
@@ -23,26 +40,37 @@ export default function WatchlistRow({ quota, onPick, onPickFutures, onDelete, t
       load()
     }catch(e:any){ setMsg(e?.response?.data?.detail || 'Gagal menghapus simbol') }
   }
-  useEffect(()=>{ load() },[])
+  useEffect(()=>{ load() },[tradeType])
   return (
     <section id="watchlist" className="rounded-2xl ring-1 ring-zinc-200 dark:ring-white/10 bg-white dark:bg-zinc-900 p-4 text-zinc-900 dark:text-zinc-100">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
         <div>
           <h3 className="font-semibold mb-2">Watchlist</h3>
           <div className="flex gap-2 items-center">
-            <input
+            <select
               value={sym}
-              onChange={e=>setSym(e.target.value.toUpperCase())}
-              placeholder="OPUSDT"
-              className="rounded px-3 py-2 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white placeholder:text-zinc-400 dark:ring-white/10"
-            />
-            <button onClick={add} disabled={items.length>=4} className="inline-flex items-center gap-1 px-3 py-2 rounded bg-cyan-600 text-white font-medium hover:bg-cyan-500 disabled:opacity-50"><Plus size={16}/> Tambah</button>
+              onChange={e=>setSym(e.target.value)}
+              className="rounded px-3 py-2 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10"
+              disabled={loadingSymbols || options.length===0}
+            >
+              {options.length===0 ? (
+                <option value="">{loadingSymbols? 'Memuat simbol…' : 'Tidak ada simbol'}</option>
+              ) : (
+                options.map(opt=>(
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))
+              )}
+            </select>
+            <button onClick={add} disabled={items.length>=4 || !sym || loadingSymbols} className="inline-flex items-center gap-1 px-3 py-2 rounded bg-cyan-600 text-white font-medium hover:bg-cyan-500 disabled:opacity-50"><Plus size={16}/> Tambah</button>
             {quota && (
               <span className={`px-2 py-1 rounded text-xs ${quota.remaining>0? 'bg-emerald-600':'bg-rose-600'} text-white`} title={quota.llm_enabled? 'LLM aktif':'LLM nonaktif'}>
                 LLM {quota.remaining}/{quota.limit}
               </span>
             )}
           </div>
+          {(loadingSymbols || symbolsError) && (
+            <div className="mt-2 text-xs text-zinc-500">{loadingSymbols? 'Memuat simbol…' : symbolsError}</div>
+          )}
           {msg && <div className="mt-2 text-xs text-rose-500">{msg}</div>}
         </div>
         <div>

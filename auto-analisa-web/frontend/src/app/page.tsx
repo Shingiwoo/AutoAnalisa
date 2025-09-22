@@ -2,9 +2,10 @@
 import {useEffect, useState} from 'react'
 import PlanCard from './(components)/PlanCard'
 import {api} from './api'
+import { normalizeSymbolInput } from '../lib/hooks/useSymbols'
 import Link from 'next/link'
-import Watchlist from './(components)/Watchlist'
 import WatchlistRow from './(components)/WatchlistRow'
+import SymbolQuickForm from './(components)/SymbolQuickForm'
 import MacroPanel from './(components)/MacroPanel'
 import SessionsHint from './(components)/SessionsHint'
 import PasswordRequest from './(components)/PasswordRequest'
@@ -55,8 +56,14 @@ export default function Page(){
 
   async function analyze(symbol:string, trade_type:'spot'|'futures'='spot'){
     if(cards.length>=4){ alert('Maksimal 4 analisa aktif. Arsipkan salah satu dulu.'); return }
+    const symUpper = normalizeSymbolInput(symbol)
+    if(!symUpper){ alert('Simbol tidak valid.'); return }
+    if(trade_type==='spot' && symUpper.includes('.P')){
+      alert('Simbol perpetual (.P) tidak valid untuk analisa Spot.')
+      return
+    }
     try{
-      const {data}=await api.post('analyze',{symbol, trade_type})
+      const {data}=await api.post('analyze',{symbol: symUpper, trade_type})
       setNotice(data?.payload?.notice)
       setCards(prev=>{
         const next=[data, ...prev]
@@ -107,6 +114,7 @@ export default function Page(){
       <div id="analisa" className="max-w-7xl mx-auto px-4 md:px-6 space-y-4">
         {loggedIn ? (
           <>
+            <SymbolQuickForm onAnalyze={(sym, type)=>analyze(sym, type)} disabled={cards.length>=4} />
             <WatchlistRow tradeType='spot' quota={quota} onPick={(s)=>analyze(s,'spot')} onDelete={(s)=>{ setCards(prev=> prev.filter(c=> c.symbol !== s)) }} />
             <div className="mt-2 text-xs text-zinc-600">Butuh Futures? Gunakan halaman khusus: <Link href="/futures" className="underline">/futures</Link></div>
           </>

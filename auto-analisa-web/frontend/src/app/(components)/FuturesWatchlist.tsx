@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Plus, X } from "lucide-react"
 import { api } from "../api"
+import { useSymbols, normalizeSymbolInput } from "../../lib/hooks/useSymbols"
 
 type QuotaInfo = { limit: number; remaining: number; llm_enabled?: boolean }
 
@@ -17,6 +18,16 @@ export default function FuturesWatchlist({ onSelect, selectedSymbol, quota, onRe
   const [items, setItems] = useState<string[]>([])
   const [input, setInput] = useState("")
   const [msg, setMsg] = useState<string>("")
+  const { symbols, loading: loadingSymbols, error: symbolsError } = useSymbols("futures")
+  const options = useMemo(() => {
+    const map = new Map<string, string>()
+    symbols.forEach((raw) => {
+      const value = normalizeSymbolInput(raw)
+      if (!value) return
+      if (!map.has(value)) map.set(value, raw.toUpperCase())
+    })
+    return Array.from(map.entries()).map(([value, label]) => ({ value, label }))
+  }, [symbols])
 
   async function load() {
     try {
@@ -30,8 +41,24 @@ export default function FuturesWatchlist({ onSelect, selectedSymbol, quota, onRe
     }
   }
 
+  useEffect(() => {
+    if (options.length === 0) {
+      setInput("")
+      return
+    }
+    setInput((prev) => {
+      if (prev && options.some((opt) => opt.value === prev)) {
+        return prev
+      }
+      return options[0]?.value ?? ""
+    })
+  }, [options])
+
   async function add() {
-    if (!input) return
+    if (!input) {
+      setMsg("Pilih simbol terlebih dahulu.")
+      return
+    }
     if (items.length >= 4) {
       setMsg("Maksimal 4 simbol dalam watchlist.")
       return
@@ -39,7 +66,6 @@ export default function FuturesWatchlist({ onSelect, selectedSymbol, quota, onRe
     try {
       const symbol = input.trim().toUpperCase()
       await api.post("watchlist/add", null, { params: { symbol, trade_type: "futures" } })
-      setInput("")
       setMsg("")
       await load()
       onSelect(symbol)
@@ -75,16 +101,26 @@ export default function FuturesWatchlist({ onSelect, selectedSymbol, quota, onRe
         <div className="flex-1 space-y-2">
           <h3 className="font-semibold text-base">Watchlist Futures</h3>
           <div className="flex items-center gap-2">
-            <input
+            <select
               value={input}
-              onChange={(e) => setInput(e.target.value.toUpperCase())}
-              placeholder="IMXUSDT"
-              className="rounded px-3 py-2 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white placeholder:text-zinc-400 dark:ring-white/10"
-            />
+              onChange={(e) => setInput(e.target.value)}
+              className="rounded px-3 py-2 w-full bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 dark:bg-transparent dark:text-white dark:ring-white/10"
+              disabled={loadingSymbols || options.length === 0}
+            >
+              {options.length === 0 ? (
+                <option value="">{loadingSymbols ? "Memuat simbol…" : "Tidak ada simbol"}</option>
+              ) : (
+                options.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))
+              )}
+            </select>
             <button
               onClick={add}
               className="inline-flex items-center gap-1 px-3 py-2 rounded bg-cyan-600 text-white hover:bg-cyan-500 disabled:opacity-50"
-              disabled={items.length >= 4}
+              disabled={items.length >= 4 || !input || loadingSymbols}
             >
               <Plus size={16} /> Tambah
             </button>
@@ -97,6 +133,9 @@ export default function FuturesWatchlist({ onSelect, selectedSymbol, quota, onRe
               </span>
             )}
           </div>
+          {(loadingSymbols || symbolsError) && (
+            <div className="text-xs text-zinc-500">{loadingSymbols ? "Memuat simbol…" : symbolsError}</div>
+          )}
           {msg && <div className="text-xs text-rose-500">{msg}</div>}
         </div>
         <div className="flex-1">
