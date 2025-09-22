@@ -30,8 +30,8 @@ async def test_run_analysis_limits_per_trade_type(monkeypatch):
     async def fake_build_plan_async(db, bundle, feat, score, mode):
         return {"entries": [], "tp": [], "invalid": None}
 
-    async def fake_build_spot2_from_plan(db, sym, plan):
-        return {"rencana_jual_beli": {}, "tp": []}
+    async def fake_build_spot2_from_plan(db, sym, plan, bundle=None):
+        return {"entries": [], "tp": [], "invalids": {}}
 
     def fake_round_plan_prices(sym, plan):
         return plan

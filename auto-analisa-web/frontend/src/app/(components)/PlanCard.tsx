@@ -57,10 +57,11 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
   const invalids = useMemo(()=>{
     const s2 = p?.spot2 || {}
     const invs = s2?.invalids || {}
+    const invMain = typeof s2?.invalid === 'number'? s2.invalid : (typeof p?.invalid==='number'? p.invalid : undefined)
     return {
       m5:  typeof invs.m5 === 'number'  ? invs.m5  : (typeof p?.invalid_tactical_5m==='number'? p.invalid_tactical_5m : undefined),
       m15: typeof invs.m15 === 'number' ? invs.m15 : (typeof p?.invalid_soft_15m==='number'? p.invalid_soft_15m : undefined),
-      h1:  typeof invs.h1 === 'number'  ? invs.h1  : (typeof p?.invalid_hard_1h==='number'? p.invalid_hard_1h : (typeof p?.invalid==='number'? p.invalid : undefined)),
+      h1:  typeof invs.h1 === 'number'  ? invs.h1  : (typeof p?.invalid_hard_1h==='number'? p.invalid_hard_1h : invMain),
       h4:  typeof invs.h4 === 'number'  ? invs.h4  : (typeof p?.invalid_struct_4h==='number'? p.invalid_struct_4h : undefined),
     }
   },[p])

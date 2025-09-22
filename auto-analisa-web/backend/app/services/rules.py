@@ -1,4 +1,5 @@
 from .indicators import ema, bb, rsi, macd, atr, rsi_n
+import numpy as np
 
 
 class Features:
@@ -45,15 +46,39 @@ def score_symbol(feat: "Features") -> int:
     return int(ts + loc + mom + vol + cl)
 
 
+def _swing_points(df, kind: str = "high", lookback: int = 120, count: int = 3) -> list[float]:
+    try:
+        series = df[kind].tail(lookback)
+        if series.empty:
+            return []
+        if kind == "high":
+            vals = series.nlargest(count * 2).unique()[: count * 2]
+            vals = sorted(vals)[-count:]
+        else:
+            vals = series.nsmallest(count * 2).unique()[: count * 2]
+            vals = sorted(vals)[:count]
+        return [round(float(v), 6) for v in vals if np.isfinite(v)]
+    except Exception:
+        return []
+
+
 def make_levels(feat: "Features"):
     f1, f15, f4 = feat.latest("1h"), feat.latest("15m"), feat.latest("4h")
     support1 = round(float(max(min(f15.mb, f15.ema20), min(f1.mb, f1.ema20))), 6)
     support2 = round(float(min(f15.ema50, f1.ema50)), 6)
+    support3 = round(float(min(f4.mb, getattr(f4, "ema100", f4.ema50))), 6)
     res1 = round(float(max(f1.ub, f1.high)), 6)
     res2 = round(float(max(f4.ub, f4.high)), 6)
+    res3 = round(float(max(f4.high * 1.01, getattr(f4, "ema200", f4.ub))), 6)
+    swing_highs = _swing_points(feat.b["15m"], "high", 160, 3)
+    if len(swing_highs) < 3:
+        swing_highs = (_swing_points(feat.b["1h"], "high", 120, 3) + swing_highs)[-3:]
+    swing_lows = _swing_points(feat.b["15m"], "low", 160, 3)
     return {
-        "support": [support1, support2],
-        "resistance": [res1, res2],
+        "support": [support1, support2, support3],
+        "resistance": [res1, res2, res3],
+        "swing_highs": swing_highs,
+        "swing_lows": swing_lows,
     }
 
 

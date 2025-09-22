@@ -68,7 +68,7 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str, trade_type: st
     score = score_symbol(feat)
     plan = await build_plan_async(db, bundle, feat, score, "auto")
     try:
-        spot2 = await build_spot2_from_plan(db, sym, plan)
+        spot2 = await build_spot2_from_plan(db, sym, plan, bundle=bundle)
         plan["spot2"] = spot2
     except Exception:
         pass
@@ -128,7 +128,7 @@ async def refresh_analysis_rules_only(db: AsyncSession, user: User, analysis: An
     score = score_symbol(feat)
     plan = await build_plan_async(db, bundle, feat, score, "auto")
     try:
-        spot2 = await build_spot2_from_plan(db, sym, plan)
+        spot2 = await build_spot2_from_plan(db, sym, plan, bundle=bundle)
         plan["spot2"] = spot2
     except Exception:
         pass

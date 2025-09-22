@@ -79,17 +79,24 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
     feat = Features(bundle).enrich()
     score = score_symbol(feat)
     base_plan = await build_plan_async(db, bundle, feat, score, "auto")
-    spot2 = await build_spot2_from_plan(db, symbol.upper(), base_plan)
+    spot2 = await build_spot2_from_plan(db, symbol.upper(), base_plan, bundle=bundle)
     # Pick representative values
-    rjb = dict(spot2.get("rencana_jual_beli") or {})
-    entries = [(_f((e.get("range") or [None])[0]), float(e.get("weight") or 0.0), (e.get("type") or "PB")) for e in (rjb.get("entries") or [])]
-    tp_nodes = [(t.get("name") or f"TP{i+1}", _f((t.get("range") or [None])[0])) for i, t in enumerate(spot2.get("tp") or [])]
+    entries_src = list(spot2.get("entries") or [])
+    entries = [
+        (_f(e.get("price")), float(e.get("weight") or 0.0), (e.get("type") or spot2.get("mode") or "PB"))
+        for e in entries_src
+    ]
+    tp_nodes = [
+        (t.get("name") or f"TP{i+1}", _f(t.get("price")))
+        for i, t in enumerate(spot2.get("tp") or [])
+    ]
     # map spot2 invalids if available
     inv_map = dict(spot2.get("invalids") or {})
+    invalid_main = spot2.get("invalid")
     invalids = {
-        "tactical_5m": _f(inv_map.get("m5") if inv_map else rjb.get("invalid")),
+        "tactical_5m": _f(inv_map.get("m5") if inv_map else invalid_main),
         "soft_15m": _f(inv_map.get("m15")) if inv_map else None,
-        "hard_1h": _f(inv_map.get("h1") if inv_map else rjb.get("invalid")),
+        "hard_1h": _f(inv_map.get("h1") if inv_map else invalid_main),
         "struct_4h": _f(inv_map.get("h4")) if inv_map else None,
     }
     # risk and guard defaults
@@ -233,22 +240,22 @@ async def verify_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=
     feat = Features(bundle).enrich()
     score = score_symbol(feat)
     base_plan = await build_plan_async(db, bundle, feat, score, "auto")
-    spot2 = await build_spot2_from_plan(db, symbol.upper(), base_plan)
-    rjb = dict(spot2.get("rencana_jual_beli") or {})
-    def _first_or_none(r):
-        try:
-            return float((r or [None])[0])
-        except Exception:
-            return None
-    entries_nums = [ _first_or_none(e.get("range")) for e in (rjb.get("entries") or []) ]
-    entries_nums = [x for x in entries_nums if isinstance(x,(int,float))]
-    tp_nums = [ _first_or_none(t.get("range")) for t in (spot2.get("tp") or []) ]
-    tp_nums = [x for x in tp_nums if isinstance(x,(int,float))]
+    spot2 = await build_spot2_from_plan(db, symbol.upper(), base_plan, bundle=bundle)
+    entries_nums = [
+        _f(e.get("price"))
+        for e in (spot2.get("entries") or [])
+        if _f(e.get("price")) is not None
+    ]
+    tp_nums = [
+        _f(t.get("price"))
+        for t in (spot2.get("tp") or [])
+        if _f(t.get("price")) is not None
+    ]
     inv_map = dict(spot2.get("invalids") or {})
     invalids = {
-        "tactical_5m": inv_map.get("m5") if inv_map else rjb.get("invalid"),
+        "tactical_5m": inv_map.get("m5") if inv_map else spot2.get("invalid"),
         "soft_15m": inv_map.get("m15") if inv_map else None,
-        "hard_1h": inv_map.get("h1") if inv_map else rjb.get("invalid"),
+        "hard_1h": inv_map.get("h1") if inv_map else spot2.get("invalid"),
         "struct_4h": inv_map.get("h4") if inv_map else None,
     }
     s = await get_or_init_settings(db)

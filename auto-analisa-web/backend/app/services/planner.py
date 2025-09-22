@@ -6,6 +6,7 @@ from .supply_demand import detect_zones
 from .budget import get_or_init_settings
 from .validator import normalize_and_validate, validate_spot2
 from .rounding import round_plan_prices
+import math
 
 
 async def build_plan_async(db, bundle, feat: "Features", score: int, mode: str = "auto"):
@@ -17,10 +18,22 @@ async def build_plan_async(db, bundle, feat: "Features", score: int, mode: str =
         **assembled,
         "score": score,
         "regime": reg,
+        "swing_highs": lv.get("swing_highs", []),
+        "swing_lows": lv.get("swing_lows", []),
     }
     # Normalize and compute rr_min
     # Enforce rr_min target ≥ 1.6 when normalizing
     plan, _warns = normalize_and_validate(plan, rr_target=1.6)
+    # sinkronkan tp_logic dengan angka hasil normalisasi
+    tp_logic = list(assembled.get("tp_logic") or [])
+    tp_vals = list(plan.get("tp") or [])
+    if tp_vals and tp_logic:
+        while len(tp_logic) < len(tp_vals):
+            tp_logic.append(tp_logic[-1])
+        plan["tp_logic"] = tp_logic[: len(tp_vals)]
+    else:
+        plan["tp_logic"] = tp_logic
+    plan["entry_notes"] = list(assembled.get("entry_notes") or [])
 
     # Derive invalid bertingkat (tactical 5m, soft 15m, hard 1h, struct 4h[opsional])
     try:
@@ -91,55 +104,233 @@ def _weights_for_profile(profile: str, n: int) -> list[float]:
     return [0.4, 0.6][:n]
 
 
-async def build_spot2_from_plan(db, symbol: str, plan: dict) -> dict:
+def _round_numbers(price: float) -> list[float]:
+    try:
+        p = float(price)
+    except Exception:
+        return []
+    if p <= 0:
+        return []
+    if p >= 1000:
+        step = 10.0
+    elif p >= 100:
+        step = 5.0
+    elif p >= 10:
+        step = 1.0
+    elif p >= 1:
+        step = 0.1
+    elif p >= 0.1:
+        step = 0.01
+    else:
+        step = 0.001
+    base = math.floor(p / step)
+    return [round((base + i) * step, 6) for i in range(1, 4)]
+
+
+def _build_buyback(plan: dict, bundle, atr15: float) -> list[dict]:
+    sup = list(plan.get("support") or [])
+    out: list[dict] = []
+    atr = float(atr15 or 0.0)
+    buf1 = atr * 0.25
+    buf2 = atr * 0.35
+    buf3 = atr * 0.45
+    ema50 = None
+    ema100 = None
+    try:
+        ema50 = float(bundle["15m"].iloc[-1].ema50)
+        ema100 = float(bundle["15m"].iloc[-1].ema100)
+    except Exception:
+        pass
+    if sup:
+        s1 = float(sup[0])
+        out.append({
+            "name": "BB1",
+            "range": [round(s1 - buf1, 6), round(s1 + buf1, 6)],
+            "note": "Support terdekat",
+        })
+    if len(sup) > 1 or ema50:
+        base = float(sup[1]) if len(sup) > 1 else float(ema50 or sup[0])
+        out.append({
+            "name": "BB2",
+            "range": [round(base - buf2, 6), round(base + buf2, 6)],
+            "note": "EMA50 / entry lebih aman",
+        })
+    base3 = None
+    if len(sup) > 2:
+        base3 = float(sup[2])
+    elif ema100:
+        base3 = float(ema100)
+    if base3 is not None:
+        out.append({
+            "name": "BB3",
+            "range": [round(base3 - buf3, 6), round(base3 + buf3, 6)],
+            "note": "EMA100 / support kuat",
+        })
+    return out[:3]
+
+
+def _macro_gate() -> dict:
+    return {
+        "avoid_red": True,
+        "prefer_wib": ["11:30-16:00", "19:30-22:00", "00:00-07:00"],
+        "avoid_wib": ["16:00-20:45", "22:00-00:00"],
+        "session_refs": "Hijau 20:30–23:00 WIB & 01:00–08:00 WITA",
+        "sop_partial_on_red": True,
+    }
+
+
+def _macro_notes() -> list[str]:
+    return [
+        "Checklist: tarik High/Low harian, VWAP, swing 1H, S/D 4H.",
+        "Entry PB valid bila 15m close > VWAP saat jendela hijau (20:30–23:00 WIB).",
+        "Hindari entry baru di 22:00–01:00 WIB; jika posisi aktif → partial 25-50%.",
+        "Pantau DXY & US10Y: risk-on jika melemah; periksa aliran ETF spot BTC & operasi PBOC.",
+    ]
+
+
+def _macro_score(plan: dict, regime: dict) -> tuple[float, float, str]:
+    rr = float(plan.get("rr_min") or 0.0)
+    score = float(plan.get("score") or 0.0)
+    macro_bias = "sideways-bullish"
+    total = 0.0
+    if regime.get("regime") == "TREND":
+        total += 1.0
+    if rr >= 1.8:
+        total += 1.0
+    if score >= 32:
+        total += 1.0
+    if plan.get("mode") in {"PB", "BO"}:
+        total += 0.5
+    threshold = 2.0
+    return total, threshold, macro_bias
+
+
+async def build_spot2_from_plan(db, symbol: str, plan: dict, bundle=None) -> dict:
     from .budget import get_or_init_settings
+
     s = await get_or_init_settings(db)
-    # Snap all prices to tick size when possible before membentuk SPOT II
+    # Snap all prices to tick size when possible sebelum membentuk SPOT II+
     try:
         plan = round_plan_prices(symbol, plan)
     except Exception:
         pass
     profile = getattr(s, "default_weight_profile", "DCA")
-    entries = plan.get("entries", [])
-    weights = plan.get("weights") or _weights_for_profile(profile, len(entries))
-    tp_arr = plan.get("tp", [])
-    # helper: safe float
+    entries = list(plan.get("entries", []))
+    weights = list(plan.get("weights") or _weights_for_profile(profile, len(entries)))
+    tp_arr = list(plan.get("tp", []))
+    tp_logic = list(plan.get("tp_logic") or [])
+    entry_notes = list(plan.get("entry_notes") or [])
+    regime = dict(plan.get("regime") or {})
+    mode = plan.get("mode") or "PB"
+    bias = plan.get("bias") or ""
+
     def _f(x):
         try:
             return float(x)
         except Exception:
             return None
+
+    atr15 = None
+    try:
+        if bundle and "15m" in bundle:
+            atr15 = float(bundle["15m"].iloc[-1].atr14)
+    except Exception:
+        atr15 = None
+
+    entries_struct = []
+    for i, price in enumerate(entries):
+        val = _f(price)
+        if val is None:
+            continue
+        entry = {
+            "price": val,
+            "weight": float(weights[i] if i < len(weights) else 0.0),
+            "type": mode,
+        }
+        if i < len(entry_notes) and entry_notes[i]:
+            entry["note"] = entry_notes[i]
+        entries_struct.append(entry)
+
+    qty_template = [30, 40, 30]
+    tp_struct = []
+    for i, price in enumerate(tp_arr):
+        val = _f(price)
+        if val is None:
+            continue
+        node = {
+            "name": f"TP{i+1}",
+            "price": val,
+            "qty_pct": qty_template[i] if i < len(qty_template) else round(100.0 / max(len(tp_arr), 1), 2),
+        }
+        if i < len(tp_logic) and tp_logic[i]:
+            node["logic"] = tp_logic[i]
+        else:
+            node["logic"] = ""
+        tp_struct.append(node)
+
+    invalid_val = _f(plan.get("invalid"))
+    macro_score, macro_threshold, macro_bias = _macro_score(plan, regime)
+    buyback = _build_buyback(plan, bundle, atr15)
+
     spot2 = {
         "symbol": symbol,
+        "trade_type": "spot",
         "timestamp": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
-        "ringkas_teknis": plan.get("bias") or "",
-        "rencana_jual_beli": {
-            "profile": profile,
-            "entries": [
-                {"range": [float(e), float(e)], "weight": float(weights[i] if i < len(weights) else 0.0), "type": plan.get("mode", "PB")}
-                for i, e in enumerate(entries)
-            ],
-            "invalid": plan.get("invalid"),
-            "eksekusi_hanya_jika": "Struktur 1H bertahan sesuai bias."
+        "regime": {
+            "regime": regime.get("regime", "TREND"),
+            "confidence": float(regime.get("confidence", 0.0) or 0.0),
         },
-        "tp": [
-            {"name": f"TP{i+1}", "range": [float(t), float(t)]}
-            for i, t in enumerate(tp_arr)
-        ],
-        "mode_breakout": {"trigger": [], "retest_add": [], "sl_cepat": None},
-        "fail_safe": [],
-        "jam_pantau_wib": [],
-        "metrics": {"rr_min": plan.get("rr_min", 0.0), "tick_check": True},
-        "sr": {"support": plan.get("support", []), "resistance": plan.get("resistance", [])},
+        "mode": mode,
+        "bias": bias,
+        "sr": {
+            "support": list(plan.get("support", [])),
+            "resistance": list(plan.get("resistance", [])),
+        },
+        "entries": entries_struct,
+        "invalid": invalid_val,
+        "tp": tp_struct,
+        "trailing": {
+            "enabled": True,
+            "anchor": "HL 15m",
+            "offset_atr": 0.6,
+        },
+        "time_exit": {
+            "enabled": True,
+            "ttl_min": 240,
+            "reason": "Stagnan > 4 jam",
+        },
+        "buyback": buyback,
+        "macro_gate": {
+            **_macro_gate(),
+            "macro_bias": macro_bias,
+        },
+        "metrics": {
+            "rr_min": float(plan.get("rr_min", 0.0) or 0.0),
+            "tick_ok": True,
+            "macro_score": macro_score,
+            "macro_score_threshold": macro_threshold,
+        },
+        "round_numbers": _round_numbers(entries_struct[0]["price"]) if entries_struct else [],
+        "notes": _macro_notes(),
+        "warnings": [],
+        "tf_base": "1h",
+        "ringkas_teknis": bias,
         "invalids": {
             "m5": _f(plan.get("invalid_tactical_5m")),
             "m15": _f(plan.get("invalid_soft_15m")),
-            "h1": _f(plan.get("invalid_hard_1h")),
+            "h1": _f(plan.get("invalid_hard_1h")) or invalid_val,
             "h4": _f(plan.get("invalid_struct_4h")),
         },
-        "mtf_refs": {},
-        "overlays": {"applied": False, "ghost": False},
     }
+
+    if atr15 is not None:
+        spot2["metrics"]["atr15"] = float(atr15)
+
+    if macro_score < macro_threshold:
+        spot2["warnings"].append("Macro score < threshold; gunakan mode range (RR) & TP cepat.")
+    if float(plan.get("rr_min", 0.0) or 0.0) < 1.8:
+        spot2["warnings"].append("RR < 1.8 — pertimbangkan perketat invalid atau kurangi ukuran.")
+
     # Jalankan validator SPOT II agar konsisten dengan jalur LLM
     try:
         v = validate_spot2(spot2)

@@ -1,5 +1,5 @@
 import math
-import os, sys
+import os, sys, math
 # ensure backend/app is importable as 'app'
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from app.services.validator import normalize_and_validate, compute_rr_min, validate_spot2
@@ -42,23 +42,24 @@ def test_rr_min_and_auto_tighten_invalid():
 
 def test_validate_spot2_rewrites_tp_and_propagates_rr():
     spot2 = {
-        "rencana_jual_beli": {
-            "entries": [
-                {"range": [100.0, 101.0], "weight": 0.6},
-                {"range": [98.0, 99.0], "weight": 0.4},
-            ],
-            "invalid": 95.0,
-        },
+        "entries": [
+            {"price": 100.0, "weight": 0.6, "type": "PB"},
+            {"price": 98.0, "weight": 0.4, "type": "PB"},
+        ],
+        "invalid": 95.0,
         "tp": [
-            {"name": "TP1", "range": [110.0, 111.0]},
-            {"name": "TP2", "range": [108.0, 109.0]},  # descending
+            {"name": "TP1", "price": 110.0, "qty_pct": 20},
+            {"name": "TP2", "price": 108.0, "qty_pct": 30},  # descending & qty sum<100
+            {"name": "TP3", "price": 120.0, "qty_pct": 20},
         ],
     }
     v = validate_spot2(spot2)
     assert isinstance(v, dict) and "fixes" in v
     fixed = v["fixes"]
     # TP should be strictly ascending on first bound
-    tps = [t["range"][0] for t in fixed.get("tp", [])]
+    tps = [t.get("price") for t in fixed.get("tp", [])]
     assert all(tps[i] < tps[i+1] for i in range(len(tps)-1))
     # rr_min should be present
     assert "metrics" in fixed and fixed["metrics"].get("rr_min", 0.0) >= 0.0
+    # qty pct normalized to 100
+    assert round(sum(t.get("qty_pct", 0.0) for t in fixed.get("tp", [])), 2) == 100.0
