@@ -61,7 +61,7 @@ async def run_analysis(db: AsyncSession, user: User, symbol: str, trade_type: st
     # compute baseline plan using existing rules engine
     bundle = await fetch_bundle(
         symbol,
-        ("4h", "1h", "15m", "5m"),
+        ("4h", "1h", "15m", "5m", "1m"),
         market=("futures" if tt == "futures" else "spot"),
     )
     feat = Features(bundle).enrich()
@@ -121,7 +121,7 @@ async def refresh_analysis_rules_only(db: AsyncSession, user: User, analysis: An
     tt = _normalize_trade_type(getattr(analysis, "trade_type", "spot"))
     bundle = await fetch_bundle(
         sym,
-        ("4h", "1h", "15m", "5m"),
+        ("4h", "1h", "15m", "5m", "1m"),
         market=("futures" if tt == "futures" else "spot"),
     )
     feat = Features(bundle).enrich()

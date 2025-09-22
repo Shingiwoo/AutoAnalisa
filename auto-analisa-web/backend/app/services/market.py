@@ -95,7 +95,7 @@ async def fetch_klines(symbol: str, timeframe: str, limit: int = 500, market: st
             return df
 
 
-async def fetch_bundle(symbol: str, tfs=("4h", "1h", "15m", "5m"), market: str = "spot") -> Dict[str, pd.DataFrame]:
+async def fetch_bundle(symbol: str, tfs=("4h", "1h", "15m", "5m", "1m"), market: str = "spot") -> Dict[str, pd.DataFrame]:
     out: Dict[str, pd.DataFrame] = {}
     for tf in tfs:
         try:

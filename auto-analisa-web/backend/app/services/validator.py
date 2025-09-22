@@ -224,9 +224,11 @@ def normalize_and_validate(
 
         if rr_tp1_avg < float(rr_target_tp1):
             flags["no_trade"] = True
-            warns.append(f"RR TP1 {rr_tp1_avg:.2f} < {float(rr_target_tp1):.2f}; tandai no-trade")
+            p["no_trade"] = True
+            warns.append("rr_tp1_insufficient")
         else:
             flags.pop("no_trade", None)
+            p.pop("no_trade", None)
         p["flags"] = flags
 
     return p, warns

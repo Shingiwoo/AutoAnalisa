@@ -1,6 +1,7 @@
 'use client'
 import {useState} from 'react'
 import {api} from '../api'
+import { normalizeSymbolInput } from '../../lib/hooks/useSymbols'
 
 export default function AnalyzeForm({onDone}:{onDone:(plan:any)=>void}){
   const [symbol,setSymbol]=useState('XRPUSDT')
@@ -8,7 +9,10 @@ export default function AnalyzeForm({onDone}:{onDone:(plan:any)=>void}){
   async function submit(){
     setLoading(true)
     try{
-      const {data}=await api.post('analyze',{symbol})
+      const normalized = normalizeSymbolInput(symbol)
+      if(!normalized){ alert('Simbol tidak valid.'); setLoading(false); return }
+      if(normalized.includes('.P')){ alert('Simbol perpetual (.P) tidak valid untuk Spot.'); setLoading(false); return }
+      const {data}=await api.post('analyze',{symbol: normalized})
       onDone(data)
     }catch(e:any){
       if(e?.response?.status===409){ alert(e.response?.data?.detail || 'Maksimal 4 analisa aktif. Arsipkan salah satu dulu.') }
