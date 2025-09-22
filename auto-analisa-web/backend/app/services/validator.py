@@ -2,6 +2,25 @@ from __future__ import annotations
 from typing import Dict, List, Tuple
 
 
+def _weighted_avg(values: List[float], weights: List[float]) -> float:
+    if not values:
+        return 0.0
+    if len(weights) != len(values) or sum(weights) == 0:
+        weights = [1.0 / len(values) for _ in values]
+    return float(sum(v * w for v, w in zip(values, weights)))
+
+
+def _compute_rr_tp1_avg(entries: List[float], weights: List[float], invalid: float | None, tp1: float | None) -> float:
+    if not entries or invalid is None or tp1 is None:
+        return 0.0
+    avg_entry = _weighted_avg(entries, weights)
+    risk = avg_entry - float(invalid)
+    reward = float(tp1) - avg_entry
+    if risk <= 0:
+        return 0.0
+    return float(reward / risk)
+
+
 def _strict_asc(vals: List[float]) -> List[float]:
     if not vals:
         return vals
@@ -25,6 +44,17 @@ def _safe_div(a: float, b: float) -> float:
         return 0.0
 
 
+def _nearest_above(values: List[float], ref: float) -> float | None:
+    try:
+        ordered = sorted(float(v) for v in values if v is not None)
+    except Exception:
+        return None
+    for v in ordered:
+        if v > ref:
+            return float(v)
+    return None
+
+
 def compute_rr_min(entries: List[float], invalid: float, tp1: float) -> float:
     if not entries or invalid is None or tp1 is None:
         return 0.0
@@ -43,13 +73,20 @@ def compute_rr_min(entries: List[float], invalid: float, tp1: float) -> float:
     return float(min(rr_vals)) if rr_vals else 0.0
 
 
-def normalize_and_validate(plan: Dict, rr_target: float = 1.6) -> Tuple[Dict, List[str]]:
+def normalize_and_validate(
+    plan: Dict,
+    rr_target: float = 1.6,
+    rr_target_tp1: float = 1.5,
+    tighten_cap: float = 0.6,
+    context: Dict | None = None,
+) -> Tuple[Dict, List[str]]:
     """Normalize numeric fields, enforce basic invariants, compute rr_min.
 
     Returns (sanitized_plan, warnings)
     """
     p = dict(plan or {})
     warns: List[str] = []
+    ctx = dict(context or {})
 
     # Ensure arrays
     support = list(p.get("support") or [])
@@ -95,6 +132,8 @@ def normalize_and_validate(plan: Dict, rr_target: float = 1.6) -> Tuple[Dict, Li
     # Compute rr_min to TP1
     tp1 = tp[0] if tp else None
     rr_min = compute_rr_min(entries, invalid, tp1) if (invalid is not None and tp1 is not None) else 0.0
+    rr_tp1_avg = _compute_rr_tp1_avg(entries, weights, invalid, tp1)
+    p["rr_tp1_avg"] = round(float(rr_tp1_avg), 6)
     p["support"] = support
     p["resistance"] = resistance
     p["entries"] = entries
@@ -103,6 +142,9 @@ def normalize_and_validate(plan: Dict, rr_target: float = 1.6) -> Tuple[Dict, Li
         p["invalid"] = invalid
     p["tp"] = tp
     p["rr_min"] = round(float(rr_min), 6)
+    flags = dict(p.get("flags") or {})
+    flags["rr_tp1_ok"] = bool(rr_tp1_avg >= float(rr_target_tp1))
+    p["flags"] = flags
 
     # Basic logical check: invalid should be below entries for long bias; if not, warn
     try:
@@ -139,6 +181,53 @@ def normalize_and_validate(plan: Dict, rr_target: float = 1.6) -> Tuple[Dict, Li
                 warns.append(f"auto-adjusted invalid to meet rr>={RR_TH}")
     except Exception:
         pass
+
+    # Guard tambahan: pastikan RR TP1 memenuhi target minimal
+    if entries and tp and invalid is not None and tp1 is not None and rr_tp1_avg < float(rr_target_tp1):
+        avg_entry = _weighted_avg(entries, weights)
+        risk0 = avg_entry - float(invalid)
+        eps = max(abs(avg_entry) * 1e-5, 1e-5)
+        if risk0 > 0:
+            target_invalid = avg_entry - (tp1 - avg_entry) / float(rr_target_tp1)
+            cap_level = avg_entry - risk0 * float(tighten_cap)
+            cand_invalid = max(float(invalid), cap_level, target_invalid)
+            cand_invalid = min(cand_invalid, avg_entry - eps)
+            if cand_invalid > float(invalid):
+                invalid = round(float(cand_invalid), 6)
+                p["invalid"] = invalid
+                rr_min = compute_rr_min(entries, invalid, tp1)
+                rr_tp1_avg = _compute_rr_tp1_avg(entries, weights, invalid, tp1)
+                p["rr_min"] = round(float(rr_min), 6)
+                p["rr_tp1_avg"] = round(float(rr_tp1_avg), 6)
+                flags["rr_tp1_ok"] = bool(rr_tp1_avg >= float(rr_target_tp1))
+                if flags["rr_tp1_ok"]:
+                    warns.append(f"invalid dinaikkan agar RR TP1 ≥ {float(rr_target_tp1):.2f}")
+                else:
+                    warns.append("invalid sudah diperketat namun RR TP1 masih rendah")
+
+        if rr_tp1_avg < float(rr_target_tp1):
+            resistances = list(ctx.get("resistance") or p.get("resistance") or [])
+            avg_entry = _weighted_avg(entries, weights)
+            candidate = _nearest_above(resistances, avg_entry)
+            if candidate is not None and (tp1 is None or candidate > tp1):
+                tp[0] = float(candidate)
+                tp = _strict_asc(tp)
+                tp1 = tp[0]
+                p["tp"] = tp
+                rr_min = compute_rr_min(entries, invalid, tp1)
+                rr_tp1_avg = _compute_rr_tp1_avg(entries, weights, invalid, tp1)
+                p["rr_min"] = round(float(rr_min), 6)
+                p["rr_tp1_avg"] = round(float(rr_tp1_avg), 6)
+                flags["rr_tp1_ok"] = bool(rr_tp1_avg >= float(rr_target_tp1))
+                if flags["rr_tp1_ok"]:
+                    warns.append("TP1 dinaikkan ke resist minor untuk RR sehat")
+
+        if rr_tp1_avg < float(rr_target_tp1):
+            flags["no_trade"] = True
+            warns.append(f"RR TP1 {rr_tp1_avg:.2f} < {float(rr_target_tp1):.2f}; tandai no-trade")
+        else:
+            flags.pop("no_trade", None)
+        p["flags"] = flags
 
     return p, warns
 
@@ -273,6 +362,10 @@ def validate_spot2(spot2: Dict) -> Dict:
 
         s2.setdefault("metrics", {})
         s2["metrics"]["rr_min"] = fixed.get("rr_min", 0.0)
+        if fixed.get("rr_tp1_avg") is not None:
+            s2["metrics"]["rr_tp1_avg"] = fixed.get("rr_tp1_avg")
+        if fixed.get("flags"):
+            s2["flags"] = dict(fixed.get("flags") or {})
 
         out["fixes"] = s2
     except Exception as e:

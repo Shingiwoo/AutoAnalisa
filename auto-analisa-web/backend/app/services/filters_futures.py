@@ -31,9 +31,10 @@ def _vol_ok(vol_ma10_15m: float, min_usdt: float = 20000.0) -> bool:
         return False
 
 # Simple gating from cached futures signals
-def gating_signals_ok(side: str, sig: Dict[str, Any]) -> Tuple[bool, List[str], Dict[str, Any]]:
+def gating_signals_ok(side: str, sig: Dict[str, Any], profile: str | None = None) -> Tuple[bool, List[str], Dict[str, Any]]:
     rs: List[str] = []
     ok = True
+    profile_key = str(profile or "scalp").lower()
     # Funding bias: avoid extreme positive funding for LONG and extreme negative for SHORT
     try:
         fnow = float((sig.get("funding") or {}).get("now") or 0.0) * 1e4  # to bp
@@ -107,6 +108,39 @@ def gating_signals_ok(side: str, sig: Dict[str, Any]) -> Tuple[bool, List[str], 
             ok = False; rs.append("Volume 15m di bawah ambang")
     except Exception:
         pass
+
+    # Profil-spesifik
+    if profile_key == "scalp":
+        try:
+            calendar = sig.get("calendar") or {}
+            if calendar.get("red_within_30m"):
+                ok = False; rs.append("Event merah <30 menit — tunda scalping")
+        except Exception:
+            pass
+        try:
+            td5 = float((sig.get("taker_delta") or {}).get("m5") or 0.0)
+            if side == "LONG" and td5 < -0.02:
+                ok = False; rs.append("Momentum m5 bearish — scalping LONG dihindari")
+            if side == "SHORT" and td5 > 0.02:
+                ok = False; rs.append("Momentum m5 bullish — scalping SHORT dihindari")
+        except Exception:
+            pass
+        try:
+            vol_ctx = sig.get("volume") or {}
+            ma5 = vol_ctx.get("ma5_5m_usdt") or vol_ctx.get("ma10_15m_usdt")
+            if ma5 is not None and float(ma5) < 15000.0:
+                ok = False; rs.append("Volume intraday di bawah ambang scalping")
+        except Exception:
+            pass
+    elif profile_key == "swing":
+        try:
+            td_h1 = float((sig.get("taker_delta") or {}).get("h1") or 0.0)
+            if side == "LONG" and td_h1 < -0.05:
+                ok = False; rs.append("Taker delta 1h negatif — tunggu konfirmasi swing LONG")
+            if side == "SHORT" and td_h1 > 0.05:
+                ok = False; rs.append("Taker delta 1h positif — swing SHORT berisiko")
+        except Exception:
+            pass
 
     return ok, rs, {
         "funding": sig.get("funding"),

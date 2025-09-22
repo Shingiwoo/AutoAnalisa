@@ -19,7 +19,12 @@ def test_build_plan_futures_smoke():
               "4h": _mkdf(n=200, start=100, drift=0.005)}
     feat = Features(bundle); feat.enrich()
     sig = {"funding":{"now":0.0001},"basis":{"bp":10.0},"taker_delta":{"m15":0.05},"lsr":{"positions":1.2},"orderbook":{"spread_bp":1.2}}
-    plan = build_plan_futures(bundle, feat, side_hint="AUTO", fut_signals=sig, symbol="BTCUSDT")
+    plan = build_plan_futures(bundle, feat, side_hint="AUTO", fut_signals=sig, symbol="BTCUSDT", profile="scalp")
+    swing = build_plan_futures(bundle, feat, side_hint="AUTO", fut_signals=sig, symbol="BTCUSDT", profile="swing")
     assert isinstance(plan, dict) and "entries" in plan and "invalids" in plan and "tp" in plan
     assert len(plan["entries"]) == 2 and len(plan["tp"]) == 2
-    assert plan["metrics"]["rr_min"] >= 1.0
+    assert plan["profile"] == "scalp"
+    assert swing["profile"] == "swing"
+    assert plan["ttl_min"] != swing["ttl_min"]
+    assert plan["metrics"]["rr_min"] >= plan["metrics"].get("rr_target", 1.2)
+    assert swing["metrics"]["rr_min"] >= swing["metrics"].get("rr_target", 1.6)

@@ -3,6 +3,30 @@ from typing import Dict, List, Tuple
 import math
 
 
+def _confirmations(mode: str) -> Dict[str, List[str]]:
+    mode = (mode or "").upper()
+    if mode == "BO":
+        return {
+            "wajib": [
+                "Breakout hanya saat slot hijau (WIB) dengan volume > MA20.",
+                "Gunakan stop-limit di atas high range 1H, jangan market entry di tengah lilin.",
+            ],
+            "opsional": [
+                "M5 momentum searah (engulfing/structure break) sebelum eksekusi.",
+            ],
+        }
+    # default PB / SR / RR / FF
+    return {
+        "wajib": [
+            "Tunggu 15m close reclaim VWAP + EMA20.",
+            "Butuh sinyal M5: pinbar / engulfing / RSI div + lonjakan volume.",
+        ],
+        "opsional": [
+            "Periksa order flow spot (tape) selaras sebelum entry inti.",
+        ],
+    }
+
+
 def _buf(price: float, atr15: float) -> float:
     return max(float(atr15) * 0.20, abs(float(price)) * 1e-4)
 
@@ -56,8 +80,12 @@ def plan_pb(bundle, levels: Dict) -> Dict:
     a = float(getattr(last, "atr14", 0.0))
     s1, s2 = levels["support"][:2]
     r = levels["resistance"]
-    e1 = max(s1, p - a * 0.6)
-    e2 = max(s2, p - a * 1.2)
+    vwap15 = float(getattr(last, "vwap", p))
+    ema20 = float(getattr(last, "ema20", p))
+    ema50 = float(getattr(last, "ema50", p))
+    dyn_core = min(max(s1, min(vwap15, ema20)), p)
+    e1 = min(dyn_core, p - a * 0.45)
+    e2 = min(max(s2, ema50), e1 - a * 0.35)
     invalid = min(e1, e2) - _buf(p, a)
     swings = tuple(levels.get("swing_highs", [])[:3]) or None
     tp_vals, tp_logic = _tp_ladder(p, a, r, swings if swings and len(swings) >= 3 else None)
@@ -75,6 +103,8 @@ def plan_pb(bundle, levels: Dict) -> Dict:
             "Entry inti di retest EMA20/VWAP",
             "Tambah di support lanjutan / EMA50",
         ],
+        "seed_tp_profile": {"kind": "ladder_static", "qty_pct": [30, 40, 30]},
+        "confirmations": _confirmations("PB"),
     }
 
 
@@ -103,6 +133,12 @@ def plan_bo(bundle, levels: Dict) -> Dict:
             "Stop-limit di atas high range",
             "Re-add saat retest VWAP/R1",
         ],
+        "seed_tp_profile": {
+            "kind": "atr_multiple",
+            "multipliers": [1.0, 1.8, 2.5],
+            "qty_pct": [30, 40, 30],
+        },
+        "confirmations": _confirmations("BO"),
     }
 
 
@@ -130,6 +166,8 @@ def plan_rr(bundle, levels: Dict) -> Dict:
             "Beli di VWAP-low range",
             "Tambah di demand bawah / EMA100",
         ],
+        "seed_tp_profile": {"kind": "ladder_static", "qty_pct": [30, 40, 30]},
+        "confirmations": _confirmations("RR"),
     }
 
 
@@ -157,6 +195,8 @@ def plan_sr(bundle, levels: Dict) -> Dict:
             "Entry setelah reclaim support",
             "Tambah di pullback ke EMA50",
         ],
+        "seed_tp_profile": {"kind": "ladder_static", "qty_pct": [30, 40, 30]},
+        "confirmations": _confirmations("SR"),
     }
 
 
@@ -188,6 +228,8 @@ def plan_ff(bundle, levels: Dict, fvg=None) -> Dict:
             "Isi FVG tengah",
             "Isi FVG bawah / demand kuat",
         ],
+        "seed_tp_profile": {"kind": "ladder_static", "qty_pct": [30, 40, 30]},
+        "confirmations": _confirmations("FF"),
     }
 
 

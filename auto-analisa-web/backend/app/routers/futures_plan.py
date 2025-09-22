@@ -42,7 +42,22 @@ async def _build_futures(symbol: str, db: AsyncSession, user, use_llm: bool = Fa
         fut_signals=sig,
         symbol=symbol,
         use_llm_fixes=bool(use_llm and allow_llm),
+        profile="scalp",
     )
+    try:
+        swing_variant = build_plan_futures(
+            bundle,
+            feat,
+            side_hint="AUTO",
+            fut_signals=sig,
+            symbol=symbol,
+            use_llm_fixes=False,
+            profile="swing",
+        )
+        if isinstance(plan, dict):
+            plan.setdefault("variants", {})["swing"] = {k: v for k, v in swing_variant.items() if k != "_usage"}
+    except Exception:
+        pass
     # If LLM used, record token usage (both monthly budget and daily aggregator), then strip _usage from response
     usage = dict(plan.get("_usage") or {}) if isinstance(plan, dict) else {}
     if use_llm and allow_llm and usage:

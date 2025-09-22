@@ -18,6 +18,29 @@ from .utils_num import nearest_round, round_to_step
 SCORE_THRESHOLD = 60
 USE_MACRO_GATING = False
 
+PROFILE_CONFIG = {
+    "scalp": {
+        "ttl_min": 120,
+        "atr_tf": "15m",
+        "sl_atr": 0.45,
+        "tp_multipliers": [1.0, 1.6],
+        "tp_pct": [50, 50],
+        "min_rr": 1.2,
+        "entry_weights": [0.5, 0.5],
+        "label": "Scalping",
+    },
+    "swing": {
+        "ttl_min": 720,
+        "atr_tf": "1h",
+        "sl_atr": 0.8,
+        "tp_multipliers": [2.0, 3.0],
+        "tp_pct": [40, 60],
+        "min_rr": 1.6,
+        "entry_weights": [0.4, 0.6],
+        "label": "Swing",
+    },
+}
+
 def _atr(df: pd.DataFrame, period: int = 14) -> float:
     high = df["high"].astype(float).to_numpy()
     low = df["low"].astype(float).to_numpy()
@@ -289,13 +312,14 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
                        feat: Features,
                        side_hint: Optional[str] = None,
                        price_pad_bp: float = 8.0,
-                       rr_min: float = 1.8,
+                       rr_min: float = 0.0,
                        fee_bp: float = 5.0,          # taker 0.05% default
                        slippage_bp: float = 2.0,     # conservative
                        use_llm_fixes: bool = False,
                        llm_fix_hook=None,
                        fut_signals: Optional[Dict[str, Any]] = None,
-                       symbol: Optional[str] = None) -> Dict[str, Any]:
+                       symbol: Optional[str] = None,
+                       profile: str = "scalp") -> Dict[str, Any]:
     """Return a plan dict suitable for validator_futures + FE overlay.
 
     Keys:
@@ -314,7 +338,14 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
     # enrich / derive
     s1, s2, r1, r2 = _levels_from_feature(feat)
     atr15 = _atr(bundle["15m"], 14)
+    atr1h = _atr(bundle.get("1h", bundle["15m"]), 14)
     atr_pct = (atr15 / price) * 100.0 if price > 0 else 0.0
+
+    profile_key = str(profile or "scalp").lower()
+    cfg = PROFILE_CONFIG.get(profile_key, PROFILE_CONFIG["scalp"])
+    rr_target = float(rr_min or cfg.get("min_rr", 1.2))
+    atr_ref = atr15 if cfg.get("atr_tf") == "15m" else atr1h or atr15
+    weights = list(cfg.get("entry_weights") or [0.4, 0.6])
 
     # Decide side if AUTO by trend + futures signals skew
     if side == "AUTO":
@@ -331,44 +362,70 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
             pass
         side = "LONG" if long_bias else "SHORT"
 
-    # Entries (pullback strategy to mid/ema) and invalid (beyond 1H swing)
+    # Entries (pullback strategy to mid/ema) and invalid (beyond swing) menyesuaikan profil
     if side == "LONG":
         e1 = min(s1 + (price * price_pad_bp / 1e4), price)  # near support/MB/ema20
         e2 = min(s2 + (price * price_pad_bp * 0.5 / 1e4), e1 - max(0.25 * atr15, price * 5/1e4))
-        invalid = s2 - max(atr15 * 0.8, price * 15/1e4)
-        tp1 = max(r1 - max(0.25 * atr15, price * 5/1e4), price + 0.8 * atr15)
-        tp2 = max(r2 - max(0.5 * atr15, price * 8/1e4), tp1 + 1.0 * atr15)
+        invalid = min(e1, e2) - max(atr_ref * cfg.get("sl_atr", 0.45), atr15 * 0.3)
     else:  # SHORT
         e1 = max(r1 - (price * price_pad_bp / 1e4), price)
         e2 = max(r2 - (price * price_pad_bp * 0.5 / 1e4), e1 + max(0.25 * atr15, price * 5/1e4))
-        invalid = r2 + max(atr15 * 0.8, price * 15/1e4)
-        tp1 = min(s1 + max(0.25 * atr15, price * 5/1e4), price - 0.8 * atr15)
-        tp2 = min(s2 + max(0.5 * atr15, price * 8/1e4), tp1 - 1.0 * atr15)
-
-    weights = [0.4, 0.6]
+        invalid = max(e1, e2) + max(atr_ref * cfg.get("sl_atr", 0.45), atr15 * 0.3)
 
     # Compute RR and auto-adjust invalid to satisfy rr_min (conservative)
     entries = [float(e1), float(e2)]
+    avg_entry = sum(entries) / len(entries)
+    if side == "LONG":
+        tp1 = avg_entry + cfg.get("tp_multipliers", [1.0, 1.6])[0] * atr_ref
+        tp2 = avg_entry + cfg.get("tp_multipliers", [1.0, 1.6])[1] * atr_ref
+    else:
+        tp1 = avg_entry - cfg.get("tp_multipliers", [1.0, 1.6])[0] * atr_ref
+        tp2 = avg_entry - cfg.get("tp_multipliers", [1.0, 1.6])[1] * atr_ref
+
     tp_first = float(tp1)
     rr_now = compute_rr_min_futures(side, entries, tp_first, float(invalid), fee_bp, slippage_bp)
     # If RR below threshold, push invalid a bit farther and pull entries a bit better
-    if rr_now < rr_min:
-        k = max(1.0, rr_min / max(rr_now, 1e-6))
+    if rr_now < rr_target:
+        k = max(1.0, rr_target / max(rr_now, 1e-6))
+        eps = max(abs(avg_entry) * 1e-5, atr_ref * 0.01, 1e-5)
         if side == "LONG":
-            invalid = invalid - 0.15 * k * atr15
-            e1 = e1 - 0.08 * k * atr15
-            e2 = e2 - 0.10 * k * atr15
+            e1 = e1 - 0.08 * k * atr_ref
+            e2 = e2 - 0.10 * k * atr_ref
+            invalid = min(invalid + 0.20 * k * atr_ref, min(e1, e2) - eps)
         else:
-            invalid = invalid + 0.15 * k * atr15
-            e1 = e1 + 0.08 * k * atr15
-            e2 = e2 + 0.10 * k * atr15
+            e1 = e1 + 0.08 * k * atr_ref
+            e2 = e2 + 0.10 * k * atr_ref
+            invalid = max(invalid - 0.20 * k * atr_ref, max(e1, e2) + eps)
         entries = [float(e1), float(e2)]
         rr_now = compute_rr_min_futures(side, entries, tp_first, float(invalid), fee_bp, slippage_bp)
+        if rr_now < rr_target:
+            avg_entry_adj = sum(entries) / len(entries)
+            if side == "LONG":
+                target_invalid = avg_entry_adj - (tp_first - avg_entry_adj) / rr_target
+                invalid = min(target_invalid, min(entries) - eps)
+            else:
+                target_invalid = avg_entry_adj + (avg_entry_adj - tp_first) / rr_target
+                invalid = max(target_invalid, max(entries) + eps)
+            rr_now = compute_rr_min_futures(side, entries, tp_first, float(invalid), fee_bp, slippage_bp)
 
     # TP nodes with small ranges for FE
     tp = [
-        {"name": "TP1", "range": [float(tp1), float(tp1 + (0.2 * atr15 if side == "LONG" else -0.2 * atr15))]},
-        {"name": "TP2", "range": [float(tp2), float(tp2 + (0.3 * atr15 if side == "LONG" else -0.3 * atr15))]},
+        {
+            "name": "TP1",
+            "range": [
+                float(tp1),
+                float(tp1 + (0.18 * atr_ref if side == "LONG" else -0.18 * atr_ref)),
+            ],
+            "reduce_only_pct": cfg.get("tp_pct", [50, 50])[0],
+        },
+        {
+            "name": "TP2",
+            "range": [
+                float(tp2),
+                float(tp2 + (0.25 * atr_ref if side == "LONG" else -0.25 * atr_ref)),
+            ],
+            "reduce_only_pct": cfg.get("tp_pct", [50, 50])[1],
+        },
     ]
 
     plan = {
@@ -378,13 +435,27 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
         "invalids": {"hard_1h": float(invalid)},
         "tp": tp,
         "notes": [
-            "Ambil partial 30–40% di TP1 lalu geser SL ke BE; sisanya trailing di bawah HL 15m (LONG) / di atas LH 15m (SHORT).",
-            "Hindari entry ±15 menit sebelum/after funding setel; cek spread & orderbook imbalance.",
+            f"Profil {cfg.get('label')} ({cfg.get('atr_tf').upper()}): TTL {cfg.get('ttl_min')} menit; SL buffer {cfg.get('sl_atr'):.2f}×ATR.",
+            "Setelah TP1 → geser SL ke BE lalu trailing di bawah HL 15m (LONG) / di atas LH 15m (SHORT).",
+            "Periksa spread & orderbook; hindari entry ±15 menit sebelum/after funding.",
         ],
         "gates": {"checked": False, "ok": True, "reasons": []},
-        "metrics": {"rr_min": float(rr_now), "atr_pct": float(atr_pct), "rr_raw": float(rr_now)},
+        "metrics": {
+            "rr_min": float(rr_now),
+            "atr_pct": float(atr_pct),
+            "rr_raw": float(rr_now),
+            "rr_target": rr_target,
+        },
         "score": 0,
+        "profile": profile_key,
+        "profile_config": dict(cfg),
+        "ttl_min": cfg.get("ttl_min"),
+        "tp_pct": list(cfg.get("tp_pct", [50, 50])),
     }
+    if profile_key == "scalp":
+        plan.setdefault("notes", []).append("Ambil 50% reduce-only di TP1, sisanya TP2; fokus eksekusi cepat <150 menit.")
+    else:
+        plan.setdefault("notes", []).append("Ambil 40% di TP1 dan 60% di TP2; tahan posisi mengikuti struktur 1H/4H.")
 
     # Round prices to futures tick using ccxt meta and expose precision
     try:
@@ -416,7 +487,7 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
             sig2["last_1h"] = last_1h
         if atr_1h is not None:
             sig2["atr_1h"] = atr_1h
-        gates_ok, reasons, dumps = gating_signals_ok(side, sig2)
+        gates_ok, reasons, dumps = gating_signals_ok(side, sig2, profile=profile_key)
         plan["gates"] = {"checked": True, "ok": bool(gates_ok), "reasons": reasons, "snapshot": dumps}
 
     # Patch 3/4: Setup candidates (L1-L3/S1-S3) + scoring & conflict resolution
@@ -464,7 +535,7 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
                         sig2["last_1h"] = last_1h
                     if atr_1h is not None:
                         sig2["atr_1h"] = atr_1h
-                    gates_ok, reasons, dumps = gating_signals_ok(side, sig2)
+                    gates_ok, reasons, dumps = gating_signals_ok(side, sig2, profile=profile_key)
                     plan["gates"] = {"checked": True, "ok": bool(gates_ok), "reasons": reasons, "snapshot": dumps}
     except Exception:
         pass
