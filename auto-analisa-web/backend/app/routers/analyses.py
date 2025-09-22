@@ -316,29 +316,34 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
         except Exception:
             spot2_base = {}
 
-    # Instruct LLM to respond with valid SPOT II JSON + meta
+    # Instruct LLM Tuner (fase 1) untuk menghasilkan SPOT-II+ terbaru
     constraints = {
-        "rr_min_required": 1.2,
+        "rr_min_required": 1.6,
         "tp_must_be_ascending": True,
-        "must_round_to_tick": True,
-        "invalid_order": ["invalid_tactical_5m", "invalid_soft_15m", "invalid_hard_1h"],
-        "breakout_invalid_buffer_atr15m": 0.5,
-        "dca_preference": {"default": "DCA", "weights": {"DCA": [0.4,0.6], "Balanced": [0.5,0.5], "NearPrice": [0.6,0.4]}},
-        "output_format": "FORMAT_ANALISA_SPOT_II",
+        "entries_require_price": True,
+        "tp_qty_pct_sum": 100,
+        "invalid_below_entries": True,
+        "tp_min_count": 3,
+        "buyback_min": 3,
+        "macro_gate_keys": ["avoid_red", "prefer_wib", "avoid_wib", "session_refs"],
+        "output_format": "FORMAT_ANALISA_SPOT_II_PLUS",
     }
-    prompt = (
-        "Validasi dan perbaiki (jika perlu) rencana berikut. Kembalikan JSON SPOT II valid (object) "
-        "dengan kunci utama: rencana_jual_beli{profile, entries:[{range:[low,high], weight, type}], invalid, eksekusi_hanya_jika}, "
-        "tp:[{name, range:[low,high]}], ringkas_teknis(optional), sr(optional), metrics(optional). Sertakan juga verdict, summary, fundamentals{bullets:[]}. "
-        "Ikuti guardrails berikut.\n"
+    tuner_prompt = (
+        "Anda adalah LLM Tuner SPOT. Perbaiki angka rencana agar sesuai guardrails dan format SPOT-II+. "
+        "Balas dengan JSON objek yang memuat field wajib: symbol, trade_type, regime{regime,confidence}, mode, bias, "
+        "sr{support,resistance}, entries[{price,weight,type,note?}], invalid, tp[{name,price,qty_pct,logic}], trailing{enabled,anchor,offset_atr}, "
+        "time_exit{enabled,ttl_min,reason}, buyback[{name,range,note}], macro_gate{avoid_red,prefer_wib,avoid_wib,session_refs,sop_partial_on_red}, "
+        "metrics{rr_min,tick_ok,macro_score,macro_score_threshold}, notes[], warnings[]. Pastikan qty_pct total 100 dan TP naik.\n"
         f"GUARDRAILS: {json.dumps(constraints, ensure_ascii=False)}\n"
         f"SPOT2_INPUT: {json.dumps(spot2_base, ensure_ascii=False)}\n"
         f"SNAPSHOT_MTF: {json.dumps(snap, ensure_ascii=False)}"
     )
     s = await get_or_init_settings(db)
 
+    usage_total = {"prompt_tokens": 0, "completion_tokens": 0}
+
     try:
-        text, usage = ask_llm(prompt)
+        tuner_text, usage_tuner = ask_llm(tuner_prompt)
     except Exception as e:  # pragma: no cover
         raise HTTPException(502, detail={
             "error_code": "server_error",
@@ -346,97 +351,93 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
             "retry_hint": "Periksa koneksi atau konfigurasi LLM."
         })
 
-    # try parse JSON content
-    verdict = "confirm"
-    summary = text
-    suggestions = {}
-    fundamentals = {}
-    raw_invalid = None
+    def _parse_spot2_payload(raw):
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return None
+        if isinstance(parsed, dict):
+            if parsed.get("entries") and parsed.get("tp"):
+                return parsed
+            if isinstance(parsed.get("spot2"), dict):
+                return parsed.get("spot2")
+        return None
+
+    usage_total["prompt_tokens"] += int((usage_tuner or {}).get("prompt_tokens", 0))
+    usage_total["completion_tokens"] += int((usage_tuner or {}).get("completion_tokens", 0))
+
+    spot2_tuned = _parse_spot2_payload(tuner_text) or None
+    tuner_ok = bool(spot2_tuned and isinstance(spot2_tuned.get("entries"), list) and spot2_tuned.get("entries") and isinstance(spot2_tuned.get("tp"), list) and spot2_tuned.get("tp"))
+    if not tuner_ok:
+        spot2_tuned = None
+
+    # Fase 2: Verifikator menilai hasil tuner
+    verifier_prompt = (
+        "Anda adalah LLM Verifikator. Nilai apakah rencana SPOT-II+ berikut sudah sesuai guardrails. "
+        "Balas JSON {verdict:""confirm|tweak|reject"", reasons:[...], fix?:SPOT2_OBJECT}. Jika perlu perbaikan minor, isi fix dengan objek SPOT-II+.\n"
+        f"GUARDRAILS: {json.dumps(constraints, ensure_ascii=False)}\n"
+        f"PLAN_TUNED: {json.dumps(spot2_tuned or spot2_base, ensure_ascii=False)}"
+    )
+
     try:
-        parsed = json.loads(text)
-        # SPOT II expected
-        if parsed.get("rencana_jual_beli") and parsed.get("tp"):
-            spot2 = parsed
-        else:
-            # backward: accept wrapper with spot2
-            spot2 = parsed.get("spot2") or {}
-        try:
-            rjb_src = parsed.get("rencana_jual_beli")
-            if isinstance(rjb_src, dict) and rjb_src.get("invalid") is not None:
-                raw_invalid = rjb_src.get("invalid")
-            elif isinstance(parsed.get("spot2"), dict):
-                rjb_src = parsed.get("spot2", {}).get("rencana_jual_beli")
-                if isinstance(rjb_src, dict) and rjb_src.get("invalid") is not None:
-                    raw_invalid = rjb_src.get("invalid")
-        except Exception:
-            pass
-        # Schema-guard: wajib ada entries[] dan tp[] minimal 1
-        rjb = (spot2 or {}).get("rencana_jual_beli") or {}
-        ent = list(rjb.get("entries") or [])
-        tps = list((spot2 or {}).get("tp") or [])
-        if not ent or not tps:
-            raise HTTPException(422, detail={
-                "error_code": "schema_invalid",
-                "message": "LLM tidak menyertakan entries[]/tp[] yang wajib.",
-                "retry_hint": "Ulangi verifikasi; pastikan model mengembalikan SPOT II lengkap.",
-            })
-        # validate spot2 and apply light fixes
-        v = validate_spot2(spot2)
-        if not v.get("ok"):
-            # still proceed but mark verdict if necessary
-            verdict = "tweak" if verdict == "confirm" else verdict
-        spot2 = v.get("fixes") or spot2
-        # Snap ke tick size bila tersedia, lalu validasi ulang agar rr_min konsisten
-        try:
-            spot2 = round_spot2_prices(a.symbol, spot2)
-            v2 = validate_spot2(spot2)
-            spot2 = v2.get("fixes") or spot2
-        except Exception:
-            pass
-        verdict = (parsed.get("verdict") or parsed.get("status") or verdict).lower()
-        summary = parsed.get("summary") or parsed.get("ringkas") or summary
-        suggestions = parsed.get("suggestions") or {}
-        fundamentals = parsed.get("fundamentals") or {}
-    except HTTPException:
-        raise
+        verifier_text, usage_ver = ask_llm(verifier_prompt)
     except Exception:
-        # Fallback: jika hanya suggestions tersedia dalam teks plain/JSON, coba terapkan ke SPOT2_INPUT
-        spot2 = {}
-        try:
-            parsed = json.loads(text)
-            suggestions = parsed.get("suggestions") or {}
-        except Exception:
-            suggestions = {}
-        if spot2_base and isinstance(suggestions, dict) and (suggestions.get("entries") or suggestions.get("tp") or (suggestions.get("invalid") is not None)):
-            # apply suggestions onto base spot2
-            try:
-                s2 = json.loads(json.dumps(spot2_base))  # deep copy
-                rjb = dict(s2.get("rencana_jual_beli") or {})
-                if isinstance(suggestions.get("entries"), list):
-                    # map entries to range lower/upper equal
-                    rjb["entries"] = [
-                        {"range": [float(x), float(x)], "weight": (rjb.get("entries", [{}]*0)[i].get("weight") if i < len(rjb.get("entries", [])) else 0.0), "type": rjb.get("entries", [{}]*0)[i].get("type") if i < len(rjb.get("entries", [])) else "PB"}
-                        for i, x in enumerate(suggestions["entries"])
-                    ]
-                if suggestions.get("invalid") is not None:
-                    raw_invalid = suggestions.get("invalid")
-                    rjb["invalid"] = float(suggestions.get("invalid"))
-                s2["rencana_jual_beli"] = rjb
-                if isinstance(suggestions.get("tp"), list):
-                    s2["tp"] = [{"name": f"TP{i+1}", "range": [float(t), float(t)]} for i, t in enumerate(suggestions["tp"])]
-                v = validate_spot2(s2)
-                spot2 = v.get("fixes") or s2
-                verdict = "tweak"
-                summary = (summary or "") + " (fallback dari suggestions)"
-            except Exception:
-                pass
-        if not spot2:
-            # Enforce strict JSON contract
-            raise HTTPException(422, detail={
-                "error_code": "schema_invalid",
-                "message": "LLM tidak mengembalikan JSON SPOT II yang valid.",
-                "retry_hint": "Ulangi verifikasi. Jika berulang, hubungi admin."
-            })
+        verifier_text, usage_ver = (json.dumps({"verdict": "confirm", "reasons": []}), {"prompt_tokens": 0, "completion_tokens": 0})
+
+    usage_total["prompt_tokens"] += int((usage_ver or {}).get("prompt_tokens", 0))
+    usage_total["completion_tokens"] += int((usage_ver or {}).get("completion_tokens", 0))
+
+    verdict_payload = {}
+    try:
+        verdict_payload = json.loads(verifier_text)
+    except Exception:
+        verdict_payload = {}
+
+    fix_candidate = _parse_spot2_payload(json.dumps(verdict_payload.get("fix") or {})) if verdict_payload.get("fix") else None
+    if fix_candidate:
+        spot2_candidate = fix_candidate
+    else:
+        spot2_candidate = spot2_tuned or spot2_base
+
+    if (not tuner_ok) and not fix_candidate:
+        raise HTTPException(422, detail={
+            "error_code": "schema_invalid",
+            "message": "LLM Tuner tidak mengembalikan SPOT-II+ lengkap.",
+            "retry_hint": "Periksa prompt atau ulangi verifikasi.",
+        })
+
+    text = tuner_text  # preserve last LLM text for legacy summary fallback
+    usage = usage_total
+    parsed_verdict = verdict_payload
+
+    verdict = str(parsed_verdict.get("verdict") or "confirm").lower()
+    if verdict not in {"confirm", "tweak", "warning", "reject"}:
+        verdict = "confirm"
+    summary = parsed_verdict.get("summary") or "Rencana hasil tuner."
+    suggestions = parsed_verdict.get("suggestions") or {}
+    fundamentals = parsed_verdict.get("fundamentals") or {}
+    reasons = parsed_verdict.get("reasons") or []
+    if reasons and verdict == "confirm":
+        verdict = "tweak"
+        summary = summary + " (cek catatan verifikator)"
+    spot2 = spot2_candidate or {}
+    raw_invalid = spot2.get("invalid")
+    if not (isinstance(spot2.get("entries"), list) and spot2.get("entries") and isinstance(spot2.get("tp"), list) and spot2.get("tp")):
+        raise HTTPException(422, detail={
+            "error_code": "schema_invalid",
+            "message": "LLM tidak menyertakan entries/tp yang wajib.",
+            "retry_hint": "Ulangi verifikasi; pastikan format SPOT-II+ lengkap.",
+        })
+    v = validate_spot2(spot2)
+    if not v.get("ok") and verdict == "confirm":
+        verdict = "tweak"
+    spot2 = v.get("fixes") or spot2
+    try:
+        spot2 = round_spot2_prices(a.symbol, spot2)
+        v2 = validate_spot2(spot2)
+        spot2 = v2.get("fixes") or spot2
+    except Exception:
+        pass
 
     # sanitize suggestions by validating a candidate plan built from current + suggestions
     try:
@@ -465,17 +466,26 @@ async def verify_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(
     try:
         spot2_payload = locals().get("spot2")
         if isinstance(spot2_payload, dict):
-            rjb_final = dict((spot2_payload.get("rencana_jual_beli") or {}))
-            if rjb_final.get("invalid") is None:
+            if spot2_payload.get("invalid") is None:
                 candidate = raw_invalid
                 if candidate is None:
-                    candidate = ((spot2_base or {}).get("rencana_jual_beli") or {}).get("invalid")
+                    base_invalid = None
+                    try:
+                        base_invalid = float((spot2_base or {}).get("invalid"))
+                    except Exception:
+                        base_invalid = ((spot2_base or {}).get("rencana_jual_beli") or {}).get("invalid")
+                    candidate = base_invalid
                 if candidate is not None:
                     try:
-                        rjb_final["invalid"] = float(candidate)
+                        spot2_payload["invalid"] = float(candidate)
                     except Exception:
-                        rjb_final["invalid"] = candidate
-                    spot2_payload["rencana_jual_beli"] = rjb_final
+                        spot2_payload["invalid"] = candidate
+            # Back-compat: perbarui rencana_jual_beli jika masih ada struktur lama
+            if isinstance(spot2_payload.get("rencana_jual_beli"), dict):
+                rjb_final = dict(spot2_payload.get("rencana_jual_beli") or {})
+                if rjb_final.get("invalid") is None and spot2_payload.get("invalid") is not None:
+                    rjb_final["invalid"] = spot2_payload.get("invalid")
+                spot2_payload["rencana_jual_beli"] = rjb_final
             spot2 = spot2_payload
     except Exception:
         pass
@@ -592,10 +602,11 @@ async def apply_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(r
         pass
     # Guard: pastikan SPOT II memiliki entries & tp
     try:
-        rjb = (last.spot2_json or {}).get("rencana_jual_beli") or {}
-        ent = list(rjb.get("entries") or [])
+        entries_list = list((last.spot2_json or {}).get("entries") or [])
+        if not entries_list:
+            entries_list = list(((last.spot2_json or {}).get("rencana_jual_beli") or {}).get("entries") or [])
         tps = list((last.spot2_json or {}).get("tp") or [])
-        if not ent or not tps:
+        if not entries_list or not tps:
             raise HTTPException(422, detail={
                 "error_code": "schema_invalid",
                 "message": "SPOT II dari LLM tidak lengkap (entries/tp kosong).",
@@ -611,10 +622,25 @@ async def apply_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(r
     p["spot2"] = last.spot2_json
     # also reflect to legacy overlays arrays to sync chart immediately
     try:
-        rjb = (last.spot2_json or {}).get("rencana_jual_beli", {})
-        entries = [ (e.get("range") or [None])[0] for e in (rjb.get("entries") or []) ]
-        tp_arr = [ (t.get("range") or [None])[0] for t in (last.spot2_json.get("tp") or []) ]
-        invalid = rjb.get("invalid")
+        spot2_struct = dict(last.spot2_json or {})
+        entries_struct = list(spot2_struct.get("entries") or [])
+        if not entries_struct and isinstance(spot2_struct.get("rencana_jual_beli"), dict):
+            entries_struct = list((spot2_struct.get("rencana_jual_beli") or {}).get("entries") or [])
+        entries = []
+        for e in entries_struct:
+            if e.get("price") is not None:
+                entries.append(e.get("price"))
+            elif (e.get("range") or [None])[0] is not None:
+                entries.append((e.get("range") or [None])[0])
+        tp_arr = []
+        for t in (spot2_struct.get("tp") or []):
+            if t.get("price") is not None:
+                tp_arr.append(t.get("price"))
+            elif (t.get("range") or [None])[0] is not None:
+                tp_arr.append((t.get("range") or [None])[0])
+        invalid = spot2_struct.get("invalid")
+        if invalid is None and isinstance(spot2_struct.get("rencana_jual_beli"), dict):
+            invalid = (spot2_struct.get("rencana_jual_beli") or {}).get("invalid")
         p["entries"] = [float(x) for x in entries if isinstance(x,(int,float))]
         p["tp"] = [float(x) for x in tp_arr if isinstance(x,(int,float))]
         if isinstance(invalid,(int,float)):
@@ -630,7 +656,7 @@ async def apply_llm(aid: int, db: AsyncSession = Depends(get_db), user=Depends(r
             except Exception:
                 pass
         # set weights if provided
-        wts = [ float(e.get("weight") or 0.0) for e in (rjb.get("entries") or []) ]
+        wts = [ float(e.get("weight") or 0.0) for e in entries_struct ]
         if wts and len(wts)==len(p["entries"]):
             p["weights"] = wts
     except Exception:

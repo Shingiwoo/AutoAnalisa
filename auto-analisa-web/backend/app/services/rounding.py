@@ -145,42 +145,80 @@ def round_spot2_prices(symbol: str, spot2: Dict[str, Any]) -> Dict[str, Any]:
         return s2
     s2.setdefault("metrics", {})
     s2["metrics"]["price_decimals"] = _decimals_from_tick(tick)
-    # rencana_jual_beli entries + invalid
-    rjb = dict(s2.get("rencana_jual_beli") or {})
-    ents = []
-    for e in (rjb.get("entries") or []):
+    # entries (baru maupun kompatibilitas lama)
+    if isinstance(s2.get("entries"), list):
+        ents = []
+        for e in s2.get("entries") or []:
+            try:
+                price = e.get("price")
+                if price is not None:
+                    price = _snap(float(price), tick)
+                ne = dict(e)
+                if price is not None:
+                    ne["price"] = price
+                ents.append(ne)
+            except Exception:
+                ents.append(e)
+        s2["entries"] = ents
+    else:
+        rjb = dict(s2.get("rencana_jual_beli") or {})
+        ents = []
+        for e in (rjb.get("entries") or []):
+            try:
+                rng: List[float] = list(e.get("range") or [])
+                lo = _snap(float(rng[0]), tick) if len(rng) > 0 else None
+                hi = _snap(float(rng[1]), tick) if len(rng) > 1 else lo
+                new_e = dict(e)
+                new_e["range"] = [lo, hi] if lo is not None else rng
+                ents.append(new_e)
+            except Exception:
+                ents.append(e)
+        if ents:
+            rjb["entries"] = ents
         try:
-            rng: List[float] = list(e.get("range") or [])
-            lo = _snap(float(rng[0]), tick) if len(rng) > 0 else None
-            hi = _snap(float(rng[1]), tick) if len(rng) > 1 else lo
-            new_e = dict(e)
-            new_e["range"] = [lo, hi] if lo is not None else rng
-            ents.append(new_e)
+            inv = rjb.get("invalid")
+            if inv is not None:
+                rjb["invalid"] = _snap(float(inv), tick)
         except Exception:
-            ents.append(e)
-    if ents:
-        rjb["entries"] = ents
+            pass
+        s2["rencana_jual_beli"] = rjb
+    # invalid top-level
     try:
-        inv = rjb.get("invalid")
-        if inv is not None:
-            rjb["invalid"] = _snap(float(inv), tick)
+        if s2.get("invalid") is not None:
+            s2["invalid"] = _snap(float(s2.get("invalid")), tick)
     except Exception:
         pass
-    s2["rencana_jual_beli"] = rjb
     # TP nodes
     tps = []
     for t in (s2.get("tp") or []):
         try:
-            rng = list(t.get("range") or [])
-            lo = _snap(float(rng[0]), tick) if len(rng) > 0 else None
-            hi = _snap(float(rng[1]), tick) if len(rng) > 1 else lo
             new_t = dict(t)
-            new_t["range"] = [lo, hi] if lo is not None else rng
+            if "price" in new_t and new_t.get("price") is not None:
+                new_t["price"] = _snap(float(new_t.get("price")), tick)
+            elif "range" in new_t and new_t.get("range"):
+                rng = list(new_t.get("range"))
+                lo = _snap(float(rng[0]), tick) if len(rng) > 0 else None
+                hi = _snap(float(rng[1]), tick) if len(rng) > 1 else lo
+                new_t["range"] = [lo, hi] if lo is not None else rng
             tps.append(new_t)
         except Exception:
             tps.append(t)
     if tps:
         s2["tp"] = tps
+    # buyback ranges
+    bb_nodes = []
+    for bb in (s2.get("buyback") or []):
+        try:
+            rng = list(bb.get("range") or [])
+            lo = _snap(float(rng[0]), tick) if len(rng) > 0 else None
+            hi = _snap(float(rng[1]), tick) if len(rng) > 1 else lo
+            nb = dict(bb)
+            nb["range"] = [lo, hi] if lo is not None else rng
+            bb_nodes.append(nb)
+        except Exception:
+            bb_nodes.append(bb)
+    if bb_nodes:
+        s2["buyback"] = bb_nodes
     return s2
 
 

@@ -135,8 +135,9 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
   },[verdict])
   const tsWib = useMemo(()=> verification?.created_at ? new Date(verification.created_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) : '',[verification?.created_at])
   const data = (kind==='futures') ? verification?.futures_json : verification?.spot2_json
-  const sug = (data?.rencana_jual_beli) ? data.rencana_jual_beli : (data?.entries ? { entries: data.entries, invalid: data?.invalids?.hard_1h } : {})
-  const tp = data?.tp || []
+  const entriesRaw = Array.isArray(data?.entries) ? data.entries : (Array.isArray(data?.rencana_jual_beli?.entries) ? data.rencana_jual_beli.entries : [])
+  const sug = { entries: entriesRaw, invalid: typeof data?.invalid==='number'? data.invalid : data?.invalids?.hard_1h }
+  const tp = Array.isArray(data?.tp) ? data.tp : []
   // Formatting helpers: prefer provided decimals; fallback infer from numbers
   const decimals = useMemo(()=>{
     const d = (data?.metrics?.price_decimals ?? data?.price_decimals)
@@ -145,8 +146,14 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
     try{
       const sample = (()=>{
         const arr:number[] = []
-        ;(sug?.entries||[]).forEach((e:any)=> Array.isArray(e?.range) && e.range.forEach((x:number)=> typeof x==='number' && arr.push(x)))
-        ;(tp||[]).forEach((t:any)=> Array.isArray(t?.range) && t.range.forEach((x:number)=> typeof x==='number' && arr.push(x)))
+        ;(sug?.entries||[]).forEach((e:any)=> {
+          if (typeof e?.price==='number') arr.push(e.price)
+          else if(Array.isArray(e?.range)) e.range.forEach((x:number)=> typeof x==='number' && arr.push(x))
+        })
+        ;(tp||[]).forEach((t:any)=> {
+          if (typeof t?.price==='number') arr.push(t.price)
+          else if(Array.isArray(t?.range)) t.range.forEach((x:number)=> typeof x==='number' && arr.push(x))
+        })
         if (typeof (sug?.invalid)==='number') arr.push(sug.invalid)
         const v = arr.find((x)=> typeof x==='number' && isFinite(x))
         return (typeof v==='number' && isFinite(v)) ? v : 1
@@ -181,14 +188,22 @@ export default function LLMReport({ analysisId, verification, onApplied, onPrevi
   // Prepare normalized/deduped data for display and preview
   const entriesDisplay = useMemo(()=>{
     try{
-      const list = (sug?.entries||[]).map((e:any)=> (Array.isArray(e?.range) ? e.range[0] : undefined)).filter((x:any)=> typeof x==='number') as number[]
+      const list = (sug?.entries||[]).map((e:any)=> {
+        if(typeof e?.price==='number') return e.price
+        if(Array.isArray(e?.range)) return e.range[0]
+        return undefined
+      }).filter((x:any)=> typeof x==='number') as number[]
       const rounded = list.map(roundN)
       return uniqueWithTolerance(rounded, eps)
     }catch{ return [] }
   },[JSON.stringify(sug?.entries), decimals])
   const tpDisplay = useMemo(()=>{
     try{
-      const list = (tp||[]).map((t:any)=> (Array.isArray(t?.range) ? t.range[0] : undefined)).filter((x:any)=> typeof x==='number') as number[]
+      const list = (tp||[]).map((t:any)=> {
+        if(typeof t?.price==='number') return t.price
+        if(Array.isArray(t?.range)) return t.range[0]
+        return undefined
+      }).filter((x:any)=> typeof x==='number') as number[]
       const rounded = list.map(roundN)
       return uniqueWithTolerance(rounded, eps)
     }catch{ return [] }

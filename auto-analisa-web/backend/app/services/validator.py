@@ -150,14 +150,28 @@ def validate_spot2(spot2: Dict) -> Dict:
     out = {"ok": True, "warnings": [], "fixes": {}}
     try:
         s2 = dict(spot2 or {})
-        rjb = dict(s2.get("rencana_jual_beli") or {})
-        entries = list(rjb.get("entries") or [])
-        # Flatten representative entry prices from range (use lower bound)
+        entries_raw = None
+        use_new_schema = False
+        if isinstance(s2.get("entries"), list):
+            entries_raw = list(s2.get("entries") or [])
+            use_new_schema = True
+        else:
+            rjb = dict(s2.get("rencana_jual_beli") or {})
+            entries_raw = list(rjb.get("entries") or [])
         e_prices: List[float] = []
         weights: List[float] = []
-        for e in entries:
-            rng = e.get("range") or []
-            price = float(rng[0]) if rng else None
+        for e in entries_raw:
+            price = None
+            if "price" in e:
+                try:
+                    price = float(e.get("price"))
+                except Exception:
+                    price = None
+            elif "range" in e and e.get("range"):
+                try:
+                    price = float((e.get("range") or [None])[0])
+                except Exception:
+                    price = None
             if price is None:
                 continue
             e_prices.append(price)
@@ -165,13 +179,28 @@ def validate_spot2(spot2: Dict) -> Dict:
         tp_nodes = list(s2.get("tp") or [])
         tp_prices: List[float] = []
         for t in tp_nodes:
-            rng = t.get("range") or []
-            if rng:
-                tp_prices.append(float(rng[0]))
-        invalid = rjb.get("invalid")
-        invalid = float(invalid) if invalid is not None else None
+            price = None
+            if "price" in t:
+                try:
+                    price = float(t.get("price"))
+                except Exception:
+                    price = None
+            elif "range" in t and t.get("range"):
+                try:
+                    price = float((t.get("range") or [None])[0])
+                except Exception:
+                    price = None
+            if price is not None:
+                tp_prices.append(price)
+        invalid = None
+        if s2.get("invalid") is not None:
+            invalid = float(s2.get("invalid"))
+        elif not use_new_schema:
+            try:
+                invalid = float((s2.get("rencana_jual_beli") or {}).get("invalid"))
+            except Exception:
+                invalid = None
 
-        # Run baseline numeric validation
         plan_like = {
             "entries": e_prices,
             "weights": weights,
@@ -183,36 +212,65 @@ def validate_spot2(spot2: Dict) -> Dict:
         fixed, warns = normalize_and_validate(plan_like)
         out["warnings"] = warns
 
-        # Apply fixes back into spot2 structure
-        # weights length and sum
-        if len(fixed["weights"]) != len(entries) or abs(sum(weights) - 1.0) > 1e-6:
-            out["ok"] = False
-        # TP ascending guarantee
-        if fixed["tp"] != tp_prices:
-            # rewrite tp ranges with fixed prices as lower bound
+        # Update entries/weights/tp ke struktur asli
+        if use_new_schema:
+            new_entries = []
+            for i, e in enumerate(entries_raw):
+                if i >= len(fixed["entries"]):
+                    continue
+                ne = dict(e)
+                ne["price"] = float(fixed["entries"][i])
+                if i < len(fixed["weights"]):
+                    ne["weight"] = float(fixed["weights"][i])
+                new_entries.append(ne)
+            s2["entries"] = new_entries
+            if fixed.get("invalid") is not None:
+                s2["invalid"] = float(fixed["invalid"])
+            new_tp = []
+            for i, t in enumerate(tp_nodes):
+                if i >= len(fixed["tp"]):
+                    continue
+                nt = dict(t)
+                nt["price"] = float(fixed["tp"][i])
+                new_tp.append(nt)
+            s2["tp"] = new_tp
+        else:
+            rjb = dict(s2.get("rencana_jual_beli") or {})
+            entries = list(rjb.get("entries") or [])
+            for i, e in enumerate(entries):
+                w = fixed["weights"][i] if i < len(fixed["weights"]) else e.get("weight")
+                e["weight"] = float(w)
+                try:
+                    rng = e.get("range") or []
+                    if rng and i < len(fixed["entries"]):
+                        rng[0] = float(fixed["entries"][i])
+                        e["range"] = rng
+                except Exception:
+                    pass
+            if invalid is not None and fixed.get("invalid") is not None and fixed["invalid"] != invalid:
+                rjb["invalid"] = fixed["invalid"]
+            s2["rencana_jual_beli"] = rjb
             new_tp = []
             for i, t in enumerate(tp_nodes):
                 base = fixed["tp"][i] if i < len(fixed["tp"]) else None
                 if base is None:
                     continue
-                new_tp.append({"name": t.get("name") or f"TP{i+1}", "range": [base, base], **({k:v for k,v in t.items() if k not in {"range","name"}})})
+                new_tp.append({
+                    "name": t.get("name") or f"TP{i+1}",
+                    "range": [base, base],
+                    **({k: v for k, v in t.items() if k not in {"range", "name"}}),
+                })
             s2["tp"] = new_tp
-        # Update entries weights/invalid
-        for i, e in enumerate(entries):
-            w = fixed["weights"][i] if i < len(fixed["weights"]) else e.get("weight")
-            e["weight"] = float(w)
-            # keep range but ensure first bound matches fixed price for consistency
-            try:
-                rng = e.get("range") or []
-                if rng:
-                    rng[0] = float(fixed["entries"][i])
-                    e["range"] = rng
-            except Exception:
-                pass
-        if invalid is not None and fixed.get("invalid") is not None and fixed["invalid"] != invalid:
-            rjb["invalid"] = fixed["invalid"]
-        s2["rencana_jual_beli"] = rjb
-        # propagate rr_min to metrics
+
+        # Normalisasi qty_pct agar total 100 bila tersedia
+        total_qty = sum(float(t.get("qty_pct", 0.0) or 0.0) for t in s2.get("tp", []))
+        if total_qty and abs(total_qty - 100.0) > 1e-3:
+            for t in s2.get("tp", []):
+                try:
+                    t["qty_pct"] = round(float(t.get("qty_pct", 0.0)) * 100.0 / total_qty, 2)
+                except Exception:
+                    continue
+
         s2.setdefault("metrics", {})
         s2["metrics"]["rr_min"] = fixed.get("rr_min", 0.0)
 
