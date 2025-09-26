@@ -335,6 +335,11 @@ async def generate_macro(db: AsyncSession = Depends(get_db), user=Depends(requir
         await check_budget_and_maybe_off(db)
     except Exception as e:  # pragma: no cover
         msg = str(e).lower()
+        # Kunci API tidak valid / unauthorized → berikan pesan yang jelas
+        if "401" in msg or "unauthorized" in msg or "invalid api key" in msg or "authentication" in msg:
+            raise HTTPException(409, detail=(
+                "LLM belum dikonfigurasi dengan benar: OPENAI_API_KEY tidak valid atau tidak berizin."
+            ))
         if "insufficient_quota" in msg or " 429" in msg or "rate limit" in msg:
             s.use_llm = False
             await db.commit()

@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Optional, Dict, Any
 import os, time
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -220,9 +221,40 @@ async def refresh_signals_cache(db: AsyncSession, symbol: str) -> FuturesSignals
         ob_imbalance=ob.get("ob_imbalance"),
     )
     db.add(row)
-    await db.commit()
-    await db.refresh(row)
-    return row
+    try:
+        await db.commit()
+        await db.refresh(row)
+        return row
+    except Exception:
+        # Fallback bila DB read-only/commit gagal: rollback dan kembalikan objek sementara
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        now = datetime.now(timezone.utc)
+        faux = SimpleNamespace(
+            symbol=row.symbol,
+            funding_now=row.funding_now,
+            funding_next=row.funding_next,
+            next_funding_time=row.next_funding_time,
+            oi_now=row.oi_now,
+            oi_d1=row.oi_d1,
+            oi_delta_h1=row.oi_delta_h1,
+            oi_delta_h4=row.oi_delta_h4,
+            lsr_accounts=row.lsr_accounts,
+            lsr_positions=row.lsr_positions,
+            basis_now=row.basis_now,
+            basis_bp=row.basis_bp,
+            taker_delta_m5=row.taker_delta_m5,
+            taker_delta_m15=row.taker_delta_m15,
+            taker_delta_h1=row.taker_delta_h1,
+            spread_bp=row.spread_bp,
+            depth10bp_bid=row.depth10bp_bid,
+            depth10bp_ask=row.depth10bp_ask,
+            ob_imbalance=row.ob_imbalance,
+            created_at=now,
+        )
+        return faux
 
 
 async def latest_signals(db: AsyncSession, symbol: str) -> dict:
