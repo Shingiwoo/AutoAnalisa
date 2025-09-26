@@ -9,6 +9,7 @@ import datetime as dt
 from app.deps import get_db
 from app.auth import require_user
 from app.services.gpt_service import build_prompt, call_gpt
+from app.services.preprompt import evaluate_pre_signal
 from app.services.llm import should_use_llm
 from app.services.usage import get_today_usage, inc_usage
 from app.services.budget import get_or_init_settings
@@ -98,10 +99,41 @@ async def gpt_analyze(body: AnalyzeBody, db: AsyncSession = Depends(get_db), use
     if today["remaining"] <= 0:
         raise HTTPException(409, detail={"error_code": "quota_exceeded", "message": "Limit harian LLM (futures) tercapai"})
 
-    # Compose payload with opts for the template
+    # Compose payload with opts for the template + pre-decision
     template_payload = {"payload": body.payload, "opts": (body.opts or {})}
-    prompt = build_prompt(sym, body.mode, template_payload)
-    data, usage = call_gpt(prompt)
+    pre = None
+    if os.getenv("PREPROMPT_ENABLE", "1") not in ("0", "false", "False"):
+        try:
+            pre = evaluate_pre_signal({"payload": body.payload})
+            template_payload["pre"] = pre
+        except Exception:
+            pre = None
+
+    # Optional short-circuit when pre says NO-TRADE
+    strict = os.getenv("PREPROMPT_STRICT_NO_TRADE", "0") in ("1", "true", "True")
+    if strict and pre and pre.get("decision") == "NO-TRADE":
+        data = {
+            "text": {
+                f"section_{body.mode}": {
+                    "posisi": "NO-TRADE",
+                    "tp": [],
+                    "sl": None,
+                    "strategi_singkat": [
+                        "Tidak ada setup valid berdasarkan pra-skor (anti-bias)",
+                        "Tunggu sweep & reclaim atau break & hold yang jelas",
+                    ],
+                    "fundamental": [],
+                    "bybk": [],
+                    "bo": [],
+                }
+            },
+            "overlay": {"tf": "15m", "lines": [], "zones": [], "markers": [], "mode": body.mode},
+            "meta": {"engine": os.getenv("OPENAI_MODEL", "gpt-5-chat-latest"), "pre": pre},
+        }
+        usage = {"prompt_tokens": 0, "completion_tokens": 0}
+    else:
+        prompt = build_prompt(sym, body.mode, template_payload)
+        data, usage = call_gpt(prompt)
     if not isinstance(data, dict) or not data:
         raise HTTPException(502, detail={"error_code": "bad_llm_output", "message": "Jawaban GPT tidak valid (bukan JSON)"})
 
@@ -120,6 +152,8 @@ async def gpt_analyze(body: AnalyzeBody, db: AsyncSession = Depends(get_db), use
     try:
         meta = data.setdefault("meta", {}) if isinstance(data, dict) else {}
         meta.setdefault("engine", os.getenv("OPENAI_MODEL", "gpt-5-chat-latest"))
+        if pre:
+            meta["pre"] = pre
     except Exception:
         meta = {}
 
@@ -157,4 +191,3 @@ async def gpt_analyze(body: AnalyzeBody, db: AsyncSession = Depends(get_db), use
     data["created_at"] = created.isoformat()
     data["ttl"] = report.ttl or _get_mode_ttl(body.mode)
     return data
-

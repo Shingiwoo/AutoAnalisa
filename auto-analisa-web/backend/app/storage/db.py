@@ -1,4 +1,5 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy import text
 from .. import models
 from ..config import settings
 
@@ -9,6 +10,13 @@ SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 async def init_db():
     async with engine.begin() as conn:
+        # Aktifkan WAL & synchronous=NORMAL untuk SQLite, abaikan jika gagal
+        try:
+            if engine.url.get_backend_name().startswith("sqlite"):
+                await conn.execute(text("PRAGMA journal_mode=WAL"))
+                await conn.execute(text("PRAGMA synchronous=NORMAL"))
+        except Exception:
+            pass
         await conn.run_sync(models.Base.metadata.create_all)
         # lightweight migrations for SQLite
         try:

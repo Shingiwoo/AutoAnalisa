@@ -14,7 +14,11 @@ def build_prompt(symbol: str, mode: Literal['scalping','swing'], payload: Dict[s
 
 def call_gpt(prompt: str) -> Tuple[Dict[str, Any], Dict[str, int]]:
     messages = [
-        {"role": "system", "content": "Anda asisten trading Futures. Keluarkan hanya JSON valid (object) tanpa penjelasan lain."},
+        {"role": "system", "content": (
+            "Anda analis trading kripto profesional. KELUARKAN HANYA JSON VALID (object) tanpa penjelasan. "
+            "ANTI-BIAS: Jangan default LONG. Jika sinyal bertentangan atau bukti lemah, pilih NO-TRADE. "
+            "Prioritas konfirmasi: (1) sweep & reclaim; (2) break & hold vs break & fail; (3) hindari entry tepat di magnet (00/50, high/low harian)."
+        )},
         {"role": "user", "content": prompt},
     ]
     text, usage = ask_llm_messages(messages)
@@ -27,4 +31,3 @@ def call_gpt(prompt: str) -> Tuple[Dict[str, Any], Dict[str, int]]:
     except Exception:
         data = {}
     return data, (usage or {})
-
