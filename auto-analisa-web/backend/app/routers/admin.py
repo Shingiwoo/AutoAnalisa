@@ -340,6 +340,25 @@ async def generate_macro(db: AsyncSession = Depends(get_db), user=Depends(requir
             raise HTTPException(409, detail=(
                 "LLM belum dikonfigurasi dengan benar: OPENAI_API_KEY tidak valid atau tidak berizin."
             ))
+        # Model tidak mendukung JSON strict response_format
+        if "response_format" in msg and ("unsupported" in msg or "not supported" in msg):
+            raise HTTPException(409, detail=(
+                "Model LLM tidak mendukung JSON strict. Set OPENAI_JSON_STRICT=0 atau ganti model."
+            ))
+        # Model tidak ditemukan
+        if "model" in msg and "not found" in msg:
+            raise HTTPException(409, detail=(
+                "Model LLM tidak ditemukan. Periksa OPENAI_MODEL dan izin akses model."
+            ))
+        # Timeout / koneksi
+        if "timeout" in msg or "timed out" in msg:
+            raise HTTPException(504, detail=(
+                "Timeout mengakses LLM. Coba lagi atau naikkan LLM_TIMEOUT_S."
+            ))
+        if "connection" in msg or "dns" in msg or "ssl" in msg:
+            raise HTTPException(502, detail=(
+                "Gagal koneksi ke LLM (jaringan/DNS/SSL). Periksa koneksi server."
+            ))
         if "insufficient_quota" in msg or " 429" in msg or "rate limit" in msg:
             s.use_llm = False
             await db.commit()

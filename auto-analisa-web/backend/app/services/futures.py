@@ -262,15 +262,22 @@ async def latest_signals(db: AsyncSession, symbol: str) -> dict:
     q = await db.execute(select(FuturesSignalsCache).where(FuturesSignalsCache.symbol == symbol.upper()).order_by(desc(FuturesSignalsCache.created_at)))
     r = q.scalars().first()
     if not r:
+        # Tidak ada cache: coba refresh on-demand (akan fallback in-memory jika DB RO)
+        try:
+            fresh = await refresh_signals_cache(db, symbol)
+            r = fresh
+        except Exception:
+            r = None
+    if not r:
         return {"has_data": False}
     return {
         "has_data": True,
-        "symbol": r.symbol,
-        "funding": {"now": r.funding_now, "next": r.funding_next, "time": r.next_funding_time},
-        "oi": {"now": r.oi_now, "d1": r.oi_d1, "h1": getattr(r, "oi_delta_h1", None), "h4": getattr(r, "oi_delta_h4", None)},
-        "lsr": {"accounts": r.lsr_accounts, "positions": r.lsr_positions},
-        "basis": {"now": r.basis_now, "bp": getattr(r, "basis_bp", None)},
-        "taker_delta": {"m5": r.taker_delta_m5, "m15": r.taker_delta_m15, "h1": r.taker_delta_h1},
+        "symbol": getattr(r, "symbol", symbol.upper()),
+        "funding": {"now": getattr(r, "funding_now", None), "next": getattr(r, "funding_next", None), "time": getattr(r, "next_funding_time", None)},
+        "oi": {"now": getattr(r, "oi_now", None), "d1": getattr(r, "oi_d1", None), "h1": getattr(r, "oi_delta_h1", None), "h4": getattr(r, "oi_delta_h4", None)},
+        "lsr": {"accounts": getattr(r, "lsr_accounts", None), "positions": getattr(r, "lsr_positions", None)},
+        "basis": {"now": getattr(r, "basis_now", None), "bp": getattr(r, "basis_bp", None)},
+        "taker_delta": {"m5": getattr(r, "taker_delta_m5", None), "m15": getattr(r, "taker_delta_m15", None), "h1": getattr(r, "taker_delta_h1", None)},
         "orderbook": {"spread_bp": getattr(r, "spread_bp", None), "depth10bp_bid": getattr(r, "depth10bp_bid", None), "depth10bp_ask": getattr(r, "depth10bp_ask", None), "imbalance": getattr(r, "ob_imbalance", None)},
-        "created_at": r.created_at,
+        "created_at": getattr(r, "created_at", datetime.now(timezone.utc)),
     }
