@@ -63,6 +63,7 @@ from .routers import futures as futures_router
 from .routers import meta as meta_router
 from .routers import futures_plan as futures_plan_router
 from .routers import gpt_analyze as gpt_analyze_router
+from .routers import v2 as v2_router
 
 
 @app.get("/api/plan/{plan_id}")
@@ -95,3 +96,4 @@ app.include_router(futures_router.router)
 app.include_router(meta_router.router)
 app.include_router(futures_plan_router.router)
 app.include_router(gpt_analyze_router.router)
+app.include_router(v2_router.router)
