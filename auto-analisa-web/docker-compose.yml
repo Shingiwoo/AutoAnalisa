@@ -2,24 +2,20 @@ services:
   db:
     image: mysql:8.0
     restart: always
+    command: ["mysqld", "--default-authentication-plugin=mysql_native_password"]
     environment:
       MYSQL_ROOT_PASSWORD: rootpass
       MYSQL_DATABASE: autoanalisa
       MYSQL_USER: gitci88
       MYSQL_PASSWORD: "AutoPass#88"
-    ports:
-      - "3306:3306"
     volumes:
       - db_data:/var/lib/mysql
-
-  redis:
-    image: redis:7-alpine
-    restart: always
-    command: redis-server --appendonly yes
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$MYSQL_ROOT_PASSWORD || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   backend:
     build:
@@ -31,15 +27,17 @@ services:
     environment:
       # Force container DB/Redis endpoints
       DATABASE_URL: "mysql+aiomysql://gitci88:AutoPass%2388@db:3306/autoanalisa"
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://host.docker.internal:6379/0
       APP_ENV: prod
       CORS_ORIGINS: https://webanalisa.appshin.xyz
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
     ports:
       - "8940:8000"
     working_dir: /app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   frontend:
     build:
@@ -63,12 +61,14 @@ services:
       - .env
     environment:
       DATABASE_URL: "mysql+aiomysql://gitci88:AutoPass%2388@db:3306/autoanalisa"
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://host.docker.internal:6379/0
       APP_ENV: prod
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
     command: sh -c "while true; do python scripts/futures_refresh.py || true; sleep 120; done"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   job-macro-generate:
     build:
@@ -79,13 +79,14 @@ services:
       - .env
     environment:
       DATABASE_URL: "mysql+aiomysql://gitci88:AutoPass%2388@db:3306/autoanalisa"
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://host.docker.internal:6379/0
       APP_ENV: prod
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
     command: sh -c "while true; do python scripts/macro_generate.py --slot pagi || true; sleep 43200; done"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   db_data:
-  redis_data:
