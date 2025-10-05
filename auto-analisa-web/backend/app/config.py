@@ -5,6 +5,8 @@ class Settings(BaseSettings):
     # App & storage
     APP_ENV: str = "local"
     SQLITE_URL: str = "sqlite+aiosqlite:///./app.db"
+    # Prefer DATABASE_URL if provided; fall back to SQLITE_URL
+    DATABASE_URL: str | None = None
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # Auth & security
@@ -31,3 +33,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+if not settings.DATABASE_URL:
+    # Backward-compat: use SQLITE_URL when DATABASE_URL is not set
+    try:
+        settings.DATABASE_URL = settings.SQLITE_URL
+    except Exception:
+        settings.DATABASE_URL = "sqlite+aiosqlite:///./app.db"

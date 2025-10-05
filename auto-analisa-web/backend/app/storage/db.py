@@ -1,20 +1,35 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy import text
+from typing import Any
 from .. import models
 from ..config import settings
 
 
-engine = create_async_engine(settings.SQLITE_URL, echo=False, future=True)
+def _make_engine():
+    url = settings.DATABASE_URL or settings.SQLITE_URL
+    # For SQLite, set connect timeout to reduce "database is locked" errors under load
+    kwargs: dict[str, Any] = {"echo": False, "future": True}
+    if url.startswith("sqlite+"):
+        kwargs["connect_args"] = {"timeout": 15}
+    else:
+        # For MySQL/Postgres, enable pre_ping and modest recycle to avoid stale connections
+        kwargs["pool_pre_ping"] = True
+        kwargs["pool_recycle"] = 1800
+    return create_async_engine(url, **kwargs)
+
+
+engine = _make_engine()
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
 async def init_db():
     async with engine.begin() as conn:
-        # Aktifkan WAL & synchronous=NORMAL untuk SQLite, abaikan jika gagal
+        # Aktifkan WAL & synchronous=NORMAL & busy_timeout untuk SQLite, abaikan jika gagal
         try:
             if engine.url.get_backend_name().startswith("sqlite"):
                 await conn.execute(text("PRAGMA journal_mode=WAL"))
                 await conn.execute(text("PRAGMA synchronous=NORMAL"))
+                await conn.execute(text("PRAGMA busy_timeout=5000"))
         except Exception:
             pass
         await conn.run_sync(models.Base.metadata.create_all)

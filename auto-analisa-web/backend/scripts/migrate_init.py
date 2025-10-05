@@ -9,7 +9,9 @@ if BACKEND_ROOT not in sys.path:
 
 from app.models import Base
 
-SQLITE_URL = os.getenv("SQLITE_URL", "sqlite:///app.db").replace("sqlite+aiosqlite", "sqlite")
-engine = create_engine(SQLITE_URL)
+URL = os.getenv("DATABASE_URL") or os.getenv("SQLITE_URL", "sqlite:///app.db")
+# Swap async drivers to sync equivalents when needed
+URL_SYNC = URL.replace("sqlite+aiosqlite", "sqlite").replace("mysql+aiomysql", "mysql+pymysql")
+engine = create_engine(URL_SYNC)
 Base.metadata.create_all(engine)
 print("OK: tables created")

@@ -11,10 +11,11 @@ if BACKEND_DIR not in sys.path:
 def _get_sqlite_url():
     try:
         from app.config import settings  # project kamu biasanya punya ini
-        url = getattr(settings, "SQLITE_URL", "sqlite:///app.db")
+        url = getattr(settings, "DATABASE_URL", None) or getattr(settings, "SQLITE_URL", "sqlite:///app.db")
     except Exception:
-        url = os.getenv("SQLITE_URL", "sqlite:///app.db")
-    return url.replace("sqlite+aiosqlite", "sqlite")
+        url = os.getenv("DATABASE_URL") or os.getenv("SQLITE_URL", "sqlite:///app.db")
+    # Swap async drivers to sync equivalents when needed
+    return url.replace("sqlite+aiosqlite", "sqlite").replace("mysql+aiomysql", "mysql+pymysql")
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
