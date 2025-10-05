@@ -30,7 +30,7 @@ services:
       - .env
     environment:
       # Force container DB/Redis endpoints
-      DATABASE_URL: "mysql+aiomysql://gitci88:AutoPass#88@db:3306/autoanalisa"
+      DATABASE_URL: "mysql+aiomysql://gitci88:AutoPass%2388@db:3306/autoanalisa"
       REDIS_URL: redis://redis:6379/0
       APP_ENV: prod
       CORS_ORIGINS: https://webanalisa.appshin.xyz
@@ -62,7 +62,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: "mysql+aiomysql://gitci88:AutoPass#88@db:3306/autoanalisa"
+      DATABASE_URL: "mysql+aiomysql://gitci88:AutoPass%2388@db:3306/autoanalisa"
       REDIS_URL: redis://redis:6379/0
       APP_ENV: prod
     depends_on:
@@ -78,7 +78,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: "mysql+aiomysql://gitci88:AutoPass#88@db:3306/autoanalisa"
+      DATABASE_URL: "mysql+aiomysql://gitci88:AutoPass%2388@db:3306/autoanalisa"
       REDIS_URL: redis://redis:6379/0
       APP_ENV: prod
     depends_on:
