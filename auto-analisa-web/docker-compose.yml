@@ -3,10 +3,10 @@ services:
     image: mysql:8.0
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: rootpass8888
+      MYSQL_ROOT_PASSWORD: rootpass
       MYSQL_DATABASE: autoanalisa
-      MYSQL_USER: auto
-      MYSQL_PASSWORD: autopass8888
+      MYSQL_USER: gitci88
+      MYSQL_PASSWORD: "AutoPass#88"
     ports:
       - "3306:3306"
     volumes:
@@ -30,9 +30,10 @@ services:
       - .env
     environment:
       # Force container DB/Redis endpoints
-      DATABASE_URL: mysql+aiomysql://auto:autopass@db:3306/autoanalisa
+      DATABASE_URL: "mysql+aiomysql://gitci88:AutoPass#88@db:3306/autoanalisa"
       REDIS_URL: redis://redis:6379/0
       APP_ENV: prod
+      CORS_ORIGINS: https://webanalisa.appshin.xyz
     depends_on:
       - db
       - redis
@@ -46,7 +47,7 @@ services:
       dockerfile: frontend/Dockerfile
     restart: always
     environment:
-      NEXT_PUBLIC_API_BASE: http://localhost:8940
+      NEXT_PUBLIC_API_BASE: https://webanalisa.appshin.xyz/api
       NODE_ENV: production
     depends_on:
       - backend
@@ -61,7 +62,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: mysql+aiomysql://auto:autopass@db:3306/autoanalisa
+      DATABASE_URL: "mysql+aiomysql://gitci88:AutoPass#88@db:3306/autoanalisa"
       REDIS_URL: redis://redis:6379/0
       APP_ENV: prod
     depends_on:
@@ -77,7 +78,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: mysql+aiomysql://auto:autopass@db:3306/autoanalisa
+      DATABASE_URL: "mysql+aiomysql://gitci88:AutoPass#88@db:3306/autoanalisa"
       REDIS_URL: redis://redis:6379/0
       APP_ENV: prod
     depends_on:
