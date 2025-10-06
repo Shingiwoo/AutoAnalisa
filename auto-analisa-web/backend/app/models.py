@@ -119,6 +119,16 @@ class Watchlist(Base):
     __table_args__ = (UniqueConstraint("user_id", "symbol", "trade_type", name="uniq_user_symbol_trade_watch"),)
 
 
+class JournalEntry(Base):
+    __tablename__ = "journal_entries"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(255), default="")
+    content: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
+
+
 class PasswordChangeRequest(Base):
     __tablename__ = "pwd_change_requests"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

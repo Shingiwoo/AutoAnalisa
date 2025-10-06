@@ -38,6 +38,9 @@ export default function SiteHeader({ loggedIn, isAdmin }:{ loggedIn:boolean, isA
             {isAdmin && pathname?.startsWith('/admin') && (
               <Link href="/" className="inline-flex items-center gap-1 text-zinc-300 hover:text-white"><Home size={16}/> Dashboard</Link>
             )}
+            {loggedIn && (
+              <Link href="/journal" className="text-zinc-300 hover:text-white">Journal</Link>
+            )}
             {!loggedIn && (
               <>
                 <Link href="/login" className="text-zinc-300 hover:text-white">Login</Link>
@@ -61,6 +64,7 @@ export default function SiteHeader({ loggedIn, isAdmin }:{ loggedIn:boolean, isA
               {isAdmin && pathname?.startsWith('/admin') && (
                 <Link href="/" className="block text-zinc-300 hover:text-white inline-flex items-center gap-1"><Home size={16}/> Dashboard</Link>
               )}
+              {loggedIn && <Link href="/journal" className="block text-zinc-300 hover:text-white">Journal</Link>}
               {!loggedIn ? (
                 <div className="pt-2 flex gap-3">
                   <Link href="/login" className="text-zinc-300 hover:text-white">Login</Link>
