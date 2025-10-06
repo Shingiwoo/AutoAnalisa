@@ -31,12 +31,27 @@ api.interceptors.request.use((cfg) => {
 api.interceptors.response.use(
   (r) => r,
   (err) => {
-    if (err?.response?.status === 401) {
-      if (typeof window !== "undefined") window.location.href = "/login";
+    const status = err?.response?.status;
+    if (status === 401 && typeof window !== "undefined") {
+      try {
+        // Avoid redirect loops: don't redirect from login/register calls
+        const reqUrl: string = err?.config?.url || "";
+        const isAuthEndpoint = /\/auth\/(login|register)/.test(reqUrl);
+        const isAlreadyOnLogin = window.location.pathname.startsWith("/login");
+        const isAlreadyOnRegister = window.location.pathname.startsWith("/register");
+        const isPublicEndpoint = /\/api\/public\//.test(reqUrl);
+        if (!isAuthEndpoint && !isPublicEndpoint && !isAlreadyOnLogin && !isAlreadyOnRegister) {
+          // debounce redirect
+          const w = window as any;
+          if (!w.__authRedirecting) {
+            w.__authRedirecting = true;
+            window.location.href = "/login";
+          }
+        }
+      } catch {}
     }
     return Promise.reject(err);
   }
 );
 
 export default api;
-
