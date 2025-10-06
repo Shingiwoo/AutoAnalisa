@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import os, sys
 from uuid import uuid4
+from pathlib import Path
 
-# pastikan backend ada di sys.path
-BACKEND_DIR = '/var/www/AutoAnalisa/auto-analisa-web/backend'
-if BACKEND_DIR not in sys.path:
-    sys.path.insert(0, BACKEND_DIR)
+# Ensure repo root (/app) is on sys.path when running inside container
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 def _get_sync_url():
     """Resolve target DB URL for admin creation.

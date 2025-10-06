@@ -33,6 +33,23 @@ async def init_db():
         except Exception:
             pass
         await conn.run_sync(models.Base.metadata.create_all)
+        # lightweight migrations for MySQL
+        try:
+            if engine.url.get_backend_name().startswith("mysql"):
+                res = await conn.exec_driver_sql(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'"
+                )
+                cols = {row[0] for row in res.fetchall()}
+                if "approved" not in cols:
+                    await conn.exec_driver_sql(
+                        "ALTER TABLE users ADD COLUMN approved TINYINT(1) DEFAULT 1"
+                    )
+                if "blocked" not in cols:
+                    await conn.exec_driver_sql(
+                        "ALTER TABLE users ADD COLUMN blocked TINYINT(1) DEFAULT 0"
+                    )
+        except Exception:
+            pass
         # lightweight migrations for SQLite
         try:
             # users: add approved & blocked flags for admin moderation
