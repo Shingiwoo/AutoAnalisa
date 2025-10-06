@@ -37,9 +37,11 @@ def _get_sync_url():
     return url_sync
 
 from sqlalchemy import create_engine, text, inspect
-from sqlalchemy.orm import sessionmaker
-from app.models import Base, User
-from app.auth import hash_pw
+from datetime import datetime
+try:
+    from passlib.hash import argon2
+except Exception:
+    argon2 = None  # will error later if missing
 
 def _ensure_user_columns(engine):
     """Ensure new columns exist for backward compatibility (approved, blocked).
@@ -71,36 +73,46 @@ def _ensure_user_columns(engine):
 def main(email: str, password: str):
     url = _get_sync_url()
     engine = create_engine(url, future=True)
-    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
-
-    # pastikan tabel ada
-    Base.metadata.create_all(engine)
-    # ensure backward-compatible columns exist
+    # ensure columns exist and table exists
     _ensure_user_columns(engine)
-
-    with SessionLocal() as s:
-        u = s.query(User).filter_by(email=email).first()
-        if u:
-            u.password_hash = hash_pw(password)
-            u.role = "admin"
-            try:
-                u.approved = True  # type: ignore
-                u.blocked = False  # type: ignore
-            except Exception:
-                pass
+    pwd_hash = argon2.hash(password) if argon2 else password
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    with engine.begin() as conn:
+        # Create table users if not exists (minimal schema)
+        conn.execute(text(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+              id VARCHAR(64) PRIMARY KEY,
+              email VARCHAR(255) UNIQUE NOT NULL,
+              password_hash VARCHAR(255) NOT NULL,
+              `role` VARCHAR(32) NOT NULL DEFAULT 'user',
+              approved TINYINT(1) DEFAULT 1,
+              blocked TINYINT(1) DEFAULT 0,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB
+            """
+        ))
+        # Ensure columns present (idempotent)
+        _ensure_user_columns(engine)
+        # Upsert by email
+        res = conn.execute(text("SELECT id FROM users WHERE email=:e"), {"e": email})
+        row = res.first()
+        if row:
+            conn.execute(
+                text("UPDATE users SET password_hash=:ph, `role`='admin', approved=1, blocked=0 WHERE email=:e"),
+                {"ph": pwd_hash, "e": email},
+            )
             action = "UPDATED"
         else:
-            kwargs = dict(id=str(uuid4()), email=email, password_hash=hash_pw(password), role="admin")
-            # Populate moderation flags if model supports them
-            try:
-                kwargs.update(approved=True, blocked=False)
-            except Exception:
-                pass
-            u = User(**kwargs)  # type: ignore[arg-type]
-            s.add(u)
+            conn.execute(
+                text(
+                    "INSERT INTO users (id,email,password_hash,`role`,approved,blocked,created_at) "
+                    "VALUES (:id,:e,:ph,'admin',1,0,:ts)"
+                ),
+                {"id": str(uuid4()), "e": email, "ph": pwd_hash, "ts": now},
+            )
             action = "CREATED"
-        s.commit()
-        print(f"OK [{action}] admin: {u.email}")
+    print(f"OK [{action}] admin: {email}")
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
