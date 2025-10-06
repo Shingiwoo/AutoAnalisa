@@ -35,6 +35,20 @@ async def init_db():
         await conn.run_sync(models.Base.metadata.create_all)
         # lightweight migrations for SQLite
         try:
+            # users: add approved & blocked flags for admin moderation
+            resu = await conn.exec_driver_sql("PRAGMA table_info(users)")
+            cols_users = {row[1] for row in resu.fetchall()}
+            if "approved" not in cols_users:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE users ADD COLUMN approved BOOLEAN DEFAULT 1"
+                )
+            if "blocked" not in cols_users:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE users ADD COLUMN blocked BOOLEAN DEFAULT 0"
+                )
+        except Exception:
+            pass
+        try:
             res = await conn.exec_driver_sql("PRAGMA table_info(settings)")
             cols = {row[1] for row in res.fetchall()}
             if "registration_enabled" not in cols:

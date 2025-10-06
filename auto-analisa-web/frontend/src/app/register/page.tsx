@@ -8,6 +8,7 @@ export default function RegisterPage(){
   const [email,setEmail]=useState('')
   const [password,setPassword]=useState('')
   const [loading,setLoading]=useState(false)
+  const [showPw,setShowPw]=useState(false)
   const [enabled,setEnabled]=useState<boolean|null>(null)
   const [msg,setMsg]=useState('')
   const router = useRouter()
@@ -35,9 +36,9 @@ export default function RegisterPage(){
     setMsg('')
     setLoading(true)
     try{
-      await api.post('auth/register', { email: email.trim(), password })
-      setMsg('Registrasi berhasil. Silakan login.')
-      setTimeout(()=> router.push('/login'), 600)
+      const {data} = await api.post('auth/register', { email: email.trim(), password })
+      setMsg('Registrasi berhasil. Akun menunggu persetujuan admin. Anda akan diarahkan ke halaman login…')
+      setTimeout(()=> router.push('/login'), 1000)
     }catch(e:any){
       if(e?.response?.status===403) setMsg('Registrasi dinonaktifkan oleh admin')
       else if(e?.response?.status===409) setMsg('Email sudah terdaftar')
@@ -75,13 +76,18 @@ export default function RegisterPage(){
           </div>
           <div>
             <label className="block text-sm mb-1 text-zinc-300">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e=>setPassword(e.target.value)}
-              className="block w-full rounded-md bg-transparent px-3 py-2 text-white placeholder:text-zinc-400 ring-1 ring-inset ring-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              placeholder="••••••••"
-            />
+            <div className="relative">
+              <input
+                type={showPw? 'text':'password'}
+                value={password}
+                onChange={e=>setPassword(e.target.value)}
+                className="block w-full rounded-md bg-transparent px-3 py-2 pr-10 text-white placeholder:text-zinc-400 ring-1 ring-inset ring-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                placeholder="••••••••"
+              />
+              <button type="button" onClick={()=>setShowPw(v=>!v)} className="absolute inset-y-0 right-2 my-auto h-7 px-1 rounded text-zinc-300 hover:text-white focus:outline-none focus:ring-1 focus:ring-cyan-500">
+                {showPw? '🙈':'👁️'}
+              </button>
+            </div>
           </div>
           <button disabled={loading || enabled===false} className="w-full px-4 py-2 rounded-md bg-cyan-600 text-white font-medium hover:bg-cyan-500 focus:ring-2 focus:ring-cyan-500 disabled:opacity-50">{loading?'Mendaftar…':'Daftar'}</button>
         </form>

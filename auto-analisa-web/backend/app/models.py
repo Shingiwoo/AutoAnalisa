@@ -35,6 +35,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(32), default="user")
+    approved: Mapped[bool] = mapped_column(Boolean, default=True)
+    blocked: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
 
 
@@ -179,6 +181,19 @@ class LLMUsage(Base):
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
     updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, default=None)
+
+
+# Simple in-app notifications (admin-facing)
+class Notification(Base):
+    __tablename__ = "notifications"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(32), default="info")
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(16), default="unread")  # unread|read
+    meta: Mapped[dict] = mapped_column(JSON, default={})
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
+    read_at: Mapped[dt.datetime | None] = mapped_column(DateTime, default=None)
 
 
 # Cached GPT futures reports untuk persistensi Patch Seri M

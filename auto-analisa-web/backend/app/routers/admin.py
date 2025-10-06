@@ -6,7 +6,7 @@ from sqlalchemy import select, func
 from app.deps import get_db
 from app.config import settings as app_settings
 from app.auth import get_current_user
-from app.models import Settings, ApiUsage, PasswordChangeRequest, User, MacroDaily
+from app.models import Settings, ApiUsage, PasswordChangeRequest, User, MacroDaily, Notification
 from app.services.budget import (
     get_or_init_settings,
     month_key,
@@ -80,6 +80,73 @@ async def get_settings(db: AsyncSession = Depends(get_db), user=Depends(require_
         "llm_limit_monthly_usd": s.budget_monthly_usd,
         "llm_spend_monthly_usd": s.budget_used_usd,
     }
+
+
+# User management
+@router.get("/users")
+async def list_users(db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
+    q = await db.execute(select(User))
+    rows = q.scalars().all()
+    return [
+        {
+            "id": r.id,
+            "email": r.email,
+            "role": r.role,
+            "approved": bool(getattr(r, "approved", True)),
+            "blocked": bool(getattr(r, "blocked", False)),
+            "created_at": r.created_at,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/users/{uid}/approve")
+async def approve_user(uid: str, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
+    u = await db.get(User, uid)
+    if not u:
+        raise HTTPException(404, "User not found")
+    try:
+        u.approved = True  # type: ignore
+    except Exception:
+        pass
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/users/{uid}/block")
+async def block_user(uid: str, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
+    u = await db.get(User, uid)
+    if not u:
+        raise HTTPException(404, "User not found")
+    try:
+        u.blocked = True  # type: ignore
+    except Exception:
+        pass
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/users/{uid}/unblock")
+async def unblock_user(uid: str, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
+    u = await db.get(User, uid)
+    if not u:
+        raise HTTPException(404, "User not found")
+    try:
+        u.blocked = False  # type: ignore
+    except Exception:
+        pass
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/users/{uid}")
+async def delete_user(uid: str, db: AsyncSession = Depends(get_db), admin=Depends(require_admin)):
+    u = await db.get(User, uid)
+    if not u:
+        raise HTTPException(404, "User not found")
+    await db.delete(u)
+    await db.commit()
+    return {"ok": True}
 
 
 def _apply_settings_payload(s, payload: dict):
@@ -456,6 +523,47 @@ async def futures_signals(symbol: str = "BTCUSDT", db: AsyncSession = Depends(ge
 async def futures_refresh(symbol: str = "BTCUSDT", db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
     row = await futures_svc.refresh_signals_cache(db, symbol)
     return {"ok": True, "symbol": row.symbol, "created_at": row.created_at}
+
+# Notifications
+@router.get("/notifications")
+async def list_notifications(status: str | None = None, db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
+    stmt = select(Notification)
+    if status in ("unread", "read"):
+        stmt = stmt.where(Notification.status == status)
+    q = await db.execute(stmt.order_by(Notification.created_at.desc()))
+    rows = q.scalars().all()
+    return [
+        {
+            "id": r.id,
+            "kind": r.kind,
+            "title": r.title,
+            "body": r.body,
+            "status": r.status,
+            "created_at": r.created_at,
+            "read_at": r.read_at,
+            "meta": r.meta,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/notifications/{nid}/read")
+async def mark_read(nid: int, db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
+    n = await db.get(Notification, nid)
+    if not n:
+        raise HTTPException(404, "Not found")
+    n.status = "read"
+    n.read_at = datetime.utcnow()
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/notifications/clear_all")
+async def clear_all(db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
+    from sqlalchemy import update
+    await db.execute(update(Notification).values(status="read", read_at=datetime.utcnow()))
+    await db.commit()
+    return {"ok": True}
 @router.post("/parity/compute")
 async def parity_compute(payload: dict, db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
     """Hitung paritas indikator terhadap referensi.

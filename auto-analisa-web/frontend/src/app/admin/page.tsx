@@ -1,6 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
+import UsersPanel from '../(components)/UsersPanel'
+import NotificationsPanel from '../(components)/NotificationsPanel'
 
 export default function AdminPage(){
   const [s,setS]=useState<any|null>(null)
@@ -15,7 +17,7 @@ export default function AdminPage(){
   const [busyMacro,setBusyMacro]=useState(false)
   const [macroStatus,setMacroStatus]=useState<any|null>(null)
   // Simple tabs for grouping
-  const [tab,setTab]=useState<'Settings'|'Indicator'|'Macro'|'Paritas'|'Docs'>('Settings')
+  const [tab,setTab]=useState<'Settings'|'Indicator'|'Macro'|'Paritas'|'Users'|'Notifications'|'Docs'>('Settings')
   const [indTab,setIndTab]=useState<'FVG'|'SupplyDemand'|'SinyalFutures'>('FVG')
   // Futures signals preview
   const [sigSym,setSigSym]=useState('BTCUSDT')
@@ -61,7 +63,7 @@ export default function AdminPage(){
       <h1 className="text-2xl font-bold text-zinc-900 dark:text-slate-100">Admin Dashboard</h1>
       {/* Tabs header */}
       <div className="flex items-center gap-2 text-sm">
-        {(['Settings','Indicator','Macro','Paritas','Docs'] as const).map(t=> (
+        {(['Settings','Indicator','Macro','Paritas','Users','Notifications','Docs'] as const).map(t=> (
           <button key={t} onClick={()=> setTab(t)} className={`px-3 py-1.5 rounded ${tab===t? 'bg-cyan-600 text-white':'bg-zinc-800 text-white/80 hover:bg-zinc-700'}`}>{t}</button>
         ))}
       </div>
@@ -144,6 +146,14 @@ export default function AdminPage(){
         </div>
 
       </div>
+      )}
+
+      {tab==='Users' && (
+        <UsersPanel />
+      )}
+
+      {tab==='Notifications' && (
+        <NotificationsPanel />
       )}
       {/* Indicator tab content */}
       {tab==='Indicator' && (

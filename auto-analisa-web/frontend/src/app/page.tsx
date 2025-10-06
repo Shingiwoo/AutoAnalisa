@@ -6,6 +6,7 @@ import { normalizeSymbolInput } from '../lib/hooks/useSymbols'
 import Link from 'next/link'
 import WatchlistRow from './(components)/WatchlistRow'
 import SymbolQuickForm from './(components)/SymbolQuickForm'
+import SymbolSearch from './(components)/SymbolSearch'
 import MacroPanel from './(components)/MacroPanel'
 import SessionsHint from './(components)/SessionsHint'
 import PasswordRequest from './(components)/PasswordRequest'
@@ -114,6 +115,10 @@ export default function Page(){
       <div id="analisa" className="max-w-7xl mx-auto px-4 md:px-6 space-y-4">
         {loggedIn ? (
           <>
+            {/* Pencarian simbol cepat dengan datalist (ketik untuk filter) */}
+            <div className="mb-2">
+              <SymbolSearch onPick={(s)=>analyze(s,'spot')} />
+            </div>
             <SymbolQuickForm onAnalyze={(sym, type)=>analyze(sym, type)} disabled={cards.length>=4} />
             <WatchlistRow tradeType='spot' quota={quota} onPick={(s)=>analyze(s,'spot')} onDelete={(s)=>{ setCards(prev=> prev.filter(c=> c.symbol !== s)) }} />
             <div className="mt-2 text-xs text-zinc-600">Butuh Futures? Gunakan halaman khusus: <Link href="/futures" className="underline">/futures</Link></div>

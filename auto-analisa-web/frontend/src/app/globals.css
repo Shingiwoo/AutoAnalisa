@@ -3,3 +3,22 @@
 * { box-sizing: border-box; }
 /* Biarkan next/font (Inter) mengatur font; jangan override di sini */
 /* body font-family dihapus agar kelas Inter dari layout.tsx berlaku */
+
+/* Perbaikan tampilan <select> di dark mode agar opsi tidak 'menghilang' */
+html.dark select,
+html.dark option {
+  background-color: #0a0a0a; /* zinc-950 */
+  color: #fafafa;            /* zinc-50  */
+}
+select {
+  background-color: #ffffff; /* default light */
+  color: #0a0a0a;
+}
+/* Gunakan color-scheme agar native popup mengikuti tema */
+:root { color-scheme: light dark; }
+
+/* Utility kelas untuk form elemen agar konsisten */
+.aa-input,
+select.aa-select {
+  @apply rounded-md ring-1 ring-inset ring-zinc-300 dark:ring-white/10 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-500;
+}

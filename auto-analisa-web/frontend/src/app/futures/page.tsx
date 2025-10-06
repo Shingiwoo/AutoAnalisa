@@ -4,6 +4,7 @@ import Link from "next/link"
 import { api } from "../api"
 import FuturesWatchlist from "../(components)/FuturesWatchlist"
 import FuturesCard from "../(components)/FuturesCard"
+import SymbolSearch from "../(components)/SymbolSearch"
 
 type Quota = {
   limit: number
@@ -70,6 +71,10 @@ export default function FuturesPage() {
       <div id="analisa" className="max-w-7xl mx-auto px-4 md:px-6 space-y-4">
         {loggedIn ? (
           <>
+            {/* Pencarian simbol cepat (ketik untuk filter), tanpa harus scroll */}
+            <div className="mb-2">
+              <SymbolSearch kind="futures" onPick={(s)=> setSelectedSymbol(s)} buttonLabel="Pilih" />
+            </div>
             <FuturesWatchlist
               quota={{ limit: futLimit, remaining: futRemaining, llm_enabled: !!quota?.llm_enabled }}
               selectedSymbol={selectedSymbol}
