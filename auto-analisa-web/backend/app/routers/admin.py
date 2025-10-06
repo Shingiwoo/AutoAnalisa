@@ -109,6 +109,20 @@ async def approve_user(uid: str, db: AsyncSession = Depends(get_db), admin=Depen
         u.approved = True  # type: ignore
     except Exception:
         pass
+    # Auto-mark related registration notifications as read
+    try:
+        q = await db.execute(select(Notification).where(Notification.status == "unread"))
+        rows = q.scalars().all()
+        for n in rows:
+            try:
+                meta = n.meta or {}
+                if meta.get("user_id") == u.id or meta.get("email") == u.email or (n.body or "").strip() == (u.email or "").strip():
+                    n.status = "read"
+                    n.read_at = datetime.utcnow()
+            except Exception:
+                continue
+    except Exception:
+        pass
     await db.commit()
     return {"ok": True}
 

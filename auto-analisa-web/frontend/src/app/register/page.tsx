@@ -37,6 +37,7 @@ export default function RegisterPage(){
     setLoading(true)
     try{
       const {data} = await api.post('auth/register', { email: email.trim(), password })
+      try{ sessionStorage.setItem('pending_email', email.trim()) }catch{}
       setMsg('Registrasi berhasil. Akun menunggu persetujuan admin. Anda akan diarahkan ke halaman login…')
       setTimeout(()=> router.push('/login'), 1000)
     }catch(e:any){
