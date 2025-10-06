@@ -17,10 +17,37 @@ def _get_sqlite_url():
     # Swap async drivers to sync equivalents when needed
     return url.replace("sqlite+aiosqlite", "sqlite").replace("mysql+aiomysql", "mysql+pymysql")
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.orm import sessionmaker
 from app.models import Base, User
 from app.auth import hash_pw
+
+def _ensure_user_columns(engine):
+    """Ensure new columns exist for backward compatibility (approved, blocked).
+    Works for SQLite/MySQL. No-op if columns already present."""
+    try:
+        insp = inspect(engine)
+        cols = {c['name'] for c in insp.get_columns('users')}
+    except Exception:
+        # Fallback probing for SQLite
+        try:
+            with engine.connect() as conn:
+                res = conn.execute(text("PRAGMA table_info(users)"))
+                cols = {row[1] for row in res}
+        except Exception:
+            cols = set()
+    statements = []
+    if 'approved' not in cols:
+        statements.append("ALTER TABLE users ADD COLUMN approved BOOLEAN DEFAULT 1")
+    if 'blocked' not in cols:
+        statements.append("ALTER TABLE users ADD COLUMN blocked BOOLEAN DEFAULT 0")
+    for stmt in statements:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(stmt))
+        except Exception:
+            # Ignore if backend doesn't support or column already added concurrently
+            pass
 
 def main(email: str, password: str):
     url = _get_sqlite_url()
@@ -29,15 +56,28 @@ def main(email: str, password: str):
 
     # pastikan tabel ada
     Base.metadata.create_all(engine)
+    # ensure backward-compatible columns exist
+    _ensure_user_columns(engine)
 
     with SessionLocal() as s:
         u = s.query(User).filter_by(email=email).first()
         if u:
             u.password_hash = hash_pw(password)
             u.role = "admin"
+            try:
+                u.approved = True  # type: ignore
+                u.blocked = False  # type: ignore
+            except Exception:
+                pass
             action = "UPDATED"
         else:
-            u = User(id=str(uuid4()), email=email, password_hash=hash_pw(password), role="admin")
+            kwargs = dict(id=str(uuid4()), email=email, password_hash=hash_pw(password), role="admin")
+            # Populate moderation flags if model supports them
+            try:
+                kwargs.update(approved=True, blocked=False)
+            except Exception:
+                pass
+            u = User(**kwargs)  # type: ignore[arg-type]
             s.add(u)
             action = "CREATED"
         s.commit()
