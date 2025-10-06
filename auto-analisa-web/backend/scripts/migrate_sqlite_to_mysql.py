@@ -56,7 +56,11 @@ def _all_mapped_classes() -> List[type]:
 def main():
     ap = argparse.ArgumentParser(description="SQLite -> SQL (MySQL) migrator")
     ap.add_argument("--sqlite", required=True, help="Path to existing SQLite .db file")
-    ap.add_argument("--target", default=os.getenv("DATABASE_URL") or os.getenv("SQLITE_URL"), help="Target SQLAlchemy URL (e.g., mysql+pymysql://...")")
+    ap.add_argument(
+        "--target",
+        default=os.getenv("DATABASE_URL") or os.getenv("SQLITE_URL"),
+        help="Target SQLAlchemy URL (e.g., mysql+pymysql://user:pass@host:3306/autoanalisa)",
+    )
     args = ap.parse_args()
 
     if not args.target:
@@ -116,4 +120,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
