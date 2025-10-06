@@ -8,6 +8,7 @@ services:
       MYSQL_DATABASE: autoanalisa
       MYSQL_USER: gitci88
       MYSQL_PASSWORD: "AutoPass#88"
+      COMPOSE_BAKE=true
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
@@ -25,11 +26,12 @@ services:
     env_file:
       - .env
     environment:
-      # Force container DB/Redis endpoints
+      # Force container DB/Redis endpoints      
       DATABASE_URL: "mysql+aiomysql://gitci88:AutoPass%2388@db:3306/autoanalisa"
       REDIS_URL: redis://host.docker.internal:6379/0
       APP_ENV: prod
       CORS_ORIGINS: https://webanalisa.appshin.xyz
+      COMPOSE_BAKE=true
     depends_on:
       db:
         condition: service_healthy
@@ -57,6 +59,7 @@ services:
     environment:
       NEXT_PUBLIC_API_BASE: https://webanalisa.appshin.xyz/api
       NODE_ENV: production
+      COMPOSE_BAKE=true
     depends_on:
       backend:
         condition: service_healthy
@@ -84,6 +87,7 @@ services:
       DATABASE_URL: "mysql+aiomysql://gitci88:AutoPass%2388@db:3306/autoanalisa"
       REDIS_URL: redis://host.docker.internal:6379/0
       APP_ENV: prod
+      COMPOSE_BAKE=true
     depends_on:
       db:
         condition: service_healthy
@@ -104,6 +108,7 @@ services:
       DATABASE_URL: "mysql+aiomysql://gitci88:AutoPass%2388@db:3306/autoanalisa"
       REDIS_URL: redis://host.docker.internal:6379/0
       APP_ENV: prod
+      COMPOSE_BAKE=true
     depends_on:
       db:
         condition: service_healthy
