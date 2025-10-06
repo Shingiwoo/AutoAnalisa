@@ -38,6 +38,16 @@ services:
     working_dir: /app
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import json,urllib.request,sys; sys.exit(0) if json.loads(urllib.request.urlopen('http://localhost:8000/api/health', timeout=5).read().decode()).get('ok') else sys.exit(1)"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   frontend:
     build:
@@ -48,7 +58,8 @@ services:
       NEXT_PUBLIC_API_BASE: https://webanalisa.appshin.xyz/api
       NODE_ENV: production
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "3840:3000"
 
@@ -65,6 +76,8 @@ services:
       APP_ENV: prod
     depends_on:
       db:
+        condition: service_healthy
+      backend:
         condition: service_healthy
     command: sh -c "while true; do python scripts/futures_refresh.py || true; sleep 120; done"
     extra_hosts:
@@ -83,6 +96,8 @@ services:
       APP_ENV: prod
     depends_on:
       db:
+        condition: service_healthy
+      backend:
         condition: service_healthy
     command: sh -c "while true; do python scripts/macro_generate.py --slot pagi || true; sleep 43200; done"
     extra_hosts:
