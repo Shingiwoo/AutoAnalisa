@@ -7,15 +7,33 @@ BACKEND_DIR = '/var/www/AutoAnalisa/auto-analisa-web/backend'
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
-# DB URL: ambil dari settings kalau ada, fallback ke ENV/.env atau default sqlite
-def _get_sqlite_url():
-    try:
-        from app.config import settings  # project kamu biasanya punya ini
-        url = getattr(settings, "DATABASE_URL", None) or getattr(settings, "SQLITE_URL", "sqlite:///app.db")
-    except Exception:
-        url = os.getenv("DATABASE_URL") or os.getenv("SQLITE_URL", "sqlite:///app.db")
-    # Swap async drivers to sync equivalents when needed
-    return url.replace("sqlite+aiosqlite", "sqlite").replace("mysql+aiomysql", "mysql+pymysql")
+def _get_sync_url():
+    """Resolve target DB URL for admin creation.
+    - Prefer DATABASE_URL (required for MySQL-only deployments)
+    - Convert async drivers to sync (aiomysql->pymysql, asyncpg->psycopg2)
+    - Refuse to use SQLite to avoid writing to the wrong file when deployment is MySQL-only
+    """
+    # 1) From env first (preferred in Docker/containerized runtime)
+    url = os.getenv("DATABASE_URL")
+    # 2) From app settings if available
+    if not url:
+        try:
+            from app.config import settings  # type: ignore
+            url = getattr(settings, "DATABASE_URL", None)
+        except Exception:
+            url = None
+    if not url:
+        raise SystemExit("ERROR: DATABASE_URL is not set. Run inside backend container or export DATABASE_URL.")
+    # Normalize drivers for sync engine
+    url_sync = (
+        url.replace("sqlite+aiosqlite", "sqlite")
+           .replace("mysql+aiomysql", "mysql+pymysql")
+           .replace("postgresql+asyncpg", "postgresql+psycopg2")
+    )
+    # Disallow SQLite for admin creation in MySQL-only deployments
+    if url_sync.startswith("sqlite:"):
+        raise SystemExit("ERROR: Refusing to use SQLite. Set DATABASE_URL to your MySQL DSN or run: docker compose exec backend python scripts/make_admin.py <email> <password>")
+    return url_sync
 
 from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.orm import sessionmaker
@@ -50,7 +68,7 @@ def _ensure_user_columns(engine):
             pass
 
 def main(email: str, password: str):
-    url = _get_sqlite_url()
+    url = _get_sync_url()
     engine = create_engine(url, future=True)
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
