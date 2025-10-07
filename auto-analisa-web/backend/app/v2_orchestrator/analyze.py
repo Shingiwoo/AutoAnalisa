@@ -14,6 +14,22 @@ ALLOWED_FOR = {
 }
 
 
+def _derive_btc_bias_from_context(snapshot: MarketSnapshot) -> Optional[str]:
+    try:
+        rsi = snapshot.btc_context.rsi_h1 if snapshot.btc_context else None
+        if rsi is None:
+            return None
+        if rsi >= 70:
+            return "bullish_overbought"
+        if rsi >= 55:
+            return "bullish_cooling"
+        if rsi >= 45:
+            return "neutral"
+        return "bearish_mild"
+    except Exception:
+        return None
+
+
 def _reconcile_with_btc_bias(data: dict, btc_bias: Optional[str], follow_btc_bias: bool = True) -> dict:
     if not btc_bias:
         data.setdefault("btc_alignment", "neutral")
@@ -30,6 +46,8 @@ def _reconcile_with_btc_bias(data: dict, btc_bias: Optional[str], follow_btc_bia
 
 
 async def analyze(snapshot: MarketSnapshot, follow_btc_bias: bool = True) -> LlmOutput:
+    # Ensure btc_bias exists if btc_context is present
+    btc_bias = snapshot.btc_bias or _derive_btc_bias_from_context(snapshot)
     prompt = build(snapshot)
     client = LlmClient()
     raw = await client.structured_response(
@@ -37,5 +55,5 @@ async def analyze(snapshot: MarketSnapshot, follow_btc_bias: bool = True) -> Llm
     )
     llm_obj = validate_output(raw)
     data = llm_obj.model_dump()
-    data = _reconcile_with_btc_bias(data, snapshot.btc_bias, follow_btc_bias=follow_btc_bias)
+    data = _reconcile_with_btc_bias(data, btc_bias, follow_btc_bias=follow_btc_bias)
     return LlmOutput.model_validate(data)

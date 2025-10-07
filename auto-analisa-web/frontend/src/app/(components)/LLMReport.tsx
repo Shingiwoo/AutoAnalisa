@@ -87,6 +87,21 @@ export function GptReportBox({ symbol, mode, report, loading }:{ symbol:string, 
       <summary className="flex items-center gap-2 text-sm font-semibold text-sky-700 dark:text-sky-200 cursor-pointer">
         <span>LLM Report ({mode})</span>
         {created && <span className="text-xs font-normal text-sky-500/80">{created} WIB</span>}
+        {/* BTC Bias badge if present in report meta */}
+        {(()=>{
+          try{
+            const bias = (report?.text?.btc_bias_used || report?.meta?.btc_bias_used || report?.btc_bias_used || '').toString()
+            const align = (report?.text?.btc_alignment || report?.meta?.btc_alignment || report?.btc_alignment || '').toString()
+            if(!bias && !align) return null
+            const biasColor = bias.startsWith('bullish')? 'bg-emerald-600' : bias.startsWith('bearish')? 'bg-rose-600' : 'bg-zinc-500'
+            const biasIcon = bias.startsWith('bullish')? '⬆' : bias.startsWith('bearish')? '⬇' : '◦'
+            const alignColor = align==='conflict'? 'bg-rose-600' : align==='aligned'? 'bg-emerald-600' : 'bg-zinc-500'
+            return <span className="flex items-center gap-2">
+              {bias && <span className={`px-1.5 py-0.5 rounded text-white text-[11px] ${biasColor}`} title="BTC Bias">{biasIcon} {bias.replace('_',' ')}</span>}
+              {align && <span className={`px-1.5 py-0.5 rounded text-white text-[11px] ${alignColor}`} title="Kesesuaian dengan BTC Bias">{align==='conflict'?'Konflik':'Selaras'}</span>}
+            </span>
+          }catch{return null}
+        })()}
       </summary>
       <div className="mt-3 text-sm">
         <pre className="whitespace-pre-wrap font-mono text-[13px] leading-6 text-sky-900 dark:text-sky-100">

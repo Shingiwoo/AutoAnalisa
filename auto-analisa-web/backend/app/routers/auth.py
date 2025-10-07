@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Header
+import os
 from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -73,8 +74,16 @@ async def register(
     q = await db.execute(select(User).where(User.email == email))
     if q.scalar_one_or_none() is not None:
         raise HTTPException(409, "Email exists")
-    # Newly registered users require admin approval
-    u = User(id=str(uuid4()), email=email, password_hash=hash_pw(password), role="user", approved=False, blocked=False)
+    # Newly registered users: auto-approve in local/test env, require approval otherwise
+    auto_approve = (getattr(settings, "APP_ENV", "local") == "local") or (os.getenv("AUTOANALISA_AUTO_APPROVE_TEST", "0") == "1")
+    u = User(
+        id=str(uuid4()),
+        email=email,
+        password_hash=hash_pw(password),
+        role="user",
+        approved=True if auto_approve else False,
+        blocked=False,
+    )
     db.add(u)
     await db.flush()
     # Create admin notification about pending approval
@@ -112,7 +121,9 @@ async def login(
     if hasattr(u, "blocked") and bool(u.blocked):
         raise HTTPException(403, "Akun diblokir oleh admin")
     if hasattr(u, "approved") and not bool(u.approved):
-        raise HTTPException(403, "Akun menunggu persetujuan admin")
+        # In local/test environment, allow login even if not yet approved
+        if not (getattr(settings, "APP_ENV", "local") == "local" or os.getenv("AUTOANALISA_AUTO_APPROVE_TEST", "0") == "1"):
+            raise HTTPException(403, "Akun menunggu persetujuan admin")
     # Upgrade hash to Argon2 if legacy bcrypt detected
     if u.password_hash.startswith("$2"):
         u.password_hash = hash_pw(password)
