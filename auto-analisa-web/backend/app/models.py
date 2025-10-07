@@ -8,8 +8,10 @@ from sqlalchemy import (
     Text,
     Boolean,
     Float,
+    Numeric,
     UniqueConstraint,
     Index,
+    CheckConstraint,
     ForeignKey,
 )
 import datetime as dt
@@ -138,31 +140,31 @@ class TradeJournal(Base):
     entry_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False)
     exit_at: Mapped[dt.datetime | None] = mapped_column(DateTime, default=None)
     # Keuangan
-    saldo_awal: Mapped[float | None] = mapped_column(Float, default=None)
-    margin: Mapped[float | None] = mapped_column(Float, default=None)
-    leverage: Mapped[float | None] = mapped_column(Float, default=None)
-    sisa_saldo: Mapped[float] = mapped_column(Float, default=0.0)
-    equity_balance: Mapped[float | None] = mapped_column(Float, default=None)
+    saldo_awal: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False)
+    margin: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False)
+    leverage: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False)
+    sisa_saldo: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False, default=0)
+    equity_balance: Mapped[float | None] = mapped_column(Numeric(18, 8), default=None)
     # Trade info
-    pair: Mapped[str] = mapped_column(String(20))
-    arah: Mapped[str] = mapped_column(String(8), default="LONG")  # LONG|SHORT
-    entry_price: Mapped[float | None] = mapped_column(Float, default=None)
-    exit_price: Mapped[float | None] = mapped_column(Float, default=None)
-    sl_price: Mapped[float | None] = mapped_column(Float, default=None)
-    be_price: Mapped[float | None] = mapped_column(Float, default=None)
-    tp1_price: Mapped[float | None] = mapped_column(Float, default=None)
-    tp2_price: Mapped[float | None] = mapped_column(Float, default=None)
-    tp3_price: Mapped[float | None] = mapped_column(Float, default=None)
-    tp1_status: Mapped[str] = mapped_column(String(10), default="PENDING")  # PENDING|HIT|FAIL|PASS
-    tp2_status: Mapped[str] = mapped_column(String(10), default="PENDING")
-    tp3_status: Mapped[str] = mapped_column(String(10), default="PENDING")
-    sl_status: Mapped[str] = mapped_column(String(10), default="PENDING")
-    be_status: Mapped[str] = mapped_column(String(10), default="PENDING")
-    risk_reward: Mapped[str | None] = mapped_column(String(64), default=None)
-    winloss: Mapped[str] = mapped_column(String(10), default="WAITING")  # WAITING|WIN|LOSS
-    pnl_pct: Mapped[float] = mapped_column(Float, default=0.0)
-    open_qty: Mapped[float] = mapped_column(Float, default=1.0)
-    status: Mapped[str] = mapped_column(String(10), default="OPEN")  # OPEN|CLOSED
+    pair: Mapped[str] = mapped_column(String(20), nullable=False)
+    arah: Mapped[str] = mapped_column(String(8), nullable=False, default="LONG")  # LONG|SHORT
+    entry_price: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False)
+    exit_price: Mapped[float | None] = mapped_column(Numeric(18, 8), default=None)
+    sl_price: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False)
+    be_price: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False)
+    tp1_price: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False)
+    tp2_price: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False)
+    tp3_price: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False)
+    tp1_status: Mapped[str] = mapped_column(String(10), nullable=False, default="PENDING")  # PENDING|HIT|FAIL
+    tp2_status: Mapped[str] = mapped_column(String(10), nullable=False, default="PENDING")
+    tp3_status: Mapped[str] = mapped_column(String(10), nullable=False, default="PENDING")
+    sl_status: Mapped[str] = mapped_column(String(10), nullable=False, default="PENDING")  # PENDING|HIT|PASS
+    be_status: Mapped[str] = mapped_column(String(10), nullable=False, default="PENDING")  # PENDING|HIT|PASS
+    risk_reward: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    winloss: Mapped[str] = mapped_column(String(10), nullable=False, default="WAITING")  # WAITING|WIN|LOSS
+    pnl_pct: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False, default=0)
+    open_qty: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False, default=1)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="OPEN")  # OPEN|CLOSED
     strategy: Mapped[str | None] = mapped_column(String(255), default=None)
     market_condition: Mapped[str | None] = mapped_column(String(255), default=None)
     notes: Mapped[str] = mapped_column(Text, default="")
@@ -170,6 +172,11 @@ class TradeJournal(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
     __table_args__ = (
         Index("ix_trade_journals_user_entry", "user_id", "entry_at"),
+        CheckConstraint("arah IN ('LONG','SHORT')", name='ck_direction'),
+        CheckConstraint("tp1_status IN ('PENDING','HIT','FAIL') AND tp2_status IN ('PENDING','HIT','FAIL') AND tp3_status IN ('PENDING','HIT','FAIL')", name='ck_tp_statuses'),
+        CheckConstraint("sl_status IN ('PENDING','HIT','PASS') AND be_status IN ('PENDING','HIT','PASS')", name='ck_sl_be_status'),
+        CheckConstraint("winloss IN ('WAITING','WIN','LOSS')", name='ck_winloss'),
+        CheckConstraint("status IN ('OPEN','CLOSED')", name='ck_trade_status'),
     )
 
 class PasswordChangeRequest(Base):

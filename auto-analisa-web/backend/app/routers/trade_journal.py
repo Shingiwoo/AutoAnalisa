@@ -9,7 +9,7 @@ from typing import Optional
 from app.deps import get_db
 from app.auth import require_user
 from app.models import TradeJournal
-from app.services.trade_calc import auto_fields, calc_pnl_pct, calc_rr
+from app.services.trade_calc import auto_fields, calc_pnl_pct, derive_targets, calc_equity_balance
 
 
 router = APIRouter(prefix="/api/trade-journal", tags=["trade-journal"])
@@ -103,61 +103,82 @@ async def create_entry(payload: dict, db: AsyncSession = Depends(get_db), user=D
     c = await db.execute(select(func.count()).select_from(TradeJournal).where(TradeJournal.user_id == user.id, TradeJournal.status == "OPEN"))
     open_cnt = c.scalar() or 0
     if open_cnt >= 4:
-        raise HTTPException(409, "Maksimal 4 posisi OPEN. Tutup sebagian sebelum menambah.")
+        raise HTTPException(409, "Maksimum 4 posisi OPEN per pengguna")
 
+    # Required fields
+    entry_at = _parse_dt(payload.get("entry_at"))
+    if not entry_at:
+        raise HTTPException(422, "entry_at wajib (datetime ISO)")
     try:
-        entry_at = _parse_dt(payload.get("entry_at"))
-        if not entry_at:
-            raise ValueError("entry_at wajib")
+        pair = str(payload.get("pair") or "").upper().strip()
+        arah = str(payload.get("arah") or "LONG").upper().strip()
+        saldo_awal = float(payload.get("saldo_awal"))
+        margin = float(payload.get("margin"))
+        leverage = float(payload.get("leverage"))
+        entry_price = float(payload.get("entry_price"))
+        sl_price = float(payload.get("sl_price"))
     except Exception:
-        raise HTTPException(422, "Format entry_at tidak valid")
+        raise HTTPException(422, "Field wajib tidak lengkap atau format angka salah")
 
-    pair = str(payload.get("pair") or "").upper()
-    arah = str(payload.get("arah") or "LONG").upper()
+    if arah not in ("LONG","SHORT"):
+        raise HTTPException(422, "Arah harus LONG atau SHORT")
+    if arah == "LONG" and not (sl_price < entry_price):
+        raise HTTPException(422, "Untuk LONG: SL harus < Entry")
+    if arah == "SHORT" and not (sl_price > entry_price):
+        raise HTTPException(422, "Untuk SHORT: SL harus > Entry")
 
-    data = dict(payload)
-    data.update({"pair": pair, "arah": arah})
-    autos = auto_fields(data)
+    # Auto fields
+    autos = auto_fields({
+        "saldo_awal": saldo_awal,
+        "margin": margin,
+        "arah": arah,
+        "entry_price": entry_price,
+        "sl_price": sl_price,
+        "exit_price": payload.get("exit_price"),
+    })
+    targets = derive_targets(arah, entry_price, sl_price)
 
     t = TradeJournal(
         user_id=user.id,
         entry_at=entry_at,
         exit_at=_parse_dt(payload.get("exit_at")),
-        saldo_awal=payload.get("saldo_awal"),
-        margin=payload.get("margin"),
-        leverage=payload.get("leverage"),
-        sisa_saldo=payload.get("sisa_saldo") or autos.get("sisa_saldo") or 0.0,
+        saldo_awal=saldo_awal,
+        margin=margin,
+        leverage=leverage,
+        sisa_saldo=float(autos.get("sisa_saldo") or 0.0),
         pair=pair,
         arah=arah,
-        entry_price=payload.get("entry_price"),
-        exit_price=payload.get("exit_price"),
-        sl_price=payload.get("sl_price"),
-        be_price=payload.get("be_price"),
-        tp1_price=payload.get("tp1_price"),
-        tp2_price=payload.get("tp2_price"),
-        tp3_price=payload.get("tp3_price"),
-        tp1_status=(payload.get("tp1_status") or "PENDING").upper(),
-        tp2_status=(payload.get("tp2_status") or "PENDING").upper(),
-        tp3_status=(payload.get("tp3_status") or "PENDING").upper(),
-        sl_status=(payload.get("sl_status") or "PENDING").upper(),
-        be_status=(payload.get("be_status") or "PENDING").upper(),
-        risk_reward=payload.get("risk_reward") or autos.get("risk_reward"),
-        winloss=(payload.get("winloss") or "WAITING").upper(),
-        pnl_pct=float(payload.get("pnl_pct") or autos.get("pnl_pct") or 0.0),
-        equity_balance=payload.get("equity_balance"),
+        entry_price=entry_price,
+        exit_price=float(payload.get("exit_price")) if payload.get("exit_price") is not None else None,
+        sl_price=sl_price,
+        be_price=targets["be_price"],
+        tp1_price=targets["tp1_price"],
+        tp2_price=targets["tp2_price"],
+        tp3_price=targets["tp3_price"],
+        tp1_status="PENDING",
+        tp2_status="PENDING",
+        tp3_status="PENDING",
+        sl_status="PENDING",
+        be_status="PENDING",
+        risk_reward=targets["risk_reward"],
+        winloss="WAITING",
+        pnl_pct=float(autos.get("pnl_pct") or 0.0),
+        equity_balance=None,
         strategy=payload.get("strategy"),
         market_condition=payload.get("market_condition"),
-        notes=payload.get("notes") or "",
+        notes=str(payload.get("notes") or ""),
         open_qty=float(payload.get("open_qty") or 1.0),
-        status=(payload.get("status") or "OPEN").upper(),
+        status="OPEN",
     )
     # Auto-close logic if exit_at and exit_price present
     if t.exit_at and t.exit_price is not None:
         pnl = calc_pnl_pct(t.arah, t.entry_price, t.exit_price)
         if pnl is not None:
             t.pnl_pct = pnl
+            eq = calc_equity_balance(t.saldo_awal, t.margin, t.leverage, t.arah, t.entry_price, t.exit_price)
+            t.equity_balance = eq
             t.status = "CLOSED"
-            t.winloss = "WIN" if pnl > 0 else "LOSS"
+            t.winloss = "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "WAITING")
     db.add(t)
     await db.commit()
     await db.refresh(t)
@@ -171,8 +192,8 @@ async def update_entry(tid: int, payload: dict, db: AsyncSession = Depends(get_d
         raise HTTPException(404, "Not found")
     # Update mutable fields
     for k in [
-        "saldo_awal","margin","leverage","sisa_saldo","entry_price","exit_price","sl_price","be_price","tp1_price","tp2_price","tp3_price",
-        "equity_balance","strategy","market_condition","notes","open_qty"
+        "saldo_awal","margin","leverage","sisa_saldo","exit_price",
+        "equity_balance","strategy","market_condition","notes","open_qty","status"
     ]:
         if k in payload:
             setattr(t, k, payload.get(k))
@@ -186,41 +207,46 @@ async def update_entry(tid: int, payload: dict, db: AsyncSession = Depends(get_d
             t.entry_at = dtv
     if "exit_at" in payload:
         t.exit_at = _parse_dt(payload.get("exit_at"))
-    for st in ["tp1_status","tp2_status","tp3_status","sl_status","be_status","winloss","status"]:
+    for st in ["tp1_status","tp2_status","tp3_status","sl_status","be_status","winloss"]:
         if st in payload and payload.get(st) is not None:
             setattr(t, st, str(payload.get(st)).upper())
-    # Recalc autos
-    data = {
+    # Optional automation flags
+    auto_move_sl_to_be = bool(payload.get("auto_move_sl_to_be"))
+    auto_lock_tp1 = bool(payload.get("auto_lock_tp1"))
+    # Recalc autos + targets if entry/sl changed via previous data (we keep entry/sl read-only by UI, but handle gracefully if changed elsewhere)
+    targets = derive_targets(t.arah, float(t.entry_price), float(t.sl_price))
+    t.be_price = targets["be_price"]
+    t.tp1_price = targets["tp1_price"]
+    t.tp2_price = targets["tp2_price"]
+    t.tp3_price = targets["tp3_price"]
+    t.risk_reward = targets["risk_reward"]
+
+    # Auto SL adjust by level hits
+    if auto_move_sl_to_be and str(t.tp1_status).upper() == 'HIT':
+        t.sl_status = 'PASS'
+        t.sl_price = t.be_price
+    if auto_lock_tp1 and str(t.tp2_status).upper() == 'HIT':
+        t.sl_price = t.tp1_price
+
+    # Auto fields for saldo
+    autos = auto_fields({
         "saldo_awal": t.saldo_awal,
         "margin": t.margin,
         "arah": t.arah,
         "entry_price": t.entry_price,
         "exit_price": t.exit_price,
         "sl_price": t.sl_price,
-        "tp1_price": t.tp1_price,
-        "tp2_price": t.tp2_price,
-        "tp3_price": t.tp3_price,
-    }
-    autos = auto_fields(data)
-    if "sisa_saldo" not in payload and "sisa_saldo" in autos and autos["sisa_saldo"] is not None:
+    })
+    if "sisa_saldo" not in payload and autos.get("sisa_saldo") is not None:
         t.sisa_saldo = autos["sisa_saldo"]
-    if "risk_reward" in payload:
-        t.risk_reward = payload.get("risk_reward")
-    else:
-        t.risk_reward = autos.get("risk_reward")
-    if "pnl_pct" in payload and payload.get("pnl_pct") is not None:
-        t.pnl_pct = float(payload.get("pnl_pct"))
-    else:
-        pnl = autos.get("pnl_pct")
-        if pnl is not None:
-            t.pnl_pct = pnl
-    # Auto-close if exit present
+    # PnL & equity if closed or exit present
     if t.exit_at and t.exit_price is not None:
         pnl = calc_pnl_pct(t.arah, t.entry_price, t.exit_price)
         if pnl is not None:
             t.pnl_pct = pnl
+            t.equity_balance = calc_equity_balance(t.saldo_awal, t.margin, t.leverage, t.arah, t.entry_price, t.exit_price)
             t.status = "CLOSED"
-            t.winloss = "WIN" if pnl > 0 else "LOSS"
+            t.winloss = "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "WAITING")
     await db.commit()
     await db.refresh(t)
     return _serialize(t)

@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, Sequence
+import os
 
 
 def _safe_float(v) -> Optional[float]:
@@ -49,7 +50,15 @@ def auto_fields(data: dict) -> dict:
     except Exception:
         pass
     try:
-        out["risk_reward"] = calc_rr(data.get("entry_price"), data.get("sl_price"), data.get("tp1_price"), data.get("tp2_price"), data.get("tp3_price"))
+        # If TP prices not provided, derive from RR multipliers just for RR string
+        e = _safe_float(data.get("entry_price"))
+        s = _safe_float(data.get("sl_price"))
+        if e is not None and s is not None:
+            m = _get_tp_multipliers()
+            risk = abs(e - s)
+            if risk > 0 and len(m) >= 1:
+                parts = [f"1:{float(x):.0f}" if float(x).is_integer() else f"1:{float(x):.1f}" for x in m[:3]]
+                out["risk_reward"] = " | ".join(parts)
     except Exception:
         pass
     try:
@@ -60,3 +69,60 @@ def auto_fields(data: dict) -> dict:
         pass
     return out
 
+
+def _get_tp_multipliers() -> list[float]:
+    raw = os.getenv("JOURNAL_TP_MULTS", "2,3,4")
+    vals: list[float] = []
+    for part in raw.split(","):
+        try:
+            vals.append(float(part.strip()))
+        except Exception:
+            continue
+    return vals or [2.0, 3.0, 4.0]
+
+
+def derive_targets(arah: str, entry: float, sl: float, mults: Sequence[float] | None = None) -> dict:
+    """Compute BE and TP prices from entry, SL, and RR multipliers.
+
+    Returns dict: { be_price, tp1_price, tp2_price, tp3_price, risk_reward }
+    """
+    m = list(mults) if mults else _get_tp_multipliers()
+    m = (m + [None, None, None])[:3]  # ensure len>=3 (fill None)
+    be = float(entry)
+    e = float(entry)
+    s = float(sl)
+    if arah.upper() == "SHORT":
+        risk = s - e
+        tps = [e - (risk * float(x)) if x is not None else None for x in m]
+    else:
+        risk = e - s
+        tps = [e + (risk * float(x)) if x is not None else None for x in m]
+    # risk_reward string from multipliers
+    rr_parts = [f"1:{int(x)}" if x is not None and float(x).is_integer() else (f"1:{x:.1f}" if x is not None else None) for x in m]
+    rr_str = " | ".join([p for p in rr_parts if p])
+    return {
+        "be_price": be,
+        "tp1_price": tps[0] if tps[0] is not None else be,
+        "tp2_price": tps[1] if tps[1] is not None else be,
+        "tp3_price": tps[2] if tps[2] is not None else be,
+        "risk_reward": rr_str,
+    }
+
+
+def calc_equity_balance(saldo_awal: float | None, margin: float | None, leverage: float | None, arah: str | None, entry_price: float | None, exit_price: float | None) -> Optional[float]:
+    try:
+        sa = _safe_float(saldo_awal)
+        m = _safe_float(margin)
+        lev = _safe_float(leverage)
+        e = _safe_float(entry_price)
+        x = _safe_float(exit_price)
+        if sa is None or m is None or lev is None or e is None or e == 0 or x is None:
+            return None
+        qty = (m * lev) / e
+        if (arah or "LONG").upper() == "SHORT":
+            pnl_abs = qty * (e - x)
+        else:
+            pnl_abs = qty * (x - e)
+        return sa + pnl_abs
+    except Exception:
+        return None

@@ -15,6 +15,12 @@ type TJ = {
   notes: string
   entry_price?: number
   exit_price?: number
+  tp1_status?: string
+  tp2_status?: string
+  tp3_status?: string
+  sl_status?: string
+  be_status?: string
+  winloss?: string
 }
 
 export default function JournalTradeTable(){
@@ -30,6 +36,14 @@ export default function JournalTradeTable(){
   const [editExitAt,setEditExitAt]=useState("")
   const [editExitPrice,setEditExitPrice]=useState("")
   const [editNotes,setEditNotes]=useState("")
+  const [etp1,setEtp1]=useState("PENDING")
+  const [etp2,setEtp2]=useState("PENDING")
+  const [etp3,setEtp3]=useState("PENDING")
+  const [esl,setEsl]=useState("PENDING")
+  const [ebe,setEbe]=useState("PENDING")
+  const [estat,setEstat]=useState("OPEN")
+  const [autoBE,setAutoBE]=useState(true)
+  const [autoTP1,setAutoTP1]=useState(false)
 
   async function load(){
     setLoading(true); setErr("")
@@ -45,16 +59,24 @@ export default function JournalTradeTable(){
   function startEdit(it: TJ){
     setEditId(it.id)
     setEditExitAt(it.exit_at?.slice(0,16) || "")
-    setEditExitPrice(it.exit_price?.toString() || "")
+    setEditExitPrice((it.exit_price ?? "").toString())
     setEditNotes(it.notes||"")
+    setEtp1(it.tp1_status||"PENDING")
+    setEtp2(it.tp2_status||"PENDING")
+    setEtp3(it.tp3_status||"PENDING")
+    setEsl(it.sl_status||"PENDING")
+    setEbe(it.be_status||"PENDING")
+    setEstat(it.status||"OPEN")
   }
 
-  function cancelEdit(){ setEditId(null); setEditExitAt(""); setEditExitPrice(""); setEditNotes("") }
+  function cancelEdit(){
+    setEditId(null); setEditExitAt(""); setEditExitPrice(""); setEditNotes("")
+  }
 
   async function saveEdit(){
     if(editId==null) return
     try{
-      const body:any = { notes: editNotes }
+      const body:any = { notes: editNotes, tp1_status: etp1, tp2_status: etp2, tp3_status: etp3, sl_status: esl, be_status: ebe, status: estat, auto_move_sl_to_be: autoBE, auto_lock_tp1: autoTP1 }
       if(editExitAt) body.exit_at = editExitAt
       if(editExitPrice) body.exit_price = Number(editExitPrice)
       const r = await api.put(`/trade-journal/${editId}`, body)
@@ -132,6 +154,7 @@ export default function JournalTradeTable(){
                 <th className="px-3 py-2">Pair</th>
                 <th className="px-3 py-2">Posisi</th>
                 <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Win/Loss</th>
                 <th className="px-3 py-2">Saldo Awal</th>
                 <th className="px-3 py-2">Equity</th>
                 <th className="px-3 py-2">Profit(%)</th>
@@ -147,15 +170,28 @@ export default function JournalTradeTable(){
                   <td className="px-3 py-2">{it.pair}</td>
                   <td className="px-3 py-2">{it.arah}</td>
                   <td className="px-3 py-2">{it.status}</td>
+                  <td className="px-3 py-2">{it.winloss||'WAITING'}</td>
                   <td className="px-3 py-2">{it.saldo_awal ?? '-'}</td>
                   <td className="px-3 py-2">{it.equity_balance ?? '-'}</td>
                   <td className="px-3 py-2">{(it.pnl_pct||0).toFixed(2)}%</td>
                   <td className="px-3 py-2 max-w-[22rem] whitespace-pre-wrap break-words">{it.notes||'-'}</td>
                   <td className="px-3 py-2">
                     {editId===it.id ? (
-                      <div className="space-y-2">
-                        <input type="datetime-local" value={editExitAt} onChange={e=>setEditExitAt(e.target.value)} className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
-                        <input value={editExitPrice} onChange={e=>setEditExitPrice(e.target.value)} placeholder="Exit price" className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
+                      <div className="space-y-2 w-[260px]">
+                        <div className="grid gap-2">
+                          <input type="datetime-local" value={editExitAt} onChange={e=>setEditExitAt(e.target.value)} className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
+                          <input value={editExitPrice} onChange={e=>setEditExitPrice(e.target.value)} placeholder="Exit price" className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <select value={etp1} onChange={e=>setEtp1(e.target.value)} className="rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>PENDING</option><option>HIT</option><option>FAIL</option></select>
+                          <select value={etp2} onChange={e=>setEtp2(e.target.value)} className="rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>PENDING</option><option>HIT</option><option>FAIL</option></select>
+                          <select value={etp3} onChange={e=>setEtp3(e.target.value)} className="rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>PENDING</option><option>HIT</option><option>FAIL</option></select>
+                          <select value={esl} onChange={e=>setEsl(e.target.value)} className="rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>PENDING</option><option>HIT</option><option>PASS</option></select>
+                          <select value={ebe} onChange={e=>setEbe(e.target.value)} className="rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>PENDING</option><option>HIT</option><option>PASS</option></select>
+                          <select value={estat} onChange={e=>setEstat(e.target.value)} className="rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>OPEN</option><option>CLOSED</option></select>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={autoBE} onChange={e=>setAutoBE(e.target.checked)} /> Auto-SL ke BE saat TP1 HIT</label>
+                        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={autoTP1} onChange={e=>setAutoTP1(e.target.checked)} /> Kunci SL = TP1 saat TP2 HIT</label>
                         <textarea value={editNotes} onChange={e=>setEditNotes(e.target.value)} rows={2} className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
                         <div className="flex gap-2">
                           <button className="rounded px-3 py-1 bg-cyan-600 text-white" onClick={saveEdit}>Simpan</button>
@@ -173,7 +209,7 @@ export default function JournalTradeTable(){
                 </tr>
               ))}
               {rows.length===0 && (
-                <tr><td colSpan={10} className="px-3 py-6 text-sm text-zinc-500">Data kosong.</td></tr>
+                <tr><td colSpan={11} className="px-3 py-6 text-sm text-zinc-500">Data kosong.</td></tr>
               )}
             </tbody>
           </table>
@@ -182,4 +218,3 @@ export default function JournalTradeTable(){
     </section>
   )
 }
-
