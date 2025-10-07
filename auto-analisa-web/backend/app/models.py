@@ -9,6 +9,7 @@ from sqlalchemy import (
     Boolean,
     Float,
     UniqueConstraint,
+    Index,
     ForeignKey,
 )
 import datetime as dt
@@ -128,6 +129,48 @@ class JournalEntry(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
 
+
+class TradeJournal(Base):
+    __tablename__ = "trade_journals"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    # Waktu
+    entry_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False)
+    exit_at: Mapped[dt.datetime | None] = mapped_column(DateTime, default=None)
+    # Keuangan
+    saldo_awal: Mapped[float | None] = mapped_column(Float, default=None)
+    margin: Mapped[float | None] = mapped_column(Float, default=None)
+    leverage: Mapped[float | None] = mapped_column(Float, default=None)
+    sisa_saldo: Mapped[float] = mapped_column(Float, default=0.0)
+    equity_balance: Mapped[float | None] = mapped_column(Float, default=None)
+    # Trade info
+    pair: Mapped[str] = mapped_column(String(20))
+    arah: Mapped[str] = mapped_column(String(8), default="LONG")  # LONG|SHORT
+    entry_price: Mapped[float | None] = mapped_column(Float, default=None)
+    exit_price: Mapped[float | None] = mapped_column(Float, default=None)
+    sl_price: Mapped[float | None] = mapped_column(Float, default=None)
+    be_price: Mapped[float | None] = mapped_column(Float, default=None)
+    tp1_price: Mapped[float | None] = mapped_column(Float, default=None)
+    tp2_price: Mapped[float | None] = mapped_column(Float, default=None)
+    tp3_price: Mapped[float | None] = mapped_column(Float, default=None)
+    tp1_status: Mapped[str] = mapped_column(String(10), default="PENDING")  # PENDING|HIT|FAIL|PASS
+    tp2_status: Mapped[str] = mapped_column(String(10), default="PENDING")
+    tp3_status: Mapped[str] = mapped_column(String(10), default="PENDING")
+    sl_status: Mapped[str] = mapped_column(String(10), default="PENDING")
+    be_status: Mapped[str] = mapped_column(String(10), default="PENDING")
+    risk_reward: Mapped[str | None] = mapped_column(String(64), default=None)
+    winloss: Mapped[str] = mapped_column(String(10), default="WAITING")  # WAITING|WIN|LOSS
+    pnl_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    open_qty: Mapped[float] = mapped_column(Float, default=1.0)
+    status: Mapped[str] = mapped_column(String(10), default="OPEN")  # OPEN|CLOSED
+    strategy: Mapped[str | None] = mapped_column(String(255), default=None)
+    market_condition: Mapped[str | None] = mapped_column(String(255), default=None)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
+    __table_args__ = (
+        Index("ix_trade_journals_user_entry", "user_id", "entry_at"),
+    )
 
 class PasswordChangeRequest(Base):
     __tablename__ = "pwd_change_requests"

@@ -49,6 +49,7 @@ export default function SiteHeader({ loggedIn, isAdmin }:{ loggedIn:boolean, isA
             )}
             {loggedIn && (
               <div className="flex items-center gap-2">
+                <Link href="/journal-trade" className="inline-flex items-center gap-1 rounded px-3 py-1.5 bg-zinc-800 text-white hover:bg-zinc-700">Journal Trade</Link>
                 <button onClick={()=>setPwdOpen(v=>!v)} className="inline-flex items-center gap-1 rounded px-3 py-1.5 bg-zinc-800 text-white hover:bg-zinc-700"><KeyRound size={16}/> Ganti Password</button>
                 <button onClick={logout} className="inline-flex items-center gap-1 rounded px-3 py-1.5 bg-zinc-800 text-white hover:bg-zinc-700"><LogOut size={16}/> Logout</button>
               </div>
@@ -72,6 +73,7 @@ export default function SiteHeader({ loggedIn, isAdmin }:{ loggedIn:boolean, isA
                 </div>
               ) : (
                 <div className="flex items-center gap-2 pt-2">
+                  <Link href="/journal-trade" className="inline-flex items-center gap-1 rounded px-3 py-1.5 bg-zinc-800 text-white">Journal Trade</Link>
                   <button onClick={()=>setPwdOpen(v=>!v)} className="inline-flex items-center gap-1 rounded px-3 py-1.5 bg-zinc-800 text-white"><KeyRound size={16}/> Ganti Password</button>
                   <button onClick={logout} className="inline-flex items-center gap-1 rounded px-3 py-1.5 bg-zinc-800 text-white"><LogOut size={16}/> Logout</button>
                 </div>
