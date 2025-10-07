@@ -136,7 +136,19 @@ async def create_entry(payload: dict, db: AsyncSession = Depends(get_db), user=D
         "sl_price": sl_price,
         "exit_price": payload.get("exit_price"),
     })
-    targets = derive_targets(arah, entry_price, sl_price)
+    custom_tp = bool(payload.get("custom_tp"))
+    # If custom TP provided, honor them; otherwise derive
+    targets = None
+    if custom_tp and any(payload.get(k) is not None for k in ("tp1_price","tp2_price","tp3_price")):
+        tp1 = payload.get("tp1_price")
+        tp2 = payload.get("tp2_price")
+        tp3 = payload.get("tp3_price")
+        be = entry_price
+        from app.services.trade_calc import calc_rr
+        rr = calc_rr(entry_price, sl_price, tp1, tp2, tp3) or ""
+        targets = {"be_price": be, "tp1_price": tp1 or be, "tp2_price": tp2 or be, "tp3_price": tp3 or be, "risk_reward": rr}
+    else:
+        targets = derive_targets(arah, entry_price, sl_price)
 
     t = TradeJournal(
         user_id=user.id,
@@ -214,12 +226,27 @@ async def update_entry(tid: int, payload: dict, db: AsyncSession = Depends(get_d
     auto_move_sl_to_be = bool(payload.get("auto_move_sl_to_be"))
     auto_lock_tp1 = bool(payload.get("auto_lock_tp1"))
     # Recalc autos + targets if entry/sl changed via previous data (we keep entry/sl read-only by UI, but handle gracefully if changed elsewhere)
-    targets = derive_targets(t.arah, float(t.entry_price), float(t.sl_price))
-    t.be_price = targets["be_price"]
-    t.tp1_price = targets["tp1_price"]
-    t.tp2_price = targets["tp2_price"]
-    t.tp3_price = targets["tp3_price"]
-    t.risk_reward = targets["risk_reward"]
+    custom_tp = bool(payload.get("custom_tp"))
+    # If custom_tp, update TP prices if provided; else re-derive from entry/sl
+    if custom_tp and any(k in payload for k in ("tp1_price","tp2_price","tp3_price")):
+        if "tp1_price" in payload and payload.get("tp1_price") is not None:
+            t.tp1_price = float(payload.get("tp1_price"))
+        if "tp2_price" in payload and payload.get("tp2_price") is not None:
+            t.tp2_price = float(payload.get("tp2_price"))
+        if "tp3_price" in payload and payload.get("tp3_price") is not None:
+            t.tp3_price = float(payload.get("tp3_price"))
+        # keep BE = entry
+        t.be_price = float(t.entry_price)
+        from app.services.trade_calc import calc_rr
+        rr = calc_rr(t.entry_price, t.sl_price, t.tp1_price, t.tp2_price, t.tp3_price)
+        t.risk_reward = rr or t.risk_reward
+    else:
+        targets = derive_targets(t.arah, float(t.entry_price), float(t.sl_price))
+        t.be_price = targets["be_price"]
+        t.tp1_price = targets["tp1_price"]
+        t.tp2_price = targets["tp2_price"]
+        t.tp3_price = targets["tp3_price"]
+        t.risk_reward = targets["risk_reward"]
 
     # Auto SL adjust by level hits
     if auto_move_sl_to_be and str(t.tp1_status).upper() == 'HIT':

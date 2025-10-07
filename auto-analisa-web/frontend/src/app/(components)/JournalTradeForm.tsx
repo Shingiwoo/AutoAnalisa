@@ -13,6 +13,10 @@ export default function JournalTradeForm({ onSaved }:{ onSaved: ()=>void }){
   const [saldoAwal, setSaldoAwal] = useState<string>("")
   const [margin, setMargin] = useState<string>("")
   const [leverage, setLeverage] = useState<string>("")
+  const [customTP, setCustomTP] = useState(false)
+  const [tp1, setTp1] = useState<string>("")
+  const [tp2, setTp2] = useState<string>("")
+  const [tp3, setTp3] = useState<string>("")
   const [strategy, setStrategy] = useState("")
   const [market, setMarket] = useState("")
   const [notes, setNotes] = useState("")
@@ -61,6 +65,12 @@ export default function JournalTradeForm({ onSaved }:{ onSaved: ()=>void }){
         margin: margin? Number(margin): undefined,
         leverage: leverage? Number(leverage): undefined,
         strategy, market_condition: market, notes,
+      }
+      if(customTP){
+        body.custom_tp = true
+        if(tp1) body.tp1_price = Number(tp1)
+        if(tp2) body.tp2_price = Number(tp2)
+        if(tp3) body.tp3_price = Number(tp3)
       }
       await api.post('/trade-journal', body)
       setNotes("")
@@ -124,6 +134,25 @@ export default function JournalTradeForm({ onSaved }:{ onSaved: ()=>void }){
           <div className="md:col-span-4 text-xs text-zinc-600">
             Target: BE {tpPreview.be} • TP1 {tpPreview.tp1} • TP2 {tpPreview.tp2} • TP3 {tpPreview.tp3}
           </div>
+        )}
+        <div className="md:col-span-4">
+          <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={customTP} onChange={e=>setCustomTP(e.target.checked)} /> Gunakan TP custom</label>
+        </div>
+        {customTP && (
+          <>
+            <div>
+              <label className="block text-xs text-zinc-500 mb-1">TP1 (custom)</label>
+              <input value={tp1} onChange={e=>setTp1(e.target.value)} inputMode="decimal" className="w-full rounded px-3 py-2 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 bg-white text-zinc-900"/>
+            </div>
+            <div>
+              <label className="block text-xs text-zinc-500 mb-1">TP2 (custom)</label>
+              <input value={tp2} onChange={e=>setTp2(e.target.value)} inputMode="decimal" className="w-full rounded px-3 py-2 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 bg-white text-zinc-900"/>
+            </div>
+            <div>
+              <label className="block text-xs text-zinc-500 mb-1">TP3 (custom)</label>
+              <input value={tp3} onChange={e=>setTp3(e.target.value)} inputMode="decimal" className="w-full rounded px-3 py-2 ring-1 ring-inset ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 bg-white text-zinc-900"/>
+            </div>
+          </>
         )}
         <div className="md:col-span-4">
           <label className="block text-xs text-zinc-500 mb-1">Strategi & Kondisi Pasar</label>

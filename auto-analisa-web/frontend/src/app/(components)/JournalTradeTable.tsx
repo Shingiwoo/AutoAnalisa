@@ -10,11 +10,16 @@ type TJ = {
   arah: string
   status: string
   saldo_awal?: number
+  margin?: number
+  leverage?: number
   equity_balance?: number
   pnl_pct: number
   notes: string
   entry_price?: number
   exit_price?: number
+  tp1_price?: number
+  tp2_price?: number
+  tp3_price?: number
   tp1_status?: string
   tp2_status?: string
   tp3_status?: string
@@ -36,6 +41,12 @@ export default function JournalTradeTable(){
   const [editExitAt,setEditExitAt]=useState("")
   const [editExitPrice,setEditExitPrice]=useState("")
   const [editNotes,setEditNotes]=useState("")
+  const [editMargin,setEditMargin]=useState("")
+  const [editLeverage,setEditLeverage]=useState("")
+  const [customTP,setCustomTP]=useState(false)
+  const [ct1,setCt1]=useState("")
+  const [ct2,setCt2]=useState("")
+  const [ct3,setCt3]=useState("")
   const [etp1,setEtp1]=useState("PENDING")
   const [etp2,setEtp2]=useState("PENDING")
   const [etp3,setEtp3]=useState("PENDING")
@@ -61,12 +72,18 @@ export default function JournalTradeTable(){
     setEditExitAt(it.exit_at?.slice(0,16) || "")
     setEditExitPrice((it.exit_price ?? "").toString())
     setEditNotes(it.notes||"")
+    setEditMargin((it.margin ?? "").toString())
+    setEditLeverage((it.leverage ?? "").toString())
     setEtp1(it.tp1_status||"PENDING")
     setEtp2(it.tp2_status||"PENDING")
     setEtp3(it.tp3_status||"PENDING")
     setEsl(it.sl_status||"PENDING")
     setEbe(it.be_status||"PENDING")
     setEstat(it.status||"OPEN")
+    setCustomTP(false)
+    setCt1((it.tp1_price ?? "").toString())
+    setCt2((it.tp2_price ?? "").toString())
+    setCt3((it.tp3_price ?? "").toString())
   }
 
   function cancelEdit(){
@@ -77,6 +94,14 @@ export default function JournalTradeTable(){
     if(editId==null) return
     try{
       const body:any = { notes: editNotes, tp1_status: etp1, tp2_status: etp2, tp3_status: etp3, sl_status: esl, be_status: ebe, status: estat, auto_move_sl_to_be: autoBE, auto_lock_tp1: autoTP1 }
+      if(editMargin) body.margin = Number(editMargin)
+      if(editLeverage) body.leverage = Number(editLeverage)
+      if(customTP){
+        body.custom_tp = true
+        if(ct1) body.tp1_price = Number(ct1)
+        if(ct2) body.tp2_price = Number(ct2)
+        if(ct3) body.tp3_price = Number(ct3)
+      }
       if(editExitAt) body.exit_at = editExitAt
       if(editExitPrice) body.exit_price = Number(editExitPrice)
       const r = await api.put(`/trade-journal/${editId}`, body)
@@ -110,6 +135,22 @@ export default function JournalTradeTable(){
     if(end) p.set('end', end)
     return `/api/trade-journal/export${p.toString()?('?' + p.toString()):''}`
   },[pair,status,start,end])
+
+  function pnlUsdt(it: TJ): number | null{
+    const e = it.entry_price
+    const x = it.exit_price
+    const m = it.margin
+    const lev = it.leverage
+    if(!e || !x || !m || !lev) return null
+    const qty = (m * lev) / e
+    const pnl = it.arah==='SHORT' ? qty * (e - x) : qty * (x - e)
+    return pnl
+  }
+
+  function badge(color: 'green'|'red'|'yellow', text: string){
+    const cls = color==='green'? 'bg-emerald-600' : color==='red'? 'bg-rose-600' : 'bg-amber-500'
+    return <span className={`inline-flex items-center px-2 py-0.5 rounded text-white text-xs ${cls}`}>{text}</span>
+  }
 
   return (
     <section className="rounded-2xl ring-1 ring-white/10 bg-white/50 dark:bg-white/5 backdrop-blur p-4">
@@ -157,7 +198,7 @@ export default function JournalTradeTable(){
                 <th className="px-3 py-2">Win/Loss</th>
                 <th className="px-3 py-2">Saldo Awal</th>
                 <th className="px-3 py-2">Equity</th>
-                <th className="px-3 py-2">Profit(%)</th>
+                <th className="px-3 py-2">Profit (PnL(USDT)/ROI(%))</th>
                 <th className="px-3 py-2">Catatan</th>
                 <th className="px-3 py-2">Aksi</th>
               </tr>
@@ -169,15 +210,21 @@ export default function JournalTradeTable(){
                   <td className="px-3 py-2 whitespace-nowrap">{new Date(it.entry_at).toLocaleString()}</td>
                   <td className="px-3 py-2">{it.pair}</td>
                   <td className="px-3 py-2">{it.arah}</td>
-                  <td className="px-3 py-2">{it.status}</td>
-                  <td className="px-3 py-2">{it.winloss||'WAITING'}</td>
+                  <td className="px-3 py-2">{it.status==='OPEN'? badge('green','OPEN') : badge('red','CLOSED')}</td>
+                  <td className="px-3 py-2">{(it.winloss||'WAITING')==='WIN'? badge('green','WIN') : (it.winloss||'WAITING')==='LOSS'? badge('red','LOSS') : badge('yellow','WAITING')}</td>
                   <td className="px-3 py-2">{it.saldo_awal ?? '-'}</td>
                   <td className="px-3 py-2">{it.equity_balance ?? '-'}</td>
-                  <td className="px-3 py-2">{(it.pnl_pct||0).toFixed(2)}%</td>
+                  <td className="px-3 py-2">
+                    {(() => {
+                      const p = pnlUsdt(it)
+                      const roi = (it.pnl_pct||0).toFixed(2)
+                      return p==null ? '-' : `${p.toFixed(2)} / ${roi}%`
+                    })()}
+                  </td>
                   <td className="px-3 py-2 max-w-[22rem] whitespace-pre-wrap break-words">{it.notes||'-'}</td>
                   <td className="px-3 py-2">
                     {editId===it.id ? (
-                      <div className="space-y-2 w-[280px] md:w-[420px]">
+                      <div className="space-y-2 w-[300px] md:w-[520px]">
                         <div className="grid gap-2">
                           <div>
                             <div className="text-xs text-zinc-500 mb-1">Tanggal & jam close (exit)</div>
@@ -193,6 +240,16 @@ export default function JournalTradeTable(){
                                    onChange={e=>setEditExitPrice(e.target.value)}
                                    placeholder="mis. 63350.25"
                                    className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <div className="text-xs text-zinc-500 mb-1">Margin</div>
+                            <input aria-label="Margin" value={editMargin} onChange={e=>setEditMargin(e.target.value)} inputMode="decimal" className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
+                          </div>
+                          <div>
+                            <div className="text-xs text-zinc-500 mb-1">Leverage</div>
+                            <input aria-label="Leverage" value={editLeverage} onChange={e=>setEditLeverage(e.target.value)} inputMode="decimal" className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
@@ -221,6 +278,23 @@ export default function JournalTradeTable(){
                             <select aria-label="Status trade" value={estat} onChange={e=>setEstat(e.target.value)} className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>OPEN</option><option>CLOSED</option></select>
                           </div>
                         </div>
+                        <label className="inline-flex items-center gap-2 text-xs"><input type="checkbox" checked={customTP} onChange={e=>setCustomTP(e.target.checked)} /> Gunakan TP custom</label>
+                        {customTP && (
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <div className="text-xs text-zinc-500 mb-1">TP1 (custom)</div>
+                              <input aria-label="TP1 custom" value={ct1} onChange={e=>setCt1(e.target.value)} inputMode="decimal" className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
+                            </div>
+                            <div>
+                              <div className="text-xs text-zinc-500 mb-1">TP2 (custom)</div>
+                              <input aria-label="TP2 custom" value={ct2} onChange={e=>setCt2(e.target.value)} inputMode="decimal" className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
+                            </div>
+                            <div>
+                              <div className="text-xs text-zinc-500 mb-1">TP3 (custom)</div>
+                              <input aria-label="TP3 custom" value={ct3} onChange={e=>setCt3(e.target.value)} inputMode="decimal" className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
+                            </div>
+                          </div>
+                        )}
                         <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={autoBE} onChange={e=>setAutoBE(e.target.checked)} /> Auto‑SL ke BE saat TP1 = HIT</label>
                         <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={autoTP1} onChange={e=>setAutoTP1(e.target.checked)} /> Kunci SL = TP1 saat TP2 = HIT</label>
                         <div>
