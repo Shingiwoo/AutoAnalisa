@@ -28,10 +28,19 @@ class IndicatorSet(BaseModel):
     bb_low: Optional[float] = None
 
 
+class BTCContext(BaseModel):
+    price: Optional[float] = None
+    rsi_h1: Optional[float] = None
+    note: Optional[str] = None
+
+
 class MarketSnapshot(BaseModel):
     symbol: str = Field(..., examples=["BTCUSDT", "ETHUSDT", "XRPUSDT"])
     timeframe: Literal["15m", "1h", "4h", "1d"]
     last_price: float
     candles: List[Candle]
     indicators: IndicatorSet
-
+    btc_bias: Optional[Literal[
+        "bullish_overbought", "bullish_cooling", "neutral", "bearish_mild"
+    ]] = None
+    btc_context: Optional[BTCContext] = None

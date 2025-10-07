@@ -6,7 +6,7 @@ from app.v2_schemas.market import MarketSnapshot, IndicatorSet, Candle
 
 @pytest.fixture(autouse=True)
 def patch_analyze_route(monkeypatch):
-    async def fake_analyze(payload):
+    async def fake_analyze(payload, follow_btc_bias: bool = True):
         return {
             "symbol": payload.symbol,
             "timeframe": payload.timeframe,
@@ -31,6 +31,8 @@ def patch_analyze_route(monkeypatch):
                 "timeframe_alignment": ["1h"],
                 "risk_note": None,
             },
+            "btc_bias_used": payload.btc_bias,
+            "btc_alignment": "aligned" if (payload.btc_bias in (None, "neutral")) else "aligned",
         }
 
     # Patch symbol imported in router
@@ -57,8 +59,9 @@ async def test_v2_analyze_route_ok():
         ),
     )
     data = await v2router.analyze_market(payload)
-    assert data["symbol"] == "ETHUSDT"
-    assert "plan" in data and data["plan"]["stop_loss"]["price"]
+    data_dict = data.dict() if hasattr(data, "dict") else dict(data)  # Ensure conversion to dict
+    assert data_dict.get("symbol") == "ETHUSDT"
+    assert data_dict.get("plan") and data_dict["plan"].get("stop_loss") and data_dict["plan"]["stop_loss"].get("price")
 
 
 @pytest.mark.asyncio

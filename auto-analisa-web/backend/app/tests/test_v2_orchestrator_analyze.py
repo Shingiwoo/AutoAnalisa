@@ -67,3 +67,62 @@ async def test_analyze_monkeypatched_llm(monkeypatch):
     assert out.symbol == "BTCUSDT"
     assert out.plan.entries and out.plan.stop_loss
 
+
+@pytest.mark.asyncio
+async def test_analyze_alignment_bullish(monkeypatch):
+    async def fake_structured_response(self, system: str, user: str, json_schema: dict) -> dict:
+        return {
+            "symbol": "ETHUSDT",
+            "timeframe": "1h",
+            "structure": "uptrend",
+            "momentum": "strong",
+            "key_levels": [],
+            "plan": {
+                "bias": "bullish",
+                "entries": [],
+                "take_profits": [],
+                "stop_loss": {"label": "sl", "price": 1.0},
+                "rationale": "",
+                "timeframe_alignment": ["1h"],
+            },
+        }
+
+    class FakeClient:
+        async def structured_response(self, system: str, user: str, json_schema: dict) -> dict:  # pragma: no cover
+            return await fake_structured_response(self, system, user, json_schema)
+
+    monkeypatch.setattr(orch, "LlmClient", lambda: FakeClient())
+
+    snap = _snap().model_copy(update={"symbol": "ETHUSDT", "btc_bias": "bullish_cooling"})
+    out = await orch.analyze(snap)
+    assert out.btc_alignment == "aligned"
+
+
+@pytest.mark.asyncio
+async def test_analyze_alignment_conflict(monkeypatch):
+    async def fake_structured_response(self, system: str, user: str, json_schema: dict) -> dict:
+        return {
+            "symbol": "ETHUSDT",
+            "timeframe": "1h",
+            "structure": "downtrend",
+            "momentum": "weak",
+            "key_levels": [],
+            "plan": {
+                "bias": "bullish",
+                "entries": [],
+                "take_profits": [],
+                "stop_loss": {"label": "sl", "price": 1.0},
+                "rationale": "",
+                "timeframe_alignment": ["1h"],
+            },
+        }
+
+    class FakeClient:
+        async def structured_response(self, system: str, user: str, json_schema: dict) -> dict:  # pragma: no cover
+            return await fake_structured_response(self, system, user, json_schema)
+
+    monkeypatch.setattr(orch, "LlmClient", lambda: FakeClient())
+
+    snap = _snap().model_copy(update={"symbol": "ETHUSDT", "btc_bias": "bearish_mild"})
+    out = await orch.analyze(snap)
+    assert out.btc_alignment == "conflict"

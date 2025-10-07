@@ -5,13 +5,15 @@ from app.v2_schemas.llm_output import LlmOutput
 
 SYSTEM = (
     "You are a crypto trading analyst. Receive structured market data (no images). "
-    "Respond ONLY in JSON that conforms to the provided JSON Schema."
+    "Respond ONLY in JSON that conforms to the provided JSON Schema. "
+    "If btc_bias is provided, ALL trade plans must align with it (NO conflicting sides)."
 )
 
 TEMPLATE_USER = (
     "Analyze {symbol} on {tf}. Last price: {price}.\n"
     "Indicators: EMA5={ema5}, EMA20={ema20}, EMA50={ema50}, RSI14={rsi14}, MACD={macd}/{macd_signal}.\n"
     "Bollinger: UP={bb_up}, MID={bb_mid}, LOW={bb_low}.\n"
+    "btc_bias={btc_bias}. If btc_bias is 'bullish_*' → prefer LONG-only; if 'bearish_*' → prefer SHORT-only; if 'neutral' → allow both but avoid conflict with context.\n"
     "Return trade plan with 2 entry levels (pullback + breakout), 2-3 TP, 1 SL."
 )
 
@@ -35,6 +37,6 @@ def build(snapshot: MarketSnapshot) -> LlmPrompt:
         bb_up=ind.bb_up,
         bb_mid=ind.bb_mid,
         bb_low=ind.bb_low,
+        btc_bias=(snapshot.btc_bias or "unknown"),
     )
     return LlmPrompt(system=SYSTEM, user=user, json_schema=JSON_SCHEMA)
-

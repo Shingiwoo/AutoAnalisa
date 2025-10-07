@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 
 class Level(BaseModel):
@@ -24,4 +24,5 @@ class LlmOutput(BaseModel):
     momentum: str  # strong/weak/neutral
     key_levels: List[Level]
     plan: TradePlan
-
+    btc_bias_used: Optional[str] = None
+    btc_alignment: Optional[Literal["aligned", "conflict", "neutral"]] = None

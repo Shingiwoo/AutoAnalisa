@@ -8,11 +8,10 @@ router = APIRouter(prefix="/api/v2", tags=["v2"])
 
 
 @router.post("/analyze", response_model=LlmOutput)
-async def analyze_market(payload: MarketSnapshot):
-    return await analyze_orchestrator(payload)
+async def analyze_market(payload: MarketSnapshot, follow_btc_bias: bool = True):
+    return await analyze_orchestrator(payload, follow_btc_bias=follow_btc_bias)
 
 
 @router.get("/health")
 async def health():
     return {"status": "ok"}
-
