@@ -177,22 +177,56 @@ export default function JournalTradeTable(){
                   <td className="px-3 py-2 max-w-[22rem] whitespace-pre-wrap break-words">{it.notes||'-'}</td>
                   <td className="px-3 py-2">
                     {editId===it.id ? (
-                      <div className="space-y-2 w-[260px]">
+                      <div className="space-y-2 w-[280px] md:w-[420px]">
                         <div className="grid gap-2">
-                          <input type="datetime-local" value={editExitAt} onChange={e=>setEditExitAt(e.target.value)} className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
-                          <input value={editExitPrice} onChange={e=>setEditExitPrice(e.target.value)} placeholder="Exit price" className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
+                          <div>
+                            <div className="text-xs text-zinc-500 mb-1">Tanggal & jam close (exit)</div>
+                            <input aria-label="Tanggal & jam exit"
+                                   type="datetime-local" value={editExitAt}
+                                   onChange={e=>setEditExitAt(e.target.value)}
+                                   className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
+                          </div>
+                          <div>
+                            <div className="text-xs text-zinc-500 mb-1">Harga Exit</div>
+                            <input aria-label="Harga exit"
+                                   value={editExitPrice}
+                                   onChange={e=>setEditExitPrice(e.target.value)}
+                                   placeholder="mis. 63350.25"
+                                   className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
+                          </div>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
-                          <select value={etp1} onChange={e=>setEtp1(e.target.value)} className="rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>PENDING</option><option>HIT</option><option>FAIL</option></select>
-                          <select value={etp2} onChange={e=>setEtp2(e.target.value)} className="rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>PENDING</option><option>HIT</option><option>FAIL</option></select>
-                          <select value={etp3} onChange={e=>setEtp3(e.target.value)} className="rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>PENDING</option><option>HIT</option><option>FAIL</option></select>
-                          <select value={esl} onChange={e=>setEsl(e.target.value)} className="rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>PENDING</option><option>HIT</option><option>PASS</option></select>
-                          <select value={ebe} onChange={e=>setEbe(e.target.value)} className="rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>PENDING</option><option>HIT</option><option>PASS</option></select>
-                          <select value={estat} onChange={e=>setEstat(e.target.value)} className="rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>OPEN</option><option>CLOSED</option></select>
+                          <div>
+                            <div className="text-xs text-zinc-500 mb-1">TP1 status</div>
+                            <select aria-label="TP1 status" value={etp1} onChange={e=>setEtp1(e.target.value)} className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>PENDING</option><option>HIT</option><option>FAIL</option></select>
+                          </div>
+                          <div>
+                            <div className="text-xs text-zinc-500 mb-1">TP2 status</div>
+                            <select aria-label="TP2 status" value={etp2} onChange={e=>setEtp2(e.target.value)} className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>PENDING</option><option>HIT</option><option>FAIL</option></select>
+                          </div>
+                          <div>
+                            <div className="text-xs text-zinc-500 mb-1">TP3 status</div>
+                            <select aria-label="TP3 status" value={etp3} onChange={e=>setEtp3(e.target.value)} className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>PENDING</option><option>HIT</option><option>FAIL</option></select>
+                          </div>
+                          <div>
+                            <div className="text-xs text-zinc-500 mb-1">SL status</div>
+                            <select aria-label="SL status" value={esl} onChange={e=>setEsl(e.target.value)} className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>PENDING</option><option>HIT</option><option>PASS</option></select>
+                          </div>
+                          <div>
+                            <div className="text-xs text-zinc-500 mb-1">BE status</div>
+                            <select aria-label="BE status" value={ebe} onChange={e=>setEbe(e.target.value)} className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>PENDING</option><option>HIT</option><option>PASS</option></select>
+                          </div>
+                          <div>
+                            <div className="text-xs text-zinc-500 mb-1">Status trade</div>
+                            <select aria-label="Status trade" value={estat} onChange={e=>setEstat(e.target.value)} className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200"><option>OPEN</option><option>CLOSED</option></select>
+                          </div>
                         </div>
-                        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={autoBE} onChange={e=>setAutoBE(e.target.checked)} /> Auto-SL ke BE saat TP1 HIT</label>
-                        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={autoTP1} onChange={e=>setAutoTP1(e.target.checked)} /> Kunci SL = TP1 saat TP2 HIT</label>
-                        <textarea value={editNotes} onChange={e=>setEditNotes(e.target.value)} rows={2} className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
+                        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={autoBE} onChange={e=>setAutoBE(e.target.checked)} /> Auto‑SL ke BE saat TP1 = HIT</label>
+                        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={autoTP1} onChange={e=>setAutoTP1(e.target.checked)} /> Kunci SL = TP1 saat TP2 = HIT</label>
+                        <div>
+                          <div className="text-xs text-zinc-500 mb-1">Catatan</div>
+                          <textarea aria-label="Catatan" value={editNotes} onChange={e=>setEditNotes(e.target.value)} rows={2} placeholder="Tambahkan catatan singkat (opsional)" className="w-full rounded px-2 py-1 ring-1 ring-inset ring-zinc-200 bg-white text-zinc-900" />
+                        </div>
                         <div className="flex gap-2">
                           <button className="rounded px-3 py-1 bg-cyan-600 text-white" onClick={saveEdit}>Simpan</button>
                           <button className="rounded px-3 py-1 bg-zinc-800 text-white" onClick={cancelEdit}>Batal</button>
