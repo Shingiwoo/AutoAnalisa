@@ -12,7 +12,8 @@ if BACKEND_DIR not in sys.path:
 - Set DB ke lokasi writable (bukan app.db produksi) agar test tidak terkena readonly.
 """
 # Set sebelum import modul DB
-os.environ.setdefault("SQLITE_URL", "sqlite+aiosqlite:////tmp/autoanalisa_test.db")
+# Use a SQLite file inside the workspace to satisfy sandbox write limits
+os.environ.setdefault("SQLITE_URL", "sqlite+aiosqlite:///./test_app.db")
 
 # Pastikan DB terinisialisasi sebelum test berjalan
 from app.storage.db import init_db
@@ -20,5 +21,8 @@ from app.storage.db import init_db
 
 @pytest.fixture(scope="session", autouse=True)
 def _init_db_session():
+    # Allow skipping DB init for lightweight/unit-only runs
+    if os.getenv("AUTOANALISA_INIT_DB", "1") != "1":
+        return
     import asyncio
     asyncio.get_event_loop().run_until_complete(init_db())
