@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { api } from "../api"
 import Spark from "../(components)/Spark"
+import ContextBadges from "./ContextBadges"
 import type { SignalRow } from "../../lib/types/signal"
 
 type Mode = "fast" | "medium" | "swing"
@@ -20,12 +21,17 @@ export default function SignalBetaPage(){
   const [wlNew, setWlNew] = useState<string>("")
   const [modalOpen, setModalOpen] = useState(false)
   const [modalRow, setModalRow] = useState<SignalRow | null>(null)
+  const [useContext, setUseContext] = useState<boolean>(true)
+  const [contextCap, setContextCap] = useState<number>(0.20)
 
   async function fetchSignals(){
     setLoading(true)
     setError("")
     try {
-      const res = await api.get("/mtf-signals", { params: { mode, symbols } })
+      const params: any = { mode, symbols }
+      if (!useContext) params.context = 'off'
+      else params.boost_cap = contextCap
+      const res = await api.get("/mtf-signals", { params })
       const data = res?.data?.results || []
       setRows(data)
     } catch (e: any) {
@@ -40,7 +46,7 @@ export default function SignalBetaPage(){
     if (!autoRefresh) return
     const id = setInterval(fetchSignals, mode === "fast" ? 25000 : mode === "medium" ? 60000 : 15*60*1000)
     return () => clearInterval(id)
-  }, [mode, symbols, autoRefresh])
+  }, [mode, symbols, autoRefresh, useContext, contextCap])
 
   async function loadWatchlist(){
     try{
@@ -96,6 +102,17 @@ export default function SignalBetaPage(){
               <input type="checkbox" checked={autoRefresh} onChange={e=>setAutoRefresh(e.target.checked)} />
               Auto refresh
             </label>
+            <label className="inline-flex items-center gap-2 text-sm text-zinc-300">
+              <input type="checkbox" checked={useContext} onChange={e=>setUseContext(e.target.checked)} />
+              Use context
+            </label>
+            {useContext && (
+              <div className="text-xs text-zinc-300 flex items-center gap-2">
+                <span>Context cap</span>
+                <input type="range" min={0} max={0.2} step={0.01} value={contextCap} onChange={e=>setContextCap(parseFloat(e.target.value))} />
+                <span>{contextCap.toFixed(2)}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -114,6 +131,7 @@ export default function SignalBetaPage(){
                 <th className="px-2 py-2">Trend</th>
                 <th className="px-2 py-2">Pattern</th>
                 <th className="px-2 py-2">Trigger</th>
+                <th className="px-2 py-2">Context</th>
                 <th className="px-2 py-2">Detail</th>
               </tr>
             </thead>
@@ -137,6 +155,9 @@ export default function SignalBetaPage(){
                     <td className="px-2 py-2">{sc.trend}</td>
                     <td className="px-2 py-2">{sc.pattern}</td>
                     <td className="px-2 py-2">{sc.trigger}</td>
+                    <td className="px-2 py-2 align-top">
+                      <ContextBadges ctx={(r as any).context} />
+                    </td>
                     <td className="px-2 py-2">
                       <button className="text-cyan-300 hover:text-cyan-200" onClick={()=>{ setModalRow(r); setModalOpen(true) }}>Lihat</button>
                     </td>
@@ -154,6 +175,7 @@ export default function SignalBetaPage(){
               <li><b>Detail Trend/Pattern/Trigger</b>: setiap panel menampilkan sparkline <i>Supertrend line</i> pada TF terkait. Jika data tidak cukup/flat, sistem fallback ke harga <i>close</i>.</li>
               <li>Baru open posisi bila <b>side ≠ NO_TRADE</b> dan strength ≥ <b>MEDIUM</b>. Untuk scalping cepat, perhatikan <i>Trigger</i> flip (signal=±1).</li>
               <li>Keputusan dibuat pada <b>bar close</b> untuk menghindari repaint. Auto-refresh menyesuaikan TF terpendek.</li>
+              <li><b>Context</b> (Funding, ALT×BTC, BTC.D, Price×OI) menambah/kurangi skor total (maks ±0.20) sebagai penguat penilaian.</li>
             </ul>
             <p className="opacity-80">Catatan: nilai indikator lain (EMA/RSI/MACD) ditampilkan di bawah sparkline. Parameter dapat diatur pada preset.</p>
           </div>

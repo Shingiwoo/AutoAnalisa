@@ -42,3 +42,20 @@ indicators:
     bands_default: { long_lo: 55, long_hi: 70, short_hi: 45, short_lo: 30, mid_lo: 45, mid_hi: 55 }
   macd:
     eps: 0.0
+context:
+  funding:
+    eps: 0.00005
+    gamma: 0.08
+    hard_gate_fast: true
+    hard_gate_threshold: 0.0001
+  alt_btc_matrix:
+    thr_trend_bull: 0.25
+    thr_trend_bear: -0.25
+    boosts: { long_max: 0.12, long: 0.08, warn: 0.02, short_max: -0.12, short: -0.08, pullback_warn: -0.02 }
+  btcd:
+    gamma: 0.06
+  price_oi:
+    p_eps: 0.001
+    oi_eps: 0.001
+    boosts: { up_strong: 0.08, up_weak: 0.03, down_strong: -0.08, down_weak: -0.03 }
+  cap_boost: 0.20

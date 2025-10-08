@@ -224,7 +224,9 @@ async def calc_symbol_signal(symbol: str, mode: Mode, market_type: str = "future
                              preset: Optional[str] = None,
                              tau_entry: Optional[float] = None,
                              alpha: Optional[float] = None,
-                             strict_bias: Optional[bool] = None) -> Dict:
+                             strict_bias: Optional[bool] = None,
+                             context_on: Optional[bool] = None,
+                             boost_cap: Optional[float] = None) -> Dict:
     cfg = load_signal_config()
     P = cfg["presets"].get(mode, cfg["presets"]["medium"])  # base preset
     if preset and preset in cfg.get("presets", {}):
@@ -311,6 +313,52 @@ async def calc_symbol_signal(symbol: str, mode: Mode, market_type: str = "future
     strength = bucket_strength(total) if side != "NO_TRADE" else "WEAK"
     confidence = int(round(100 * abs(total)))
 
+    # ----- Context integration -------------------------------------------------
+    risk_mult = 1.0
+    total_context = total
+    context: Dict[str, Any] = {}
+    use_context = True if context_on is None else bool(context_on)
+    if use_context:
+        from .context.context_rules import build_context_json  # type: ignore
+        cfg = load_signal_config()
+        C = cfg.get('context', {})
+        cap_boost = float(C.get('cap_boost', 0.20))
+        if boost_cap is not None:
+            try:
+                cap_boost = float(boost_cap)
+            except Exception:
+                pass
+        context = await build_context_json(symbol, mode)
+        # Funding boost
+        gamma_f = float(C.get('funding', {}).get('gamma', 0.08))
+        fs = int(context.get('funding',{}).get('score', 0))
+        same_dir_sign = 0
+        try:
+            if total > 0 and fs > 0:
+                same_dir_sign = 1
+            elif total < 0 and fs < 0:
+                same_dir_sign = -1
+            else:
+                same_dir_sign = -1 if fs != 0 else 0
+        except Exception:
+            same_dir_sign = 0
+        boost_f = gamma_f * (1 if same_dir_sign > 0 else -1 if same_dir_sign < 0 else 0)
+        # Matrix ALT vs BTC
+        mx = context.get('alt_btc') or {}
+        mx_boost = float(mx.get('boost', 0.0))
+        risk_mult = float(mx.get('risk_mult', 1.0))
+        # BTCD
+        btcd_boost = float(((context.get('btcd') or {}) or {}).get('boost', 0.0))
+        # Price vs OI
+        poi_boost = float((context.get('price_oi') or {}).get('boost', 0.0))
+        context_boost = boost_f + mx_boost + btcd_boost + poi_boost
+        if context_boost > cap_boost:
+            context_boost = cap_boost
+        if context_boost < -cap_boost:
+            context_boost = -cap_boost
+        total_context = float(max(-1.0, min(1.0, total + context_boost)))
+        confidence = int(round(100 * abs(total_context)))
+
     def _last_flip(df: pd.DataFrame, st) -> Dict:
         sig = st.signal
         idxs = sig[sig != 0].index
@@ -389,7 +437,10 @@ async def calc_symbol_signal(symbol: str, mode: Mode, market_type: str = "future
             "indicators": P["weights"]["indicators"],
         },
         "total_score": round(total, 4),
+        "total_score_context": round(total_context, 4),
         "signal": {"side": side, "strength": strength, "confidence": confidence},
+        "context": context,
+        "risk_mult": risk_mult,
         "metadata": {"strict_bias": bool(P.get("strict_bias", True))},
     }
     return result
@@ -398,12 +449,14 @@ async def calc_symbol_signal(symbol: str, mode: Mode, market_type: str = "future
 async def compute_signals_bulk(symbols: List[str], mode: Mode, preset: Optional[str] = None,
                                tau_entry: Optional[float] = None, alpha: Optional[float] = None,
                                strict_bias: Optional[bool] = None,
-                               market_type: str = "futures") -> Dict[str, Any]:
+                               market_type: str = "futures",
+                               context_on: Optional[bool] = None,
+                               boost_cap: Optional[float] = None) -> Dict[str, Any]:
     out = []
     for sym in symbols:
         try:
             out.append(
-                await calc_symbol_signal(sym, mode, market_type=market_type, preset=preset, tau_entry=tau_entry, alpha=alpha, strict_bias=strict_bias)
+                await calc_symbol_signal(sym, mode, market_type=market_type, preset=preset, tau_entry=tau_entry, alpha=alpha, strict_bias=strict_bias, context_on=context_on, boost_cap=boost_cap)
             )
         except Exception as e:
             out.append({"symbol": sym, "mode": mode, "error": str(e)})

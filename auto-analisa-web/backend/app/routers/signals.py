@@ -16,10 +16,15 @@ async def get_mtf_signals(
     tau_entry: float | None = Query(None),
     alpha: float | None = Query(None),
     strict_bias: bool | None = Query(None),
+    context: str | None = Query(None, description="off to disable context"),
+    boost_cap: float | None = Query(None, description="override context cap"),
 ):
     syms: List[str] = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    context_on = None
+    if context is not None:
+        context_on = False if str(context).strip().lower() in {"off","0","false","no"} else True
     return await compute_signals_bulk(
-        syms, mode, preset=preset, tau_entry=tau_entry, alpha=alpha, strict_bias=strict_bias, market_type=market
+        syms, mode, preset=preset, tau_entry=tau_entry, alpha=alpha, strict_bias=strict_bias, market_type=market, context_on=context_on, boost_cap=boost_cap
     )
 
 
@@ -33,8 +38,13 @@ async def get_mtf_signal_symbol(
     tau_entry: float | None = Query(None),
     alpha: float | None = Query(None),
     strict_bias: bool | None = Query(None),
+    context: str | None = Query(None),
+    boost_cap: float | None = Query(None),
 ):
-    return await calc_symbol_signal(symbol.upper(), mode, market_type=market, preset=preset, tau_entry=tau_entry, alpha=alpha, strict_bias=strict_bias)
+    context_on = None
+    if context is not None:
+        context_on = False if str(context).strip().lower() in {"off","0","false","no"} else True
+    return await calc_symbol_signal(symbol.upper(), mode, market_type=market, preset=preset, tau_entry=tau_entry, alpha=alpha, strict_bias=strict_bias, context_on=context_on, boost_cap=boost_cap)
 
 
 @router.get("/mtf-signals/btc-bias")
