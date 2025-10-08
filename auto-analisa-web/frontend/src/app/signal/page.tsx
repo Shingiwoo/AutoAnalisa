@@ -95,24 +95,25 @@ export default function SignalBetaPage(){
                 ))}
               </div>
             )}
-          </div>
-          <div className="flex items-end gap-2">
-            <button onClick={fetchSignals} disabled={loading} className="rounded px-3 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50">{loading?"Memuat...":"Refresh"}</button>
-            <label className="inline-flex items-center gap-2 text-sm text-zinc-300">
-              <input type="checkbox" checked={autoRefresh} onChange={e=>setAutoRefresh(e.target.checked)} />
-              Auto refresh
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm text-zinc-300">
-              <input type="checkbox" checked={useContext} onChange={e=>setUseContext(e.target.checked)} />
-              Use context
-            </label>
-            {useContext && (
-              <div className="text-xs text-zinc-300 flex items-center gap-2">
-                <span>Context cap</span>
-                <input type="range" min={0} max={0.2} step={0.01} value={contextCap} onChange={e=>setContextCap(parseFloat(e.target.value))} />
-                <span>{contextCap.toFixed(2)}</span>
-              </div>
-            )}
+            {/* Controls moved below watchlist for cleaner layout */}
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-zinc-300">
+              <button onClick={fetchSignals} disabled={loading} className="rounded px-3 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50">{loading?"Memuat...":"Refresh"}</button>
+              <label className="inline-flex items-center gap-2">
+                <input type="checkbox" checked={autoRefresh} onChange={e=>setAutoRefresh(e.target.checked)} />
+                Auto refresh
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input type="checkbox" checked={useContext} onChange={e=>setUseContext(e.target.checked)} />
+                Use context
+              </label>
+              {useContext && (
+                <div className="text-xs text-zinc-300 flex items-center gap-2">
+                  <span>Context cap</span>
+                  <input type="range" min={0} max={0.2} step={0.01} value={contextCap} onChange={e=>setContextCap(parseFloat(e.target.value))} />
+                  <span>{contextCap.toFixed(2)}</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -131,7 +132,6 @@ export default function SignalBetaPage(){
                 <th className="px-2 py-2">Trend</th>
                 <th className="px-2 py-2">Pattern</th>
                 <th className="px-2 py-2">Trigger</th>
-                <th className="px-2 py-2">Context</th>
                 <th className="px-2 py-2">Detail</th>
               </tr>
             </thead>
@@ -155,9 +155,6 @@ export default function SignalBetaPage(){
                     <td className="px-2 py-2">{sc.trend}</td>
                     <td className="px-2 py-2">{sc.pattern}</td>
                     <td className="px-2 py-2">{sc.trigger}</td>
-                    <td className="px-2 py-2 align-top">
-                      <ContextBadges ctx={(r as any).context} />
-                    </td>
                     <td className="px-2 py-2">
                       <button className="text-cyan-300 hover:text-cyan-200" onClick={()=>{ setModalRow(r); setModalOpen(true) }}>Lihat</button>
                     </td>
@@ -210,6 +207,19 @@ export default function SignalBetaPage(){
                   <Spark symbol={modalRow.symbol} tf={modalRow.tf_map.trigger} mode={modalRow.mode} kind="st_line" />
                   <div className="mt-2">trend: {modalRow?.st?.trigger?.trend} • signal: {modalRow?.st?.trigger?.signal}</div>
                   <div>ST: {modalRow?.indicators?.trigger?.ST}, EMA50: {modalRow?.indicators?.trigger?.EMA50}, RSI: {modalRow?.indicators?.trigger?.RSI}, MACD: {modalRow?.indicators?.trigger?.MACD}</div>
+                </div>
+              </div>
+              {/* Context moved into modal */}
+              <div className="mt-4">
+                <div className="font-semibold text-zinc-200 mb-1">Context</div>
+                <ContextBadges ctx={(modalRow as any).context} />
+                <div className="mt-2 text-xs opacity-80">
+                  {typeof (modalRow as any)?.total_score_context === 'number' && (
+                    <div>Total (with context): {(modalRow as any).total_score_context?.toFixed?.(2)}</div>
+                  )}
+                  {typeof (modalRow as any)?.risk_mult === 'number' && (
+                    <div>Risk multiplier (suggestion): {(modalRow as any).risk_mult}</div>
+                  )}
                 </div>
               </div>
             </div>
