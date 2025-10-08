@@ -40,7 +40,7 @@ type OverlaySummary = {
 const LOCAL_PREFIX = "gpt_report"
 // Fallback TTL (dipakai hanya jika report tidak membawa ttl dari backend)
 const DEFAULT_SCALPING_TTL =
-  Number(process.env.NEXT_PUBLIC_GPT_TTL_SCALPING_SECONDS ?? 7200) || 7200
+  Number(process.env.NEXT_PUBLIC_GPT_TTL_SCALPING_SECONDS ?? 3600) || 3600
 const DEFAULT_SWING_TTL =
   Number(process.env.NEXT_PUBLIC_GPT_TTL_SWING_SECONDS ?? 43200) || 43200
 
@@ -56,6 +56,14 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string>("")
   const [applied, setApplied] = useState<OverlaySummary | null>(null)
+  // v2 analyze (beta)
+  const [v2Busy, setV2Busy] = useState(false)
+  const [v2Result, setV2Result] = useState<any | null>(null)
+  const [followBias, setFollowBias] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true
+    const s = localStorage.getItem("follow_btc_bias")
+    return s === null ? true : s === "1"
+  })
 
   const tf = tab
   const activeReport = (reports[mode] ?? null) as GptReport | null
@@ -195,9 +203,8 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
 
   const overlayInfo = useMemo(() => {
     if (!activeReport) return extractOverlay(null, tickSize, decimals)
-    if (message) return extractOverlay(null, tickSize, decimals)
     return extractOverlay(activeReport.overlay, tickSize, decimals)
-  }, [activeReport, tickSize, decimals, message])
+  }, [activeReport, tickSize, decimals])
 
   const chartOverlays = useMemo(() => {
     const sr = [...(planBase?.support || []), ...(planBase?.resistance || []), ...srExtra]
@@ -207,15 +214,26 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
     // atau setelah Tanya GPT (overlay LLM digambar via llm).
     const entriesFromApplied = applied?.entries && applied.entries.length ? applied.entries : undefined
     const tpFromApplied = applied?.tp && applied.tp.length ? applied.tp : undefined
+    // v2 ghost overlay from last result
+    let ghost: any = undefined
+    try{
+      const entriesV2 = Array.isArray((v2Result?.plan||{}).entries) ? (v2Result.plan.entries as any[]).map((e:any)=> typeof e?.price==='number'? e.price : undefined).filter((x:any)=> typeof x==='number') : []
+      const tpV2 = Array.isArray((v2Result?.plan||{}).take_profits) ? (v2Result.plan.take_profits as any[]).map((t:any)=> typeof t?.price==='number'? t.price : undefined).filter((x:any)=> typeof x==='number') : []
+      const slV2 = typeof v2Result?.plan?.stop_loss?.price === 'number' ? v2Result.plan.stop_loss.price : undefined
+      if ((entriesV2 && entriesV2.length) || (tpV2 && tpV2.length) || typeof slV2 === 'number') {
+        ghost = { entries: entriesV2 || undefined, tp: tpV2 || undefined, invalid: slV2 }
+      }
+    }catch{}
     return {
       sr,
       invalid: invalids,
       entries: entriesFromApplied,     // <— bukan plan default
       tp: tpFromApplied,               // <— bukan plan default
       liq: planBase?.risk?.liq_price_est,  // Liq tetap ditampilkan
-      llm: activeReport?.overlay && !message ? activeReport.overlay : null,
+      llm: activeReport?.overlay ? activeReport.overlay : null,
+      ghost,
     }
-  }, [planBase, applied, tab, ohlcv, activeReport, message, srExtra])
+  }, [planBase, applied, tab, ohlcv, activeReport, srExtra, v2Result])
 
   const handleAnalyze = useCallback(async () => {
     if (!llmEnabled || (typeof llmRemaining === "number" && llmRemaining <= 0)) {
@@ -279,6 +297,45 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
     setMessage(checkNoTrade(activeReport, mode))
   }, [overlayInfo, activeReport, mode])
 
+  const handleAnalyzeV2 = useCallback(async () => {
+    try {
+      setV2Busy(true)
+      setV2Result(null)
+      try { if (typeof window !== 'undefined') localStorage.setItem('follow_btc_bias', followBias ? '1' : '0') } catch {}
+      const { data: snap } = await api.get('v2/snapshot', { params: { symbol, timeframe: tf } })
+      const { data } = await api.post('v2/analyze', snap, { params: { follow_btc_bias: followBias } })
+      setV2Result(data)
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || 'Gagal Analyze v2'
+      alert(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    } finally {
+      setV2Busy(false)
+    }
+  }, [symbol, tf, followBias])
+
+  const handleApplyV2 = useCallback(() => {
+    try {
+      const entries = Array.isArray((v2Result?.plan || {}).entries)
+        ? (v2Result!.plan.entries as any[])
+            .map((e: any) => (typeof e?.price === 'number' ? e.price : undefined))
+            .filter((x: any) => typeof x === 'number')
+        : []
+      const tp = Array.isArray((v2Result?.plan || {}).take_profits)
+        ? (v2Result!.plan.take_profits as any[])
+            .map((t: any) => (typeof t?.price === 'number' ? t.price : undefined))
+            .filter((x: any) => typeof x === 'number')
+        : []
+      const sl = typeof v2Result?.plan?.stop_loss?.price === 'number' ? v2Result!.plan.stop_loss.price : undefined
+      if ((!entries || entries.length === 0) && (!tp || tp.length === 0) && typeof sl !== 'number') {
+        alert('Hasil v2 belum memiliki entries/TP/SL yang cukup')
+        return
+      }
+      setApplied({ entries: entries || undefined, tp: tp || undefined, sl: sl })
+    } catch {
+      alert('Gagal menerapkan hasil v2')
+    }
+  }, [v2Result])
+
   const appliedPlan = useMemo(() => {
     if (!planBase) return null
     if (!applied) return planBase
@@ -324,6 +381,23 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
               TTL {planDisplay.ttl_min}m
             </span>
           )}
+          {/* Badge sinkron dari hasil v2 (bias & alignment) */}
+          {(() => {
+            try {
+              const bias = (v2Result?.btc_bias_used || '').toString()
+              const align = (v2Result?.btc_alignment || '').toString()
+              if (!bias && !align) return null
+              const biasColor = bias.startsWith('bullish') ? 'bg-emerald-600' : bias.startsWith('bearish') ? 'bg-rose-600' : 'bg-zinc-500'
+              const biasIcon = bias.startsWith('bullish') ? '⬆' : bias.startsWith('bearish') ? '⬇' : '◦'
+              const alignColor = align === 'conflict' ? 'bg-rose-600' : align === 'aligned' ? 'bg-emerald-600' : 'bg-zinc-500'
+              return (
+                <span className="flex items-center gap-2">
+                  {bias && <span className={`px-1.5 py-0.5 rounded text-white text-[11px] ${biasColor}`}>{biasIcon} {bias.replace('_', ' ')}</span>}
+                  {align && <span className={`px-1.5 py-0.5 rounded text-white text-[11px] ${alignColor}`}>{align === 'conflict' ? 'Konflik' : 'Selaras'}</span>}
+                </span>
+              )
+            } catch { return null }
+          })()}
         </div>
         {activeReport?.created_at && (
           <div className="text-xs text-zinc-500">
@@ -344,7 +418,7 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
             {t}
           </button>
         ))}
-        {overlayTf && overlayTf !== tf && !message && (
+        {overlayTf && overlayTf !== tf && (
           <span className="text-xs text-amber-500">Overlay dihitung untuk TF {overlayTf}</span>
         )}
       </div>
@@ -385,15 +459,107 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
         <button
           className="px-3 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
           onClick={handleApply}
-          disabled={!overlayInfo || !overlayInfo.tp || overlayInfo.tp.length === 0 || !!message}
+          disabled={!overlayInfo || !overlayInfo.tp || overlayInfo.tp.length === 0}
         >
           Terapkan Saran
+        </button>
+        {/* Analyze v2 (beta) */}
+        <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300 ml-2">
+          <input type="checkbox" checked={followBias} onChange={(e)=> setFollowBias(e.target.checked)} /> Ikuti Bias BTC
+        </label>
+        <button
+          className="px-3 py-2 rounded-md bg-zinc-800 text-white hover:bg-zinc-700 disabled:opacity-50"
+          onClick={handleAnalyzeV2}
+          disabled={v2Busy}
+          title="Analyze v2 tanpa screenshot (beta)"
+        >
+          {v2Busy ? 'Analyze v2…' : 'Analyze v2 (beta)'}
+        </button>
+        <button
+          className="px-3 py-2 rounded-md bg-violet-700 text-white hover:bg-violet-600 disabled:opacity-50"
+          onClick={handleApplyV2}
+          disabled={!v2Result}
+          title="Terapkan entries/TP/SL dari hasil v2 ke overlay aktif"
+        >
+          Terapkan v2
+        </button>
+        <button
+          className="px-3 py-2 rounded-md bg-zinc-700 text-white hover:bg-zinc-600 disabled:opacity-50"
+          onClick={() => {
+            try {
+              localStorage.removeItem(buildKey(symbol, 'scalping'))
+              localStorage.removeItem(buildKey(symbol, 'swing'))
+              setReports({})
+              setApplied(null)
+              setMessage('')
+              alert('Cache report dibersihkan')
+            } catch {}
+          }}
+        >
+          Clear cache report
         </button>
       </div>
 
       <GptReportBox symbol={symbol} mode={mode} report={activeReport} loading={reportLoading} />
 
+      {v2Result && <V2ReportBox result={v2Result} />}
+
       <FuturesMetrics plan={planDisplay} overlay={overlayInfo} />
+    </div>
+  )
+}
+
+function V2ReportBox({ result }: { result: any }){
+  const bias = String(result?.plan?.bias || '').toLowerCase()
+  const biasColor = bias.startsWith('bull') ? 'text-emerald-500' : bias.startsWith('bear') ? 'text-rose-500' : 'text-zinc-400'
+  const entries = Array.isArray(result?.plan?.entries) ? result.plan.entries : []
+  const tps = Array.isArray(result?.plan?.take_profits) ? result.plan.take_profits : []
+  const sl = result?.plan?.stop_loss
+  const keyLv = Array.isArray(result?.key_levels) ? result.key_levels : []
+  const align = String(result?.btc_alignment || '')
+  const alignColor = align === 'conflict' ? 'bg-rose-600' : align === 'aligned' ? 'bg-emerald-600' : 'bg-zinc-500'
+  const biasUsed = String(result?.btc_bias_used || '')
+  const biasUsedColor = biasUsed.startsWith('bullish') ? 'bg-emerald-600' : biasUsed.startsWith('bearish') ? 'bg-rose-600' : 'bg-zinc-500'
+  return (
+    <div className="rounded-xl ring-1 ring-cyan-500/20 bg-cyan-500/5 p-3 space-y-2">
+      <div className="flex items-center gap-2 text-sm">
+        <span className="font-medium">V2 Report</span>
+        {biasUsed && <span className={`px-1.5 py-0.5 rounded text-white text-[11px] ${biasUsedColor}`}>{biasUsed.replace('_',' ')}</span>}
+        {align && <span className={`px-1.5 py-0.5 rounded text-white text-[11px] ${alignColor}`}>{align==='conflict'? 'Konflik':'Selaras'}</span>}
+      </div>
+      {align==='conflict' && (
+        <div className="p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">⚠ Rencana bertentangan dengan Bias BTC — verifikasi manual disarankan.</div>
+      )}
+      <dl className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+        <div>
+          <dt className="text-zinc-500">Bias</dt>
+          <dd className={biasColor}>{result?.plan?.bias || '-'}</dd>
+        </div>
+        <div>
+          <dt className="text-zinc-500">Struktur / Momentum</dt>
+          <dd>{result?.structure || '-'} • {result?.momentum || '-'}</dd>
+        </div>
+        <div>
+          <dt className="text-zinc-500">Entries</dt>
+          <dd>{entries.length>0 ? entries.map((e:any)=> `${e.label||''} ${e.price}`).join(' · ') : '-'}</dd>
+        </div>
+        <div>
+          <dt className="text-zinc-500">TP</dt>
+          <dd className="text-emerald-400">{tps.length>0 ? tps.map((t:any)=> `${t.label||''} ${t.price}`).join(' → ') : '-'}</dd>
+        </div>
+        <div>
+          <dt className="text-zinc-500">SL</dt>
+          <dd className="text-rose-400">{sl?.price ?? '-'}</dd>
+        </div>
+        <div>
+          <dt className="text-zinc-500">Key Levels</dt>
+          <dd>{keyLv.length>0 ? keyLv.map((k:any)=> `${k.label||''} ${k.price}`).join(' · ') : '-'}</dd>
+        </div>
+        <div className="md:col-span-2">
+          <dt className="text-zinc-500">Rationale</dt>
+          <dd>{result?.plan?.rationale || '-'}</dd>
+        </div>
+      </dl>
     </div>
   )
 }

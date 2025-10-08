@@ -16,7 +16,8 @@ def call_gpt(prompt: str) -> Tuple[Dict[str, Any], Dict[str, int]]:
     messages = [
         {"role": "system", "content": (
             "Anda analis trading kripto profesional. KELUARKAN HANYA JSON VALID (object) tanpa penjelasan. "
-            "ANTI-BIAS: Jangan default LONG. Jika sinyal bertentangan atau bukti lemah, pilih NO-TRADE. "
+            "ANTI-BIAS: Hindari default LONG/SHORT. Jika sinyal lemah atau bertentangan, lebihkan skenario konservatif (WARNING) ketimbang NO-TRADE. "
+            "Gunakan NO-TRADE hanya pada kondisi ekstrim (volatilitas/berita/likuiditas). "
             "Prioritas konfirmasi: (1) sweep & reclaim; (2) break & hold vs break & fail; (3) hindari entry tepat di magnet (00/50, high/low harian)."
         )},
         {"role": "user", "content": prompt},

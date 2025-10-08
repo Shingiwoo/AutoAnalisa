@@ -40,7 +40,9 @@ def prompt_scalping(symbol: str, payload: Dict[str, Any]) -> str:
         "Keluarkan JSON valid (object) persis schema berikut: \n"
         f"{_schema_block()}\n"
         "Ketentuan: gunakan ATR/EMA/BB/RSI6/levels di payload. Target TP 1–3% (ATR-aware). \n"
-        "Jika tidak ada setup valid → posisi \"NO-TRADE\" dan overlay kosong. Gunakan WIB sebagai konteks sesi bila tersedia.\n"
+        "Jika ragu / sinyal lemah → beri skenario konservatif dan tandai WARNING (bukan NO-TRADE). \n"
+        "Gunakan NO-TRADE hanya pada kondisi ekstrim (volatilitas/berita tinggi, struktur rusak). Overlay tetap isi level konservatif jika memungkinkan. \n"
+        "Gunakan WIB sebagai konteks sesi bila tersedia.\n"
         f"SYMBOL: {symbol}\n"
         f"PAYLOAD: {payload_json}\n"
     )
@@ -55,7 +57,7 @@ def prompt_swing(symbol: str, payload: Dict[str, Any]) -> str:
         "Keluarkan JSON valid (object) persis schema berikut: \n"
         f"{_schema_block()}\n"
         "Ketentuan: target TP 2–6% (ATR-aware), jaga ascending TP, dan gunakan invalid/SL logis.\n"
+        "Jika ragu / borderline → berikan sisi preferensi + level konservatif dan beri WARNING. Gunakan NO-TRADE hanya untuk kondisi ekstrim.\n"
         f"SYMBOL: {symbol}\n"
         f"PAYLOAD: {payload_json}\n"
     )
-
