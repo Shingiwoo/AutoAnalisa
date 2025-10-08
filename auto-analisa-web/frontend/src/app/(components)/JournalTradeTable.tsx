@@ -237,10 +237,7 @@ export default function JournalTradeTable(){
                   <td className="px-3 py-2 max-w-[22rem] whitespace-pre-wrap break-words">
                     {it.notes? (
                       <>
-                        <div className="text-sm text-zinc-100/90">{snippet(it.notes, 140)}</div>
-                        {it.notes.length>140 && (
-                          <button className="mt-1 text-xs text-cyan-400 hover:text-cyan-300" onClick={()=>{ setNotesRow(it); setModalKind('notes'); setModalOpen(true) }}>Detail</button>
-                        )}
+                        <button className="mt-1 text-xs text-cyan-400 hover:text-cyan-300" onClick={()=>{ setNotesRow(it); setModalKind('notes'); setModalOpen(true) }}>Detail</button>
                       </>
                     ) : '-'}
                   </td>
