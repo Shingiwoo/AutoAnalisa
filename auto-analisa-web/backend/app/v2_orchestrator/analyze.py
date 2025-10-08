@@ -5,6 +5,7 @@ from app.v2_schemas.llm_output import LlmOutput
 from app.v2_payloads.build import build
 from app.services_v2.llm_client import LlmClient
 from app.services_v2.validators import validate_output
+from app.services_v2.btc_bias import infer_btc_bias_from_exchange
 
 ALLOWED_FOR = {
     "bullish_overbought": ["bullish"],
@@ -46,8 +47,14 @@ def _reconcile_with_btc_bias(data: dict, btc_bias: Optional[str], follow_btc_bia
 
 
 async def analyze(snapshot: MarketSnapshot, follow_btc_bias: bool = True) -> LlmOutput:
-    # Ensure btc_bias exists if btc_context is present
+    # Ensure btc_bias exists: from context if present; else try live inference
     btc_bias = snapshot.btc_bias or _derive_btc_bias_from_context(snapshot)
+    if not btc_bias:
+        try:
+            btc_bias, ctx = await infer_btc_bias_from_exchange(symbol="BTCUSDT", timeframe="1h", limit=320)
+            # No mutation of snapshot object; just use values for alignment and telemetry
+        except Exception:
+            btc_bias = None
     prompt = build(snapshot)
     client = LlmClient()
     raw = await client.structured_response(
