@@ -32,6 +32,7 @@ export default function SiteHeader({ loggedIn, isAdmin }:{ loggedIn:boolean, isA
             <div className="hidden md:flex items-center gap-4 text-zinc-300">
               <Link href="/futures" className="hover:text-white">Futures</Link>
               <Link href="/v2-analyze" className="hover:text-white">V2 Analyze</Link>
+              <Link href="/signal" className="hover:text-white">Signal (Beta)</Link>
               {isAdmin && <Link href="/admin" className="hover:text-white">Admin</Link>}
             </div>
           </div>
@@ -63,6 +64,7 @@ export default function SiteHeader({ loggedIn, isAdmin }:{ loggedIn:boolean, isA
             <div className="mx-auto max-w-7xl px-4 md:px-6 py-3 space-y-2 text-sm">
               <Link href="/futures" className="block text-zinc-300 hover:text-white">Futures</Link>
               <Link href="/v2-analyze" className="block text-zinc-300 hover:text-white">V2 Analyze</Link>
+              <Link href="/signal" className="block text-zinc-300 hover:text-white">Signal (Beta)</Link>
               {isAdmin && <Link href="/admin" className="block text-zinc-300 hover:text-white inline-flex items-center gap-1"><Shield size={16}/> Admin</Link>}
               {isAdmin && pathname?.startsWith('/admin') && (
                 <Link href="/" className="block text-zinc-300 hover:text-white inline-flex items-center gap-1"><Home size={16}/> Dashboard</Link>

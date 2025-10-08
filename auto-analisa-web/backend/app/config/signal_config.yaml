@@ -1,0 +1,45 @@
+presets:
+  fast:
+    tf: { trend: "15m", pattern: "5m", trigger: "1m" }
+    thresholds: { tau_entry: 0.25, theta_bias: 0.20, alpha: 0.30 }
+    strict_bias: true
+    weights:
+      indicators:
+        trend:   { ST: 0.60, EMA50: 0.20, RSI: 0.10, MACD: 0.10 }
+        pattern: { ST: 0.50, RSI: 0.25, MACD: 0.15, EMA50: 0.10 }
+        trigger: { ST: 0.70, EMA: 0.15, RSI: 0.10, MACD: 0.05 }
+      groups: { trend: 0.50, pattern: 0.30, trigger: 0.20 }
+    supertrend: { period: { trend: 10, pattern: 10, trigger: 7 }, multiplier: { all: 3.0 }, src: hl2, change_atr: true }
+
+  medium:
+    tf: { trend: "1h", pattern: "15m", trigger: "5m" }
+    thresholds: { tau_entry: 0.25, theta_bias: 0.20, alpha: 0.25 }
+    strict_bias: true
+    weights:
+      indicators:
+        trend:   { ST: 0.60, EMA50: 0.20, RSI: 0.10, MACD: 0.10 }
+        pattern: { ST: 0.50, RSI: 0.25, MACD: 0.15, EMA50: 0.10 }
+        trigger: { ST: 0.70, EMA: 0.15, RSI: 0.10, MACD: 0.05 }
+      groups: { trend: 0.60, pattern: 0.25, trigger: 0.15 }
+    supertrend: { period: { all: 10 }, multiplier: { all: 3.0 }, src: hl2, change_atr: true }
+
+  swing:
+    tf: { trend: "1D", pattern: "4h", trigger: "15m" }
+    thresholds: { tau_entry: 0.30, theta_bias: 0.20, alpha: 0.20 }
+    strict_bias: true
+    weights:
+      indicators:
+        trend:   { ST: 0.60, EMA50: 0.20, RSI: 0.10, MACD: 0.10 }
+        pattern: { ST: 0.50, RSI: 0.25, MACD: 0.15, EMA50: 0.10 }
+        trigger: { ST: 0.70, EMA: 0.15, RSI: 0.10, MACD: 0.05 }
+      groups: { trend: 0.70, pattern: 0.20, trigger: 0.10 }
+    supertrend: { period: { all: 10 }, multiplier: { all: 3.0 }, src: hl2, change_atr: true }
+
+indicators:
+  ema50:
+    k_atr: 0.05
+  rsi:
+    bands_default: { long_lo: 55, long_hi: 70, short_hi: 45, short_lo: 30, mid_lo: 45, mid_hi: 55 }
+  macd:
+    eps: 0.0
+
