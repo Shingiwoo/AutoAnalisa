@@ -54,7 +54,7 @@ def load_signal_config() -> Dict[str, Any]:
                     "indicators": {
                         "trend": {"ST": 0.60, "EMA50": 0.20, "RSI": 0.10, "MACD": 0.10},
                         "pattern": {"ST": 0.50, "RSI": 0.25, "MACD": 0.15, "EMA50": 0.10},
-                        "trigger": {"ST": 0.70, "EMA": 0.15, "RSI": 0.10, "MACD": 0.05},
+                        "trigger": {"ST": 0.70, "EMA50": 0.15, "RSI": 0.10, "MACD": 0.05},
                     },
                     "groups": {"trend": 0.50, "pattern": 0.30, "trigger": 0.20},
                 },
@@ -68,7 +68,7 @@ def load_signal_config() -> Dict[str, Any]:
                     "indicators": {
                         "trend": {"ST": 0.60, "EMA50": 0.20, "RSI": 0.10, "MACD": 0.10},
                         "pattern": {"ST": 0.50, "RSI": 0.25, "MACD": 0.15, "EMA50": 0.10},
-                        "trigger": {"ST": 0.70, "EMA": 0.15, "RSI": 0.10, "MACD": 0.05},
+                        "trigger": {"ST": 0.70, "EMA50": 0.15, "RSI": 0.10, "MACD": 0.05},
                     },
                     "groups": {"trend": 0.60, "pattern": 0.25, "trigger": 0.15},
                 },
@@ -82,7 +82,7 @@ def load_signal_config() -> Dict[str, Any]:
                     "indicators": {
                         "trend": {"ST": 0.60, "EMA50": 0.20, "RSI": 0.10, "MACD": 0.10},
                         "pattern": {"ST": 0.50, "RSI": 0.25, "MACD": 0.15, "EMA50": 0.10},
-                        "trigger": {"ST": 0.70, "EMA": 0.15, "RSI": 0.10, "MACD": 0.05},
+                        "trigger": {"ST": 0.70, "EMA50": 0.15, "RSI": 0.10, "MACD": 0.05},
                     },
                     "groups": {"trend": 0.70, "pattern": 0.20, "trigger": 0.10},
                 },
@@ -152,7 +152,7 @@ async def compute_btc_bias(mode: Mode, market_type: str = "futures") -> Tuple[st
         df,
         period=int((P.get("supertrend", {}).get("period", {}).get("trend") or P.get("supertrend", {}).get("period", {}).get("all", 10))),
         multiplier=float((P.get("supertrend", {}).get("multiplier", {}).get("trend") or P.get("supertrend", {}).get("multiplier", {}).get("all", 3.0))),
-        src=str(P.get("supertrend", {}).get("src", "hl2")),
+        src=P.get("supertrend", {}).get("src", "hl2"),
         change_atr=bool(P.get("supertrend", {}).get("change_atr", True)),
     )
     ema50_last = float(ema(df["close"], 50).iloc[-1]) if not df.empty else 0.0
@@ -173,7 +173,7 @@ async def compute_btc_bias(mode: Mode, market_type: str = "futures") -> Tuple[st
         "MACD": score_macd(macd_line_last, signal_line_last, eps=eps),
     }
     w_trend = P["weights"]["indicators"]["trend"]
-    score = float(weighted_avg(sc, w_trend))
+    score = float(weighted_avg({k: float(v) for k, v in sc.items()}, w_trend))
     direction = "NEUTRAL"
     if abs(score) >= float(P["thresholds"]["theta_bias"]):
         direction = "LONG" if score > 0 else "SHORT"
@@ -246,9 +246,9 @@ async def calc_symbol_signal(symbol: str, mode: Mode, market_type: str = "future
 
     # GroupScore per preset weights
     w_ind = P["weights"]["indicators"]
-    gs_trend = float(weighted_avg(sc_trend, w_ind["trend"]))
-    gs_pattern = float(weighted_avg(sc_pattern, w_ind["pattern"]))
-    gs_trigger = float(weighted_avg(sc_trigger, w_ind["trigger"]))
+    gs_trend = float(weighted_avg({k: float(v) for k, v in sc_trend.items()}, w_ind["trend"]))
+    gs_pattern = float(weighted_avg({k: float(v) for k, v in sc_pattern.items()}, w_ind["pattern"]))
+    gs_trigger = float(weighted_avg({k: float(v) for k, v in sc_trigger.items()}, w_ind["trigger"]))
 
     # Total with group weights
     wg = P["weights"]["groups"]
@@ -278,14 +278,23 @@ async def calc_symbol_signal(symbol: str, mode: Mode, market_type: str = "future
             return {"ts": None, "side": None, "price": None}
         ts = idxs[-1]
         side_s = "BUY" if int(sig.loc[ts]) == 1 else "SELL"
-        price = float(df.loc[ts, "close"]) if ts in df.index else None
+        price = None
+        try:
+            if ts in df.index:
+                val = df.loc[ts, "close"]
+                fv = float(val) if isinstance(val, (int, float)) else None  # ensure val is numeric before conversion
+                # no need to call pd.isna on python float; but keep defensive check
+                if not (fv != fv):  # NaN check without numpy
+                    price = fv
+        except Exception:
+            price = None
         return {"ts": str(ts), "side": side_s, "price": price}
 
     def _mini(df: pd.DataFrame, n: int = 60) -> List[Dict[str, float]]:
         if df is None or df.empty:
             return []
         tail = df.tail(n)
-        return [{"ts": int(ts.value // 10**6), "close": float(row["close"])} for ts, row in tail.iterrows()]
+        return [{"ts": int(pd.Timestamp(str(ts)).timestamp() * 1000), "close": float(row["close"])} for ts, row in tail.iterrows()]
 
     result = {
         "symbol": symbol.upper(),

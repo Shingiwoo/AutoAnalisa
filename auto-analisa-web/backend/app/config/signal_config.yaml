@@ -7,7 +7,7 @@ presets:
       indicators:
         trend:   { ST: 0.60, EMA50: 0.20, RSI: 0.10, MACD: 0.10 }
         pattern: { ST: 0.50, RSI: 0.25, MACD: 0.15, EMA50: 0.10 }
-        trigger: { ST: 0.70, EMA: 0.15, RSI: 0.10, MACD: 0.05 }
+        trigger: { ST: 0.70, EMA50: 0.15, RSI: 0.10, MACD: 0.05 }
       groups: { trend: 0.50, pattern: 0.30, trigger: 0.20 }
     supertrend: { period: { trend: 10, pattern: 10, trigger: 7 }, multiplier: { all: 3.0 }, src: hl2, change_atr: true }
 
@@ -19,7 +19,7 @@ presets:
       indicators:
         trend:   { ST: 0.60, EMA50: 0.20, RSI: 0.10, MACD: 0.10 }
         pattern: { ST: 0.50, RSI: 0.25, MACD: 0.15, EMA50: 0.10 }
-        trigger: { ST: 0.70, EMA: 0.15, RSI: 0.10, MACD: 0.05 }
+        trigger: { ST: 0.70, EMA50: 0.15, RSI: 0.10, MACD: 0.05 }
       groups: { trend: 0.60, pattern: 0.25, trigger: 0.15 }
     supertrend: { period: { all: 10 }, multiplier: { all: 3.0 }, src: hl2, change_atr: true }
 
@@ -31,7 +31,7 @@ presets:
       indicators:
         trend:   { ST: 0.60, EMA50: 0.20, RSI: 0.10, MACD: 0.10 }
         pattern: { ST: 0.50, RSI: 0.25, MACD: 0.15, EMA50: 0.10 }
-        trigger: { ST: 0.70, EMA: 0.15, RSI: 0.10, MACD: 0.05 }
+        trigger: { ST: 0.70, EMA50: 0.15, RSI: 0.10, MACD: 0.05 }
       groups: { trend: 0.70, pattern: 0.20, trigger: 0.10 }
     supertrend: { period: { all: 10 }, multiplier: { all: 3.0 }, src: hl2, change_atr: true }
 
@@ -42,4 +42,3 @@ indicators:
     bands_default: { long_lo: 55, long_hi: 70, short_hi: 45, short_lo: 30, mid_lo: 45, mid_hi: 55 }
   macd:
     eps: 0.0
-

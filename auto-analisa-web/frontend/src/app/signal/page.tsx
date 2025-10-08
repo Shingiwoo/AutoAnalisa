@@ -123,7 +123,7 @@ export default function SignalBetaPage(){
                             <div className="font-semibold text-zinc-200 mb-1">Trigger ({r?.st?.trigger?.tf})</div>
                             <Spark data={r?.st?.trigger?.mini} />
                             <div className="mt-2">trend: {r?.st?.trigger?.trend} • signal: {r?.st?.trigger?.signal}</div>
-                            <div>ST: {r?.indicators?.trigger?.ST}, EMA: {r?.indicators?.trigger?.EMA50 ?? r?.indicators?.trigger?.EMA}, RSI: {r?.indicators?.trigger?.RSI}, MACD: {r?.indicators?.trigger?.MACD}</div>
+                            <div>ST: {r?.indicators?.trigger?.ST}, EMA50: {r?.indicators?.trigger?.EMA50}, RSI: {r?.indicators?.trigger?.RSI}, MACD: {r?.indicators?.trigger?.MACD}</div>
                           </div>
                         </div>
                       </details>

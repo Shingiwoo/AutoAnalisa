@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Query
-from typing import List, Optional
+from fastapi.routing import APIRouter
+from fastapi import Query
+from typing import List, Optional, Literal
 from ..services.signal_mtf import calc_symbol_signal, compute_btc_bias, compute_signals_bulk, compute_btc_bias_json
 
 router = APIRouter(prefix="/api", tags=["signals"]) 
@@ -8,7 +9,7 @@ router = APIRouter(prefix="/api", tags=["signals"])
 @router.get("/mtf-signals")
 @router.get("/signals")
 async def get_mtf_signals(
-    mode: str = Query("medium", pattern="^(fast|medium|swing)$"),
+    mode: Literal["fast", "medium", "swing"] = Query("medium"),
     symbols: str = Query("BTCUSDT,ETHUSDT"),
     market: str = Query("futures"),
     preset: str | None = Query(None),
@@ -26,7 +27,7 @@ async def get_mtf_signals(
 @router.get("/signals/{symbol}")
 async def get_mtf_signal_symbol(
     symbol: str,
-    mode: str = Query("medium", pattern="^(fast|medium|swing)$"),
+    mode: Literal["fast", "medium", "swing"] = Query("medium"),
     market: str = Query("futures"),
     preset: str | None = Query(None),
     tau_entry: float | None = Query(None),
@@ -39,7 +40,7 @@ async def get_mtf_signal_symbol(
 @router.get("/mtf-signals/btc-bias")
 @router.get("/signals/btc-bias")
 async def get_btc_bias(
-    mode: str = Query("medium", pattern="^(fast|medium|swing)$"),
+    mode: Literal["fast", "medium", "swing"] = Query("medium"),
     market: str = Query("futures"),
 ):
     return await compute_btc_bias_json(mode, market_type=market)
