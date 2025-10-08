@@ -15,6 +15,11 @@ export default function SignalBetaPage(){
   const [rows, setRows] = useState<SignalRow[]>([])
   const [autoRefresh, setAutoRefresh] = useState<boolean>(true)
   const [error, setError] = useState<string>("")
+  const [useWatchlist, setUseWatchlist] = useState<boolean>(false)
+  const [watchlist, setWatchlist] = useState<string[]>([])
+  const [wlNew, setWlNew] = useState<string>("")
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalRow, setModalRow] = useState<SignalRow | null>(null)
 
   async function fetchSignals(){
     setLoading(true)
@@ -37,6 +42,17 @@ export default function SignalBetaPage(){
     return () => clearInterval(id)
   }, [mode, symbols, autoRefresh])
 
+  async function loadWatchlist(){
+    try{
+      const r = await api.get('/watchlist', { params: { trade_type: 'futures' } })
+      const arr = Array.isArray(r?.data) ? r.data : []
+      setWatchlist(arr)
+      if (useWatchlist) setSymbols(arr.join(','))
+    }catch{}
+  }
+
+  useEffect(()=>{ if(useWatchlist) loadWatchlist() }, [useWatchlist])
+
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="mx-auto max-w-7xl px-4 md:px-6 py-6">
@@ -55,6 +71,24 @@ export default function SignalBetaPage(){
           <div className="md:col-span-2 flex flex-col gap-1">
             <label className="text-xs text-zinc-400">Symbols (pisahkan dengan koma)</label>
             <input value={symbols} onChange={e=>setSymbols(e.target.value)} className="rounded bg-transparent px-3 py-2 ring-1 ring-inset ring-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-500" placeholder="BTCUSDT,ETHUSDT,BNBUSDT" />
+            <div className="flex items-center gap-3 text-xs text-zinc-300 mt-1">
+              <label className="inline-flex items-center gap-2"><input type="checkbox" checked={useWatchlist} onChange={e=>{ setUseWatchlist(e.target.checked); if(!e.target.checked){/* keep manual symbols */} }} /> Gunakan Watchlist (Futures)</label>
+              {useWatchlist && (
+                <span className="opacity-75">{watchlist.length? `Watchlist: ${watchlist.join(', ')}` : 'memuat…'}</span>
+              )}
+            </div>
+            {useWatchlist && (
+              <div className="flex items-center gap-2 mt-1">
+                <input value={wlNew} onChange={e=>setWlNew(e.target.value.toUpperCase())} placeholder="Tambah symbol" className="min-w-[160px] rounded bg-transparent px-2 py-1.5 ring-1 ring-inset ring-white/10" />
+                <button className="rounded px-2.5 py-1.5 bg-zinc-800 text-white hover:bg-zinc-700" onClick={async()=>{
+                  if(!wlNew) return
+                  try{ await api.post('/watchlist/add', null, { params: { symbol: wlNew, trade_type: 'futures' } }); setWlNew(''); loadWatchlist() }catch{}
+                }}>Tambah</button>
+                {watchlist.map(sym=> (
+                  <button key={sym} className="text-xs text-rose-300 hover:text-rose-200" onClick={async()=>{ try{ await api.delete(`/watchlist/${sym}`, { params:{ trade_type:'futures' } }); loadWatchlist() }catch{} }}>hapus {sym}</button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex items-end gap-2">
             <button onClick={fetchSignals} disabled={loading} className="rounded px-3 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50">{loading?"Memuat...":"Refresh"}</button>
@@ -104,29 +138,7 @@ export default function SignalBetaPage(){
                     <td className="px-2 py-2">{sc.pattern}</td>
                     <td className="px-2 py-2">{sc.trigger}</td>
                     <td className="px-2 py-2">
-                      <details>
-                        <summary className="cursor-pointer text-cyan-300">Lihat</summary>
-                        <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-6 text-xs text-zinc-300">
-                          <div>
-                            <div className="font-semibold text-zinc-200 mb-1">Trend ({r?.tf_map?.trend})</div>
-                            <Spark symbol={r.symbol} tf={r?.tf_map?.trend} mode={r.mode} kind="st_line" />
-                            <div className="mt-2">trend: {r?.st?.trend?.trend} • signal: {r?.st?.trend?.signal}</div>
-                            <div>ST: {r?.indicators?.trend?.ST}, EMA50: {r?.indicators?.trend?.EMA50}, RSI: {r?.indicators?.trend?.RSI}, MACD: {r?.indicators?.trend?.MACD}</div>
-                          </div>
-                          <div>
-                            <div className="font-semibold text-zinc-200 mb-1">Pattern ({r?.tf_map?.pattern})</div>
-                            <Spark symbol={r.symbol} tf={r?.tf_map?.pattern} mode={r.mode} kind="st_line" />
-                            <div className="mt-2">trend: {r?.st?.pattern?.trend} • signal: {r?.st?.pattern?.signal}</div>
-                            <div>ST: {r?.indicators?.pattern?.ST}, RSI: {r?.indicators?.pattern?.RSI}, MACD: {r?.indicators?.pattern?.MACD}, EMA50: {r?.indicators?.pattern?.EMA50}</div>
-                          </div>
-                          <div>
-                            <div className="font-semibold text-zinc-200 mb-1">Trigger ({r?.tf_map?.trigger})</div>
-                            <Spark symbol={r.symbol} tf={r?.tf_map?.trigger} mode={r.mode} kind="st_line" />
-                            <div className="mt-2">trend: {r?.st?.trigger?.trend} • signal: {r?.st?.trigger?.signal}</div>
-                            <div>ST: {r?.indicators?.trigger?.ST}, EMA50: {r?.indicators?.trigger?.EMA50}, RSI: {r?.indicators?.trigger?.RSI}, MACD: {r?.indicators?.trigger?.MACD}</div>
-                          </div>
-                        </div>
-                      </details>
+                      <button className="text-cyan-300 hover:text-cyan-200" onClick={()=>{ setModalRow(r); setModalOpen(true) }}>Lihat</button>
                     </td>
                   </tr>
                 )
@@ -148,5 +160,43 @@ export default function SignalBetaPage(){
         </div>
       </div>
     </div>
+    {modalOpen && modalRow && (
+      <div className="fixed inset-0 z-50">
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={()=>{ setModalOpen(false); setModalRow(null) }} />
+        <div className="absolute inset-0 flex items-center justify-center p-4">
+          <div className="w-full max-w-5xl rounded-2xl bg-slate-950 text-white shadow-2xl ring-1 ring-white/10 overflow-hidden">
+            <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+              <h3 className="font-semibold">{modalRow.symbol} • {modalRow.mode.toUpperCase()}</h3>
+              <button onClick={()=>{ setModalOpen(false); setModalRow(null) }} className="text-zinc-300 hover:text-white">✕</button>
+            </div>
+            <div className="p-4 max-h-[80vh] overflow-auto text-sm text-zinc-300">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <div className="font-semibold text-zinc-200 mb-1">Trend ({modalRow.tf_map.trend})</div>
+                  <Spark symbol={modalRow.symbol} tf={modalRow.tf_map.trend} mode={modalRow.mode} kind="st_line" />
+                  <div className="mt-2">trend: {modalRow?.st?.trend?.trend} • signal: {modalRow?.st?.trend?.signal}</div>
+                  <div>ST: {modalRow?.indicators?.trend?.ST}, EMA50: {modalRow?.indicators?.trend?.EMA50}, RSI: {modalRow?.indicators?.trend?.RSI}, MACD: {modalRow?.indicators?.trend?.MACD}</div>
+                </div>
+                <div>
+                  <div className="font-semibold text-zinc-200 mb-1">Pattern ({modalRow.tf_map.pattern})</div>
+                  <Spark symbol={modalRow.symbol} tf={modalRow.tf_map.pattern} mode={modalRow.mode} kind="st_line" />
+                  <div className="mt-2">trend: {modalRow?.st?.pattern?.trend} • signal: {modalRow?.st?.pattern?.signal}</div>
+                  <div>ST: {modalRow?.indicators?.pattern?.ST}, RSI: {modalRow?.indicators?.pattern?.RSI}, MACD: {modalRow?.indicators?.pattern?.MACD}, EMA50: {modalRow?.indicators?.pattern?.EMA50}</div>
+                </div>
+                <div>
+                  <div className="font-semibold text-zinc-200 mb-1">Trigger ({modalRow.tf_map.trigger})</div>
+                  <Spark symbol={modalRow.symbol} tf={modalRow.tf_map.trigger} mode={modalRow.mode} kind="st_line" />
+                  <div className="mt-2">trend: {modalRow?.st?.trigger?.trend} • signal: {modalRow?.st?.trigger?.signal}</div>
+                  <div>ST: {modalRow?.indicators?.trigger?.ST}, EMA50: {modalRow?.indicators?.trigger?.EMA50}, RSI: {modalRow?.indicators?.trigger?.RSI}, MACD: {modalRow?.indicators?.trigger?.MACD}</div>
+                </div>
+              </div>
+            </div>
+            <div className="px-4 py-3 border-t border-white/10 flex items-center justify-end bg-black/30">
+              <button onClick={()=>{ setModalOpen(false); setModalRow(null) }} className="rounded px-3 py-1.5 bg-zinc-800 text-white">Tutup</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
   )
 }

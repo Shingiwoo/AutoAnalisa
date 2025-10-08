@@ -4,10 +4,9 @@ from sqlalchemy import select, delete
 from app.deps import get_db
 from app.auth import require_user
 from app.models import Watchlist, Plan, Analysis
+from app.services.budget import get_or_init_settings
 
 router = APIRouter(prefix="/api/watchlist", tags=["watchlist"])
-
-MAX_WATCH = 4
 
 
 @router.get("")
@@ -28,8 +27,10 @@ async def add(symbol: str, db: AsyncSession = Depends(get_db), user=Depends(requ
         tt = "spot"
     q = await db.execute(select(Watchlist).where(Watchlist.user_id == user.id, Watchlist.trade_type == tt))
     cnt = len(q.scalars().all())
-    if cnt >= MAX_WATCH:
-        raise HTTPException(429, "Watchlist penuh (4). Hapus dulu item lain.")
+    sset = await get_or_init_settings(db)
+    limit = int(getattr(sset, "watchlist_max", 20) or 20)
+    if cnt >= limit:
+        raise HTTPException(429, f"Watchlist penuh ({limit}). Hapus dulu item lain.")
     q2 = await db.execute(select(Watchlist).where(Watchlist.user_id == user.id, Watchlist.symbol == sym, Watchlist.trade_type == tt))
     if q2.scalar_one_or_none() is None:
         db.add(Watchlist(user_id=user.id, symbol=sym, trade_type=tt))

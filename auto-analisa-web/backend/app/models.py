@@ -99,6 +99,8 @@ class Settings(Base):
     auto_off_at_budget: Mapped[bool] = mapped_column(Boolean, default=True)
     budget_used_usd: Mapped[float] = mapped_column(Float, default=0.0)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
+    # Watchlist
+    watchlist_max: Mapped[int] = mapped_column(Integer, default=20)
     # Futures settings (skeleton)
     enable_futures: Mapped[bool] = mapped_column(Boolean, default=False)
     futures_leverage_min: Mapped[int] = mapped_column(Integer, default=3)

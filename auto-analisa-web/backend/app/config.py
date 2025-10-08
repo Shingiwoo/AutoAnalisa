@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     # Features
     BINANCE_SANDBOX: bool = False
     USE_LLM: bool = False
+    # Watchlist limit (per user per trade_type)
+    WATCHLIST_MAX: int = 20
 
     # LLM daily limit and budget (env patch)
     LLM_DAILY_LIMIT: int = 40

@@ -185,6 +185,10 @@ async def init_db():
                 await conn.exec_driver_sql(
                     "ALTER TABLE settings ADD COLUMN futures_funding_alert_window_min INTEGER DEFAULT 30"
                 )
+            if "watchlist_max" not in cols:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE settings ADD COLUMN watchlist_max INTEGER DEFAULT 20"
+                )
         except Exception:
             pass
         # add trade_type to analyses and plans if missing

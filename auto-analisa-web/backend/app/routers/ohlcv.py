@@ -40,18 +40,27 @@ async def spark(
     df = await _load_tf(symbol, tf_norm, market_type="futures", limit=limit)
     stp = _st_cfg_from_preset(cfg, mode, tf_norm)
     st = compute_supertrend(df, period=stp['period'], multiplier=stp['multiplier'], src=stp['src'], change_atr=stp['change_atr'])
+    import math
+    def clean(x: Any) -> Any:
+        try:
+            fx = float(x)
+            if not math.isfinite(fx):
+                return None
+            return fx
+        except Exception:
+            return None
     data = []
     for i, (ts, row) in enumerate(df.iterrows()):
-        data.append({
+        item = {
             "ts": ts.isoformat(),
-            "close": float(row["close"]),
-            "st_line": float(st.supertrend.iloc[i]),
-            "st_up": float(st.up.iloc[i]),
-            "st_dn": float(st.dn.iloc[i]),
-            "trend": int(st.trend.iloc[i]),
-            "signal": int(st.signal.iloc[i]),
-        })
+            "close": clean(row.get("close")),
+            "st_line": clean(st.supertrend.iloc[i]),
+            "st_up": clean(st.up.iloc[i]),
+            "st_dn": clean(st.dn.iloc[i]),
+            "trend": int(st.trend.iloc[i]) if isinstance(st.trend.iloc[i], (int, float)) else 0,
+            "signal": int(st.signal.iloc[i]) if isinstance(st.signal.iloc[i], (int, float)) else 0,
+        }
+        data.append(item)
     out = {"symbol": symbol.upper(), "tf": tf_norm, "mode": mode, "kind": kind, "data": data}
     _CACHE[key] = (now, out)
     return out
-
