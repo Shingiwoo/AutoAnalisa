@@ -113,9 +113,9 @@ export default function V2AnalyzePage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-4 text-zinc-900">
+    <div className="max-w-4xl mx-auto p-6 space-y-4 text-zinc-900 dark:text-zinc-100">
       <h1 className="text-xl font-semibold">V2 Analyze (Tanpa Screenshot)</h1>
-      <div className="text-sm text-zinc-600">Masukkan JSON v4 (contoh tersedia), toggle ikuti bias BTC, lalu klik Analyze.</div>
+      <div className="text-sm text-zinc-600 dark:text-zinc-300">Masukkan JSON v4 (contoh tersedia), toggle ikuti bias BTC, lalu klik Analyze.</div>
       <div className="flex items-center gap-3">
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={followBias} onChange={(e) => setFollowBias(e.target.checked)} />
@@ -129,7 +129,7 @@ export default function V2AnalyzePage() {
         </button>
       </div>
       <textarea
-        className="w-full h-56 border rounded p-3 font-mono text-sm"
+        className="w-full h-56 border rounded p-3 font-mono text-sm bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100 border-zinc-300 dark:border-white/10"
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
@@ -149,6 +149,11 @@ export default function V2AnalyzePage() {
 
       {result && (
         <div className="space-y-2">
+          {result?.btc_alignment === 'conflict' && (
+            <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-200 p-3 text-sm">
+              ⚠ Rencana bertentangan dengan Bias BTC (Konflik). Pertimbangkan untuk menunda entry atau sesuaikan sisi/level.
+            </div>
+          )}
           <div className="flex items-center gap-2 text-sm">
             <span className="font-medium">Hasil</span>
             {badge.bias && (
@@ -170,4 +175,3 @@ export default function V2AnalyzePage() {
     </div>
   )
 }
-

@@ -18,7 +18,9 @@ export default function AnalyzeForm({onDone}:{onDone:(plan:any)=>void}){
       if(!normalized){ alert('Simbol tidak valid.'); setLoading(false); return }
       if(normalized.includes('.P')){ alert('Simbol perpetual (.P) tidak valid untuk Spot.'); setLoading(false); return }
       try{ if (typeof window!=='undefined') localStorage.setItem('follow_btc_bias', followBias? '1':'0') }catch{}
-      const {data}=await api.post('analyze',{symbol: normalized})
+      // Build snapshot server-side then analyze via v2
+      const { data: snap } = await api.get('v2/snapshot', { params:{ symbol: normalized, timeframe: '1h' } })
+      const { data } = await api.post('v2/analyze', snap, { params:{ follow_btc_bias: followBias } })
       onDone(data)
     }catch(e:any){
       if(e?.response?.status===409){ alert(e.response?.data?.detail || 'Maksimal 4 analisa aktif. Arsipkan salah satu dulu.') }
@@ -36,7 +38,7 @@ export default function AnalyzeForm({onDone}:{onDone:(plan:any)=>void}){
         <input type="checkbox" checked={followBias} onChange={e=> setFollowBias(e.target.checked)} />
         Ikuti Bias BTC
       </label>
-      <button onClick={submit} disabled={loading} className="px-4 py-2 rounded bg-black text-white">{loading?'Analisa…':'Analisa'}</button>
+      <button onClick={submit} disabled={loading} className="px-4 py-2 rounded bg-black text-white">{loading?'Analisa v2…':'Analisa v2'}</button>
     </div>
   )
 }

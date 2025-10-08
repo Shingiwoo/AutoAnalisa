@@ -83,6 +83,25 @@ export default function PlanCard({plan, onUpdate, llmEnabled, llmRemaining, onAf
           <span>{plan.symbol} • v{plan.version}</span>
           <span className="px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-xs" title="tf_base">{p?.spot2?.tf_base||'1h'}</span>
           <ScoreBadge score={p.score} />
+          {/* BTC Bias/alignment badge if available */}
+          {(()=>{
+            try{
+              const ver:any = (verification || p?.llm_verification) || {}
+              const spot2json:any = (ver?.spot2_json || {})
+              const bias = (p?.btc_bias_used || p?.spot2?.btc_bias_used || spot2json?.btc_bias_used || '').toString()
+              const align = (p?.btc_alignment || p?.spot2?.btc_alignment || spot2json?.btc_alignment || '').toString()
+              if(!bias && !align) return null
+              const biasColor = bias.startsWith('bullish')? 'bg-emerald-600' : bias.startsWith('bearish')? 'bg-rose-600' : 'bg-zinc-500'
+              const biasIcon = bias.startsWith('bullish')? '⬆' : bias.startsWith('bearish')? '⬇' : '◦'
+              const alignColor = align==='conflict'? 'bg-rose-600' : align==='aligned'? 'bg-emerald-600' : 'bg-zinc-500'
+              return (
+                <span className="flex items-center gap-2">
+                  {bias && <span className={`px-1.5 py-0.5 rounded text-white text-[11px] ${biasColor}`}>{biasIcon} {bias.replace('_',' ')}</span>}
+                  {align && <span className={`px-1.5 py-0.5 rounded text-white text-[11px] ${alignColor}`}>{align==='conflict'?'Konflik':'Selaras'}</span>}
+                </span>
+              )
+            }catch{return null}
+          })()}
           {p?.notice && <span className="px-2 py-0.5 rounded bg-amber-600 text-white text-xs" title={p.notice}>Updated</span>}
         </div>
       </div>
