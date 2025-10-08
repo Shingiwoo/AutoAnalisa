@@ -67,6 +67,7 @@ from .routers import v2 as v2_router
 from .routers import journal as journal_router
 from .routers import trade_journal as trade_journal_router
 from .routers import signals as signals_router
+from .routers import ohlcv as ohlcv_router
 
 
 @app.get("/api/plan/{plan_id}")
@@ -103,3 +104,4 @@ app.include_router(v2_router.router)
 app.include_router(journal_router.router)
 app.include_router(trade_journal_router.router)
 app.include_router(signals_router.router)
+app.include_router(ohlcv_router.router)

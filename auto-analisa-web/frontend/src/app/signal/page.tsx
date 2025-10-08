@@ -108,20 +108,20 @@ export default function SignalBetaPage(){
                         <summary className="cursor-pointer text-cyan-300">Lihat</summary>
                         <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-6 text-xs text-zinc-300">
                           <div>
-                            <div className="font-semibold text-zinc-200 mb-1">Trend ({r?.st?.trend?.tf})</div>
-                            <Spark data={r?.st?.trend?.mini} />
+                            <div className="font-semibold text-zinc-200 mb-1">Trend ({r?.tf_map?.trend})</div>
+                            <Spark symbol={r.symbol} tf={r?.tf_map?.trend} mode={r.mode} kind="st_line" />
                             <div className="mt-2">trend: {r?.st?.trend?.trend} • signal: {r?.st?.trend?.signal}</div>
                             <div>ST: {r?.indicators?.trend?.ST}, EMA50: {r?.indicators?.trend?.EMA50}, RSI: {r?.indicators?.trend?.RSI}, MACD: {r?.indicators?.trend?.MACD}</div>
                           </div>
                           <div>
-                            <div className="font-semibold text-zinc-200 mb-1">Pattern ({r?.st?.pattern?.tf})</div>
-                            <Spark data={r?.st?.pattern?.mini} />
+                            <div className="font-semibold text-zinc-200 mb-1">Pattern ({r?.tf_map?.pattern})</div>
+                            <Spark symbol={r.symbol} tf={r?.tf_map?.pattern} mode={r.mode} kind="st_line" />
                             <div className="mt-2">trend: {r?.st?.pattern?.trend} • signal: {r?.st?.pattern?.signal}</div>
                             <div>ST: {r?.indicators?.pattern?.ST}, RSI: {r?.indicators?.pattern?.RSI}, MACD: {r?.indicators?.pattern?.MACD}, EMA50: {r?.indicators?.pattern?.EMA50}</div>
                           </div>
                           <div>
-                            <div className="font-semibold text-zinc-200 mb-1">Trigger ({r?.st?.trigger?.tf})</div>
-                            <Spark data={r?.st?.trigger?.mini} />
+                            <div className="font-semibold text-zinc-200 mb-1">Trigger ({r?.tf_map?.trigger})</div>
+                            <Spark symbol={r.symbol} tf={r?.tf_map?.trigger} mode={r.mode} kind="st_line" />
                             <div className="mt-2">trend: {r?.st?.trigger?.trend} • signal: {r?.st?.trigger?.signal}</div>
                             <div>ST: {r?.indicators?.trigger?.ST}, EMA50: {r?.indicators?.trigger?.EMA50}, RSI: {r?.indicators?.trigger?.RSI}, MACD: {r?.indicators?.trigger?.MACD}</div>
                           </div>
@@ -133,6 +133,18 @@ export default function SignalBetaPage(){
               })}
             </tbody>
           </table>
+          <div className="mt-6 space-y-2 text-sm leading-6 text-zinc-300">
+            <h3 className="font-semibold text-zinc-100">Cara menggunakan Signal (Beta)</h3>
+            <ul className="list-disc ml-5">
+              <li><b>Mode Fast/Medium/Swing</b> memakai kombinasi TF: Fast (15m/5m/1m), Medium (1h/15m/5m), Swing (1D/4h/15m) untuk <i>Trend/Pattern/Trigger</i>.</li>
+              <li><b>BTC Bias</b> bersifat <i>strict gate</i>: jika arah sinyal berlawanan dengan bias BTC, hasil menjadi <b>NO_TRADE</b>.</li>
+              <li><b>Total</b> adalah skor gabungan (-1..+1). <b>Strength</b> dipetakan dari |Total|: WEAK [0.20–0.35), MEDIUM [0.35–0.55), STRONG [0.55–0.75), EXTREME ≥0.75.</li>
+              <li><b>Detail Trend/Pattern/Trigger</b>: setiap panel menampilkan sparkline <i>Supertrend line</i> pada TF terkait. Jika data tidak cukup/flat, sistem fallback ke harga <i>close</i>.</li>
+              <li>Baru open posisi bila <b>side ≠ NO_TRADE</b> dan strength ≥ <b>MEDIUM</b>. Untuk scalping cepat, perhatikan <i>Trigger</i> flip (signal=±1).</li>
+              <li>Keputusan dibuat pada <b>bar close</b> untuk menghindari repaint. Auto-refresh menyesuaikan TF terpendek.</li>
+            </ul>
+            <p className="opacity-80">Catatan: nilai indikator lain (EMA/RSI/MACD) ditampilkan di bawah sparkline. Parameter dapat diatur pada preset.</p>
+          </div>
         </div>
       </div>
     </div>

@@ -97,6 +97,46 @@ def load_signal_config() -> Dict[str, Any]:
     }
 
 
+def _tf_normalize(tf: str) -> str:
+    s = str(tf).strip()
+    if s.lower() == '1d' or s.lower() == '1day':
+        return '1D'
+    if s.lower() in {'1h','4h','15m','5m','1m'}:
+        return s.lower()
+    return s
+
+
+def _tf_key(mode: str, tf: str) -> str | None:
+    cfg = load_signal_config()
+    P = cfg["presets"].get(mode, cfg["presets"]["medium"])  # type: ignore
+    tf_map = P.get("tf", {})
+    tf_norm = _tf_normalize(tf)
+    for k in ("trend", "pattern", "trigger"):
+        if str(tf_map.get(k)).lower() == str(tf_norm).lower():
+            return k
+    return None
+
+
+def _st_cfg_from_preset(cfg: Dict[str, Any], mode: str, tf: str) -> Dict[str, Any]:
+    P = cfg["presets"].get(mode, cfg["presets"]["medium"])  # type: ignore
+    stp = P.get("supertrend", {})
+    def pick(obj: Any, key: str):
+        if isinstance(obj, dict):
+            if key in obj:
+                return obj[key]
+            if 'all' in obj:
+                return obj['all']
+        return obj
+    k = _tf_key(mode, tf) or 'all'
+    return {
+        'period': int(pick(stp.get('period', {}), k) or 10),
+        'multiplier': float(pick(stp.get('multiplier', {}), k) or 3.0),
+        'src': str(stp.get('src', 'hl2')),
+        'change_atr': bool(stp.get('change_atr', True)),
+    }
+
+
+
 def build_tf_map(mode: Mode) -> Dict[str, str]:
     if mode == "fast":
         return {"trend": "15m", "pattern": "5m", "trigger": "1m"}
