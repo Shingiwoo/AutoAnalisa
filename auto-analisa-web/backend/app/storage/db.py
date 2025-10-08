@@ -48,6 +48,15 @@ async def init_db():
                     await conn.exec_driver_sql(
                         "ALTER TABLE users ADD COLUMN blocked TINYINT(1) DEFAULT 0"
                     )
+                # settings: ensure watchlist_max exists
+                res2 = await conn.exec_driver_sql(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'settings'"
+                )
+                cols_set = {row[0] for row in res2.fetchall()}
+                if "watchlist_max" not in cols_set:
+                    await conn.exec_driver_sql(
+                        "ALTER TABLE settings ADD COLUMN watchlist_max INT DEFAULT 20"
+                    )
         except Exception:
             pass
         # lightweight migrations for SQLite

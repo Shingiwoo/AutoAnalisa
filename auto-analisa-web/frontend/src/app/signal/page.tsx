@@ -53,7 +53,7 @@ export default function SignalBetaPage(){
 
   useEffect(()=>{ if(useWatchlist) loadWatchlist() }, [useWatchlist])
 
-  return (
+  return (<>
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="mx-auto max-w-7xl px-4 md:px-6 py-6">
         <h1 className="text-xl font-semibold tracking-tight">Signal (Beta)</h1>
@@ -198,5 +198,5 @@ export default function SignalBetaPage(){
         </div>
       </div>
     )}
-  )
+  </>)
 }
