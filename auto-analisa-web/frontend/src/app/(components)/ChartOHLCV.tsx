@@ -150,12 +150,12 @@ export default function ChartOHLCV({
     if (overlays?.entries) {
       for (const e of overlays.entries) { series.createPriceLine({ price: e, color: '#0ea5e9', lineWidth: 1, lineStyle: 0, title: 'Entry' }) }
     }
-    // Ghost overlay (LLM preview) dashed
+    // Ghost overlay (V2 preview) dashed
     if (overlays?.ghost) {
       const g = overlays.ghost
-      if (typeof g.invalid === 'number') series.createPriceLine({ price: g.invalid, color: '#0ea5e9', lineWidth: 2, lineStyle: 2, title: 'LLM Invalid' })
-      if (Array.isArray(g.tp)) for (const t of g.tp) { series.createPriceLine({ price: t, color: '#22c55e', lineWidth: 1, lineStyle: 2, title: 'LLM TP' }) }
-      if (Array.isArray(g.entries)) for (const e of g.entries) { series.createPriceLine({ price: e, color: '#06b6d4', lineWidth: 1, lineStyle: 2, title: 'LLM Entry' }) }
+      if (typeof g.invalid === 'number') series.createPriceLine({ price: g.invalid, color: '#0ea5e9', lineWidth: 2, lineStyle: 2, title: 'V2 SL' })
+      if (Array.isArray(g.tp)) for (const t of g.tp) { series.createPriceLine({ price: t, color: '#22c55e', lineWidth: 1, lineStyle: 2, title: 'V2 TP' }) }
+      if (Array.isArray(g.entries)) for (const e of g.entries) { series.createPriceLine({ price: e, color: '#06b6d4', lineWidth: 1, lineStyle: 2, title: 'V2 Entry' }) }
     }
     if (llmOverlay && Array.isArray(llmOverlay.lines)) {
       for (const ln of llmOverlay.lines) {

@@ -57,10 +57,53 @@ async def analyze(snapshot: MarketSnapshot, follow_btc_bias: bool = True) -> Llm
             btc_bias = None
     prompt = build(snapshot)
     client = LlmClient()
-    raw = await client.structured_response(
-        system=prompt.system, user=prompt.user, json_schema=prompt.json_schema
-    )
-    llm_obj = validate_output(raw)
+    try:
+        raw = await client.structured_response(
+            system=prompt.system, user=prompt.user, json_schema=prompt.json_schema
+        )
+        llm_obj = validate_output(raw)
+    except Exception:
+        # Fallback rule-based minimal output if provider returns 4xx/5xx
+        ind = snapshot.indicators
+        # Simple heuristics
+        structure = "uptrend" if (ind.ema20 or 0) <= (ind.ema5 or 0) else "downtrend"
+        momentum = "strong" if (ind.rsi14 or 50) >= 60 else ("weak" if (ind.rsi14 or 50) <= 40 else "neutral")
+        bias = "bullish" if structure == "uptrend" else ("bearish" if structure == "downtrend" else "neutral")
+        price = snapshot.last_price
+        # Entries: pullback ke ema20/bb_mid jika tersedia
+        e1 = ind.ema20 or ind.bb_mid or price * 0.995
+        e2 = ind.bb_mid or ind.ema20 or price * 1.005
+        # SL: sedikit di bawah bb_low/2% dari price
+        sl = (ind.bb_low or price * 0.98)
+        # TP: +1% dan +2% dari price
+        tp1 = price * 1.01
+        tp2 = price * 1.02
+        data_fb = {
+            "symbol": snapshot.symbol,
+            "timeframe": snapshot.timeframe,
+            "structure": structure,
+            "momentum": momentum,
+            "key_levels": [
+                {"label": "bb_low", "price": float(ind.bb_low) if ind.bb_low else float(price*0.98)},
+                {"label": "bb_mid", "price": float(ind.bb_mid) if ind.bb_mid else float(e1)},
+                {"label": "bb_up", "price": float(ind.bb_up) if ind.bb_up else float(price*1.02)},
+            ],
+            "plan": {
+                "bias": bias,
+                "entries": [
+                    {"label": "pullback", "price": float(e1)},
+                    {"label": "breakout", "price": float(e2)},
+                ],
+                "take_profits": [
+                    {"label": "tp1", "price": float(tp1)},
+                    {"label": "tp2", "price": float(tp2)},
+                ],
+                "stop_loss": {"label": "sl", "price": float(sl)},
+                "rationale": "Fallback heuristic due to provider error.",
+                "timeframe_alignment": [snapshot.timeframe],
+            },
+        }
+        llm_obj = validate_output(data_fb)
     data = llm_obj.model_dump()
     data = _reconcile_with_btc_bias(data, btc_bias, follow_btc_bias=follow_btc_bias)
     return LlmOutput.model_validate(data)

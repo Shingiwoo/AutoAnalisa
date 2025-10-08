@@ -212,8 +212,19 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
     // JANGAN tampilkan TP & Entry default.
     // Tampilkan hanya saat user klik “Terapkan Saran” (pakai ‘applied’)
     // atau setelah Tanya GPT (overlay LLM digambar via llm).
-    const entriesFromApplied = applied?.entries && applied.entries.length ? applied.entries : undefined
-    const tpFromApplied = applied?.tp && applied.tp.length ? applied.tp : undefined
+    let entriesFromApplied = applied?.entries && applied.entries.length ? applied.entries : undefined
+    let tpFromApplied = applied?.tp && applied.tp.length ? applied.tp : undefined
+    // If server indicates an applied overlay (LLM or v2) and no local applied override, use plan entries/tp
+    try {
+      const ov = (planBase as any)?.overlays || {}
+      const serverApplied = !!(ov?.futures_applied || ov?.v2_applied)
+      if (serverApplied && !entriesFromApplied && Array.isArray((planBase as any)?.entries)) {
+        entriesFromApplied = (planBase as any).entries
+      }
+      if (serverApplied && !tpFromApplied && Array.isArray((planBase as any)?.tp)) {
+        tpFromApplied = (planBase as any).tp
+      }
+    } catch {}
     // v2 ghost overlay from last result
     let ghost: any = undefined
     try{
@@ -331,6 +342,12 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
         return
       }
       setApplied({ entries: entries || undefined, tp: tp || undefined, sl: sl })
+      // Persist ke server (best-effort)
+      try {
+        const bias = (v2Result?.plan?.bias || '').toString()
+        const rationale = (v2Result?.plan?.rationale || '').toString()
+        api.post('analyses/apply-v2', { symbol, entries, tp, sl, bias, rationale }).catch(()=>{})
+      } catch {}
     } catch {
       alert('Gagal menerapkan hasil v2')
     }
@@ -462,6 +479,13 @@ export default function FuturesCard({ symbol, llmEnabled, llmRemaining, onRefres
           disabled={!overlayInfo || !overlayInfo.tp || overlayInfo.tp.length === 0}
         >
           Terapkan Saran
+        </button>
+        <button
+          className="px-3 py-2 rounded-md bg-zinc-600 text-white hover:bg-zinc-500 disabled:opacity-50"
+          onClick={async()=> { try{ await api.post('analyses/reset-v2', { symbol }) }catch{} setApplied(null); setMessage(''); }}
+          title="Kembalikan overlay ke plan mesin (hapus overlay terapan)"
+        >
+          Reset ke Plan Mesin
         </button>
         {/* Analyze v2 (beta) */}
         <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300 ml-2">

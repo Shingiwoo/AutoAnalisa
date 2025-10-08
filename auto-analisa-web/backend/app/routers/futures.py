@@ -17,6 +17,7 @@ from app.services.budget import get_or_init_settings, add_usage, check_budget_an
 from sqlalchemy import select, desc
 import os, json, time
 from app.models import LLMVerification, Analysis
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/analyses", tags=["futures"])
 
@@ -224,6 +225,30 @@ async def get_futures_plan(symbol: str, db: AsyncSession = Depends(get_db), user
         fut = v.get("fixes") or fut
     except Exception:
         pass
+    # If user has saved futures plan (LLM applied or v2 applied), merge as applied overlay
+    try:
+        q = await db.execute(select(Analysis).where(Analysis.user_id == user.id, Analysis.symbol == symbol.upper(), Analysis.trade_type == "futures"))
+        a = q.scalar_one_or_none()
+        if a and isinstance(a.payload_json, dict):
+            saved = dict((a.payload_json or {}).get("futures") or {})
+            if saved:
+                # Override entries/tp/invalids if present in saved
+                if isinstance(saved.get("entries"), list) and saved["entries"]:
+                    fut["entries"] = saved["entries"]
+                if isinstance(saved.get("tp"), list) and saved["tp"]:
+                    fut["tp"] = saved["tp"]
+                if isinstance(saved.get("invalids"), dict) and saved["invalids"]:
+                    fut["invalids"] = saved["invalids"]
+                # Mark overlay applied flag for FE to render entries/tp as active overlay
+                ov = dict(fut.get("overlays") or {})
+                if "v2_meta" in saved:
+                    ov["v2_applied"] = True
+                    fut["v2_meta"] = saved.get("v2_meta")
+                else:
+                    ov["futures_applied"] = True
+                fut["overlays"] = ov
+    except Exception:
+        pass
     return fut
 
 
@@ -422,3 +447,95 @@ async def apply_futures_llm(aid: int, db: AsyncSession = Depends(get_db), user=D
     await db.commit()
     await db.refresh(a)
     return {"ok": True, "analysis": {"id": a.id, "version": a.version, "payload": a.payload_json}}
+
+
+class ApplyV2Body(BaseModel):
+    symbol: str
+    entries: list[float] | None = Field(default=None, description="Entry levels as prices")
+    tp: list[float] | None = Field(default=None, description="Take profit prices")
+    sl: float | None = Field(default=None, description="Stop loss price")
+    bias: str | None = Field(default=None, description="Bias from v2 plan (bullish/bearish/neutral)")
+    rationale: str | None = Field(default=None, description="Rationale text from v2 plan")
+
+
+@router.post("/apply-v2")
+async def apply_v2(body: ApplyV2Body, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
+    sym = body.symbol.upper()
+    # find or create analysis row for futures for this user
+    q = await db.execute(select(Analysis).where(Analysis.user_id == user.id, Analysis.symbol == sym, Analysis.trade_type == "futures"))
+    a = q.scalar_one_or_none()
+    if not a:
+        a = Analysis(user_id=user.id, symbol=sym, trade_type="futures", version=1, payload_json={"futures": {}})
+        db.add(a)
+        await db.flush()
+    # current payload
+    p = dict(a.payload_json or {})
+    fut = dict(p.get("futures") or {})
+    # map inputs to futures plan structure
+    mapped_entries = []
+    if body.entries:
+        for v in body.entries:
+            try:
+                fv = float(v)
+                mapped_entries.append({"range": [fv, fv], "weight": 50, "type": "ENTRY"})
+            except Exception:
+                pass
+    mapped_tp = []
+    if body.tp:
+        for i, v in enumerate(body.tp):
+            try:
+                fv = float(v)
+                mapped_tp.append({"name": f"TP{i+1}", "range": [fv, fv], "reduce_only_pct": 50 if i == 0 else 50})
+            except Exception:
+                pass
+    invalids = dict(fut.get("invalids") or {})
+    if isinstance(body.sl, (int, float)):
+        invalids["hard_1h"] = float(body.sl)
+    if mapped_entries:
+        fut["entries"] = mapped_entries
+    if mapped_tp:
+        fut["tp"] = mapped_tp
+    fut["invalids"] = invalids
+    # store v2 meta
+    meta = dict(fut.get("v2_meta") or {})
+    if body.bias:
+        meta["bias"] = body.bias
+    if body.rationale:
+        meta["rationale"] = body.rationale
+    if meta:
+        fut["v2_meta"] = meta
+    p["futures"] = fut
+    a.payload_json = p
+    a.version = (a.version or 0) + 1
+    await db.commit()
+    await db.refresh(a)
+    return {"ok": True, "analysis": {"id": a.id, "version": a.version, "payload": a.payload_json}}
+
+
+class ResetV2Body(BaseModel):
+    symbol: str
+
+
+@router.post("/reset-v2")
+async def reset_v2(body: ResetV2Body, db: AsyncSession = Depends(get_db), user=Depends(require_user)):
+    sym = body.symbol.upper()
+    q = await db.execute(select(Analysis).where(Analysis.user_id == user.id, Analysis.symbol == sym, Analysis.trade_type == "futures"))
+    a = q.scalar_one_or_none()
+    if not a:
+        return {"ok": True}
+    p = dict(a.payload_json or {})
+    # Remove saved futures overlay and flags
+    if isinstance(p.get("futures"), dict):
+        p["futures"] = {}
+    ov = dict(p.get("overlays") or {})
+    ov.pop("v2_applied", None)
+    ov.pop("futures_applied", None)
+    if ov:
+        p["overlays"] = ov
+    else:
+        p.pop("overlays", None)
+    a.payload_json = p
+    a.version = (a.version or 0) + 1
+    await db.commit()
+    await db.refresh(a)
+    return {"ok": True}
