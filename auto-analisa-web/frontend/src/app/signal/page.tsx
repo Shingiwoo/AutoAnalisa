@@ -212,12 +212,19 @@ export default function SignalBetaPage(){
               {/* Context moved into modal */}
               <div className="mt-4">
                 <div className="font-semibold text-zinc-200 mb-1">Context</div>
-                <ContextBadges ctx={(modalRow as any).context} />
+                {!useContext ? (
+                  <div className="text-xs">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-zinc-700 text-white">Context OFF</span>
+                    <div className="mt-2 opacity-80">Context boost dinonaktifkan. Total sama dengan hasil MTF.</div>
+                  </div>
+                ) : (
+                  <ContextBadges ctx={(modalRow as any).context} />
+                )}
                 <div className="mt-2 text-xs opacity-80">
                   {typeof (modalRow as any)?.total_score_context === 'number' && (
-                    <div>Total (with context): {(modalRow as any).total_score_context?.toFixed?.(2)}</div>
+                    <div>Total {useContext ? '(with context)' : '(no context)'}: {(modalRow as any).total_score_context?.toFixed?.(2)}</div>
                   )}
-                  {typeof (modalRow as any)?.risk_mult === 'number' && (
+                  {typeof (modalRow as any)?.risk_mult === 'number' && useContext && (
                     <div>Risk multiplier (suggestion): {(modalRow as any).risk_mult}</div>
                   )}
                 </div>
