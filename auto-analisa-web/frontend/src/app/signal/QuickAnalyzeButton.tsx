@@ -6,19 +6,18 @@ export default function QuickAnalyzeButton({ symbol, mode, onDone, className }: 
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
-  function tfForMode(m: 'fast'|'medium'|'swing'): '15m'|'1h'|'1d' {
-    return m === 'fast' ? '15m' : m === 'medium' ? '1h' : '1d'
-  }
-
   async function run(){
     setBusy(true); setErr('')
     try{
-      const tf = tfForMode(mode)
-      const snap = await api.get('v2/snapshot', { params: { symbol, timeframe: tf } })
       let followBias = true
       try{ if(typeof window!=="undefined"){ const s = localStorage.getItem('follow_btc_bias'); followBias = s===null ? true : s==='1' } }catch{}
       const profile = (mode==='swing' ? 'swing' : 'scalp')
-      const res = await api.post('v2/analyze', snap.data, { params: { follow_btc_bias: followBias, profile, format: 'rich' } })
+      // 1) snapshot batch (single symbol) to lock time and mode
+      const sb = await api.post('v2/snapshot/batch', [symbol], { params: { mode } })
+      const sid = sb?.data?.snapshot_id
+      if(!sid) throw new Error('snapshot gagal')
+      // 2) analyze snapshot (index 0) with profile + rich output
+      const res = await api.post('v2/analyze_snapshot', null, { params: { snapshot_id: sid, index: 0, follow_btc_bias: followBias, profile, format: 'rich' } })
       onDone && onDone(res.data)
     }catch(e:any){ setErr('gagal') }
     finally{ setBusy(false) }

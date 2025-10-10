@@ -5,14 +5,30 @@ from typing import Dict
 
 from app.v2_schemas.analysis_rich import AnalysisRichOutput, TFBlock, Indicators, StrategyScalp, StrategySwing
 from app.v2_schemas.llm_output import LlmOutput
-from app.services.trade_calc import round_futures_prices
+from app.services.rounding import precision_for
+
+
+def _round_price(symbol: str, val: float) -> float:
+    try:
+        p = precision_for(symbol) or {}
+        tick = p.get('tickSize')
+        if tick and float(tick) > 0:
+            step = float(tick)
+            import math
+            return float(math.floor(float(val) / step + 1e-9) * step)
+    except Exception:
+        pass
+    try:
+        return float(val)
+    except Exception:
+        return 0.0
 
 
 def _round_list(symbol: str, vals):
     out = []
     for v in (vals or []):
         try:
-            out.append(round_futures_prices(symbol, float(v)))
+            out.append(_round_price(symbol, float(v)))
         except Exception:
             continue
     return out
@@ -36,14 +52,13 @@ def build_rich_output(symbol: str, market: str, snapshot: Dict, plain: LlmOutput
     plan = plain.plan
     entries = _round_list(symbol, [e.price for e in plan.entries])
     tps = _round_list(symbol, [tp.price for tp in plan.take_profits])
-    slv = float(plan.stop_loss.price)
-    slv = round_futures_prices(symbol, slv)
+    slv = _round_price(symbol, float(plan.stop_loss.price))
 
     strat_scalp = StrategyScalp(
         mode=plan.rationale[:24] + "…" if plan.rationale else "Buy the Dip",
         timeframe="M15–H1",
-        entry_zone=entries[:2] or [round_futures_prices(symbol, price_now*0.995)],
-        take_profit=tps[:2] or [round_futures_prices(symbol, price_now*1.01)],
+        entry_zone=entries[:2] or [_round_price(symbol, price_now*0.995)],
+        take_profit=tps[:2] or [_round_price(symbol, price_now*1.01)],
         stop_loss=slv,
         leverage_saran="≤10x",
         alokasi_risiko_per_trade="0.5%–1.0% ekuitas",
@@ -51,13 +66,13 @@ def build_rich_output(symbol: str, market: str, snapshot: Dict, plain: LlmOutput
         catatan=plan.rationale or "",
     )
 
-    tp3 = tps[2] if len(tps) >= 3 else (tps[1] if len(tps) >= 2 else (tps[0] if tps else round_futures_prices(symbol, price_now*1.03)))
+    tp3 = tps[2] if len(tps) >= 3 else (tps[1] if len(tps) >= 2 else (tps[0] if tps else _round_price(symbol, price_now*1.03)))
     strat_swing = StrategySwing(
         mode="Position Trade setelah retest",
         timeframe="H4–D1",
-        entry_zone_utama=entries[:1] or [round_futures_prices(symbol, price_now*0.99)],
+        entry_zone_utama=entries[:1] or [_round_price(symbol, price_now*0.99)],
         add_on_konfirmasi="Tambah posisi bila H4 close ≥ level konfirmasi",
-        take_profit={"TP1": tps[0] if tps else round_futures_prices(symbol, price_now*1.02), "TP2": (tps[1] if len(tps) >= 2 else round_futures_prices(symbol, price_now*1.03)), "TP3": tp3},
+        take_profit={"TP1": tps[0] if tps else _round_price(symbol, price_now*1.02), "TP2": (tps[1] if len(tps) >= 2 else _round_price(symbol, price_now*1.03)), "TP3": tp3},
         stop_loss=slv,
         leverage_saran="≤5x",
         alokasi_risiko_per_trade="0.5%–1.0% ekuitas",
@@ -94,4 +109,3 @@ def build_rich_output(symbol: str, market: str, snapshot: Dict, plain: LlmOutput
     )
 
     return rich
-
