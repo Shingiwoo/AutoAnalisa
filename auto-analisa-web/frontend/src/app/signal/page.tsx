@@ -29,6 +29,9 @@ export default function SignalBetaPage(){
   const [contextCap, setContextCap] = useState<number>(0.20)
   const [qaResult, setQaResult] = useState<any|null>(null)
   const [qaSource, setQaSource] = useState<'watchlist'|'outperformers'>('watchlist')
+  const [batchBusy, setBatchBusy] = useState(false)
+  const [batchErr, setBatchErr] = useState('')
+  const [batchOut, setBatchOut] = useState<any[]|null>(null)
 
   function fmt(n: any){
     const v = Number(n)
@@ -186,7 +189,29 @@ export default function SignalBetaPage(){
           </table>
         </div>
         {qaSource==='outperformers' && (
-          <OutperformersTable symbols={symbols} mode={mode} />
+          <>
+            <OutperformersTable symbols={symbols} mode={mode} />
+            <div className="mt-3 flex items-center gap-2 text-sm">
+              <button className="rounded px-3 py-1.5 bg-zinc-800 text-white hover:bg-zinc-700 disabled:opacity-50" disabled={batchBusy} onClick={async()=>{
+                try{
+                  setBatchBusy(true); setBatchErr(''); setBatchOut(null)
+                  const symList = (symbols||'').split(',').map(s=>s.trim()).filter(Boolean)
+                  const { data: sb } = await api.post('v2/snapshot/batch', symList, { params:{ mode } })
+                  const sid = sb?.snapshot_id
+                  if(!sid) throw new Error('snapshot gagal')
+                  const { data: ab } = await api.post('v2/analyze_batch', null, { params:{ snapshot_id: sid, count: Math.min(symList.length, 10), format: 'rich' } })
+                  setBatchOut(ab?.results||[])
+                }catch(e:any){ setBatchErr('Analyze All gagal') }
+                finally{ setBatchBusy(false) }
+              }}>{batchBusy? 'Analyzing…' : 'Analyze All (Top list)'}</button>
+              {batchErr && <span className="text-rose-300 text-xs">{batchErr}</span>}
+            </div>
+            {Array.isArray(batchOut) && batchOut.length>0 && (
+              <div className="mt-3 rounded bg-zinc-900 p-3 text-xs text-zinc-100 max-h-80 overflow-auto">
+                <pre>{JSON.stringify(batchOut, null, 2)}</pre>
+              </div>
+            )}
+          </>
         )}
         <div className="mt-6 space-y-2 text-sm leading-6 text-zinc-300">
             <h3 className="font-semibold text-zinc-100">Cara menggunakan Signal (Beta)</h3>
@@ -267,38 +292,44 @@ export default function SignalBetaPage(){
                     <div className="rounded border border-rose-500/30 bg-rose-500/10 text-rose-200 p-2 text-xs mb-2">Konflik dengan Bias BTC</div>
                   )}
                   {/* Summary */}
-                  <div className="rounded-xl ring-1 ring-white/10 bg-black/20 p-3 text-xs mb-2">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      <div>
-                        <div><span className="opacity-70">Timeframe:</span> {String(qaResult?.timeframe||'')}</div>
-                        <div className="flex items-center gap-2"><span className="opacity-70">Bias:</span>
-                          {(() => {
-                            const b = (qaResult?.plan?.bias||'').toString().toLowerCase()
-                            const cls = b==='long'? 'bg-emerald-600' : b==='short'? 'bg-rose-600' : 'bg-zinc-600'
-                            const text = b ? b.toUpperCase() : '-'
-                            return <span className={`px-1.5 py-0.5 rounded text-white ${cls}`}>{text}</span>
-                          })()}
+                  {(() => {
+                    const isRich = qaResult && qaResult.strategi && qaResult.metadata
+                    const biasStr = isRich ? (qaResult?.rangkuman?.bias_dominan?.toString()?.toLowerCase?.()||'') : (qaResult?.plan?.bias||'')
+                    const bcls = biasStr==='long'? 'bg-emerald-600' : biasStr==='short'? 'bg-rose-600' : 'bg-zinc-600'
+                    const entries = isRich ? (qaResult?.strategi?.scalping?.entry_zone||[]) : ((qaResult?.plan?.entries||[]).map((e:any)=>e?.price))
+                    const tps = isRich ? (qaResult?.strategi?.scalping?.take_profit||[]) : ((qaResult?.plan?.take_profits||[]).map((t:any)=>t?.price))
+                    const sl = isRich ? qaResult?.strategi?.scalping?.stop_loss : qaResult?.plan?.stop_loss?.price
+                    const tfShow = isRich ? (modalRow?.tf_map?.trend||'') : String(qaResult?.timeframe||'')
+                    return (
+                      <div className="rounded-xl ring-1 ring-white/10 bg-black/20 p-3 text-xs mb-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <div>
+                            <div><span className="opacity-70">Timeframe:</span> {tfShow}</div>
+                            <div className="flex items-center gap-2"><span className="opacity-70">Bias:</span>
+                              <span className={`px-1.5 py-0.5 rounded text-white ${bcls}`}>{biasStr? biasStr.toUpperCase():'-'}</span>
+                            </div>
+                            <div><span className="opacity-70">RR min:</span> {typeof qaResult?.metrics?.rr_min==='number'? qaResult.metrics.rr_min.toFixed(2): '-'}</div>
+                            <div><span className="opacity-70">TTL (min):</span> {qaResult?.plan?.ttl_min ?? qaResult?.ttl_min ?? '-'}</div>
+                          </div>
+                          <div>
+                            <div className="opacity-70">Entries:</div>
+                            <div>
+                              {(entries||[]).slice(0,2).map((p:any,idx:number)=> (
+                                <span key={idx} className="mr-2">E{idx+1} @ {fmt(p)}</span>
+                              ))}
+                            </div>
+                            <div className="opacity-70">TP:</div>
+                            <div>
+                              {(tps||[]).slice(0,2).map((p:any,idx:number)=> (
+                                <span key={idx} className="mr-2">TP{idx+1} @ {fmt(p)}</span>
+                              ))}
+                            </div>
+                            <div><span className="opacity-70">SL:</span> {fmt(sl)}</div>
+                          </div>
                         </div>
-                        <div><span className="opacity-70">RR min:</span> {typeof qaResult?.metrics?.rr_min==='number'? qaResult.metrics.rr_min.toFixed(2): '-'}</div>
-                        <div><span className="opacity-70">TTL (min):</span> {qaResult?.plan?.ttl_min ?? qaResult?.ttl_min ?? '-'}</div>
                       </div>
-                      <div>
-                        <div className="opacity-70">Entries:</div>
-                        <div>
-                          {(qaResult?.plan?.entries||[]).slice(0,2).map((e:any,idx:number)=> (
-                            <span key={idx} className="mr-2">{e?.label||`E${idx+1}`} @ {fmt(e?.price)}</span>
-                          ))}
-                        </div>
-                        <div className="opacity-70">TP:</div>
-                        <div>
-                          {(qaResult?.plan?.take_profits||[]).slice(0,2).map((t:any,idx:number)=> (
-                            <span key={idx} className="mr-2">{t?.label||`TP${idx+1}`} @ {fmt(t?.price)}</span>
-                          ))}
-                        </div>
-                        <div><span className="opacity-70">SL:</span> {fmt(qaResult?.plan?.stop_loss?.price)}</div>
-                      </div>
-                    </div>
-                  </div>
+                    )
+                  })()}
                   <div className="rounded bg-zinc-900 text-zinc-100 p-3 text-xs overflow-auto max-h-64">
                     <pre>{JSON.stringify(qaResult, null, 2)}</pre>
                   </div>

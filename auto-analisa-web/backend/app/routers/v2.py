@@ -4,6 +4,7 @@ from typing import List, Optional
 import pandas as pd
 from app.v2_schemas.market import MarketSnapshot
 from app.v2_schemas.llm_output import LlmOutput
+from app.v2_orchestrator.build_rich import build_rich_output
 from app.v2_orchestrator.analyze import analyze as analyze_orchestrator
 from app.services.market import fetch_klines
 from app.services.indicators import ema, rsi as rsi14, macd as macd_ind, bb as bbands
@@ -16,9 +17,13 @@ router = APIRouter(prefix="/api/v2", tags=["v2"])
 _SNAP = SnapshotStore()
 
 
-@router.post("/analyze", response_model=LlmOutput)
-async def analyze_market(payload: MarketSnapshot, follow_btc_bias: bool = True, profile: str | None = None):
-    return await analyze_orchestrator(payload, follow_btc_bias=follow_btc_bias, profile=profile)
+@router.post("/analyze")
+async def analyze_market(payload: MarketSnapshot, follow_btc_bias: bool = True, profile: str | None = None, format: str | None = None):
+    plain = await analyze_orchestrator(payload, follow_btc_bias=follow_btc_bias, profile=profile)
+    if (format or '').lower() == 'rich':
+        snap = { 'H1': {}, 'M15': {}, 'H4': {}, 'D1': {} }
+        return build_rich_output(payload.symbol, 'futures', snap, plain, source='direct', price_now=payload.last_price).model_dump()
+    return plain
 
 
 @router.get("/health")
@@ -101,8 +106,8 @@ async def snapshot_batch(symbols: List[str], mode: Optional[str] = None):
     return {"snapshot_id": sid, "generated_at": ts, "mode": mode, "count": len(snaps)}
 
 
-@router.post("/analyze_snapshot", response_model=LlmOutput)
-async def analyze_snapshot(snapshot_id: str, index: int = 0, follow_btc_bias: bool = True, profile: str | None = None):
+@router.post("/analyze_snapshot")
+async def analyze_snapshot(snapshot_id: str, index: int = 0, follow_btc_bias: bool = True, profile: str | None = None, format: str | None = None):
     obj = _SNAP.get(snapshot_id)
     if not obj:
         raise RuntimeError("snapshot not found")
@@ -111,4 +116,27 @@ async def analyze_snapshot(snapshot_id: str, index: int = 0, follow_btc_bias: bo
         raise RuntimeError("empty snapshot")
     idx = max(0, min(index, len(snaps)-1))
     ms = MarketSnapshot.model_validate(snaps[idx])
-    return await analyze_orchestrator(ms, follow_btc_bias=follow_btc_bias, profile=profile)
+    plain = await analyze_orchestrator(ms, follow_btc_bias=follow_btc_bias, profile=profile)
+    if (format or '').lower() == 'rich':
+        snap = { 'H1': {}, 'M15': {}, 'H4': {}, 'D1': {} }  # placeholder blocks
+        return build_rich_output(ms.symbol, 'futures', snap, plain, source='snapshot', price_now=ms.last_price).model_dump()
+    return plain
+
+
+@router.post("/analyze_batch")
+async def analyze_batch(snapshot_id: str, count: int = 10, follow_btc_bias: bool = True, profile: str | None = None, format: str | None = None):
+    obj = _SNAP.get(snapshot_id)
+    if not obj:
+        raise RuntimeError("snapshot_id invalid")
+    snaps = obj.get('snaps') or []
+    n = max(0, min(int(count or 0), len(snaps)))
+    out = []
+    for i in range(n):
+        ms = MarketSnapshot.model_validate(snaps[i])
+        plain = await analyze_orchestrator(ms, follow_btc_bias=follow_btc_bias, profile=profile)
+        if (format or '').lower() == 'rich':
+            snap = { 'H1': {}, 'M15': {}, 'H4': {}, 'D1': {} }
+            out.append({ 'symbol': ms.symbol, 'result': build_rich_output(ms.symbol, 'futures', snap, plain, source='snapshot', price_now=ms.last_price).model_dump() })
+        else:
+            out.append({ 'symbol': ms.symbol, 'result': plain.model_dump() })
+    return { 'snapshot_id': snapshot_id, 'results': out }

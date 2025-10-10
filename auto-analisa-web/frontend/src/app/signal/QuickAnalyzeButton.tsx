@@ -17,7 +17,8 @@ export default function QuickAnalyzeButton({ symbol, mode, onDone, className }: 
       const snap = await api.get('v2/snapshot', { params: { symbol, timeframe: tf } })
       let followBias = true
       try{ if(typeof window!=="undefined"){ const s = localStorage.getItem('follow_btc_bias'); followBias = s===null ? true : s==='1' } }catch{}
-      const res = await api.post('v2/analyze', snap.data, { params: { follow_btc_bias: followBias } })
+      const profile = (mode==='swing' ? 'swing' : 'scalp')
+      const res = await api.post('v2/analyze', snap.data, { params: { follow_btc_bias: followBias, profile, format: 'rich' } })
       onDone && onDone(res.data)
     }catch(e:any){ setErr('gagal') }
     finally{ setBusy(false) }
@@ -30,4 +31,3 @@ export default function QuickAnalyzeButton({ symbol, mode, onDone, className }: 
     </>
   )
 }
-

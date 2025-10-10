@@ -3,6 +3,10 @@
 import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import api from "../api"
+import MetaCard from "./components/MetaCard"
+import TFGrid from "./components/TFGrid"
+import StrategyCards from "./components/StrategyCards"
+import NotesCard from "./components/NotesCard"
 
 type V4 = {
   symbol: string
@@ -107,7 +111,7 @@ function V2AnalyzeInner() {
     try {
       const v4 = JSON.parse(text) as V4
       const v2 = convertV4ToV2(v4)
-      const { data } = await api.post("v2/analyze", v2, { params: { follow_btc_bias: followBias, profile } })
+      const { data } = await api.post("v2/analyze", v2, { params: { follow_btc_bias: followBias, profile, format: 'rich' } })
       setResult(data)
     } catch (e: any) {
       const msg = e?.response?.data?.detail || e?.message || "Gagal menganalisa"
@@ -130,7 +134,7 @@ function V2AnalyzeInner() {
         const snap = await api.get('v2/snapshot', { params: { symbol: sym, timeframe: tf } })
         // optional: show snapshot in editor for transparency
         try{ setText(JSON.stringify({ symbol: sym, timeframe: tf, price: { close: snap?.data?.last_price }, boll: {}, macd: {}, rsi: {}, ema: {} }, null, 2)) }catch{}
-        const { data } = await api.post('v2/analyze', snap.data, { params: { follow_btc_bias: followBias, profile: (prof||profile) } })
+        const { data } = await api.post('v2/analyze', snap.data, { params: { follow_btc_bias: followBias, profile: (prof||profile), format: 'rich' } })
         setResult(data)
       }catch(e:any){ setError(e?.response?.data?.detail || 'Gagal auto-analyze') }
       finally{ setBusy(false) }
@@ -181,28 +185,17 @@ function V2AnalyzeInner() {
       )}
 
       {result && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {result?.btc_alignment === 'conflict' && (
             <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-200 p-3 text-sm">
               ⚠ Rencana bertentangan dengan Bias BTC (Konflik). Pertimbangkan untuk menunda entry atau sesuaikan sisi/level.
             </div>
           )}
-          <div className="flex items-center gap-2 text-sm">
-            <span className="font-medium">Hasil</span>
-            {badge.bias && (
-              <span className={`px-1.5 py-0.5 rounded text-white text-[11px] ${badge.biasColor}`} title="BTC Bias">
-                {badge.biasIcon} {badge.bias.replace("_", " ")}
-              </span>
-            )}
-            {badge.align && (
-              <span className={`px-1.5 py-0.5 rounded text-white text-[11px] ${badge.alignColor}`} title="Kesesuaian">
-                {badge.align === "conflict" ? "Konflik" : badge.align === "aligned" ? "Selaras" : "Netral"}
-              </span>
-            )}
-          </div>
-          <div className="rounded bg-zinc-900 text-zinc-100 p-3 text-xs overflow-auto">
-            <pre>{JSON.stringify(result, null, 2)}</pre>
-          </div>
+          {/* Cards render */}
+          <MetaCard data={result} />
+          <TFGrid data={result} />
+          <StrategyCards data={result} />
+          <NotesCard data={result} />
         </div>
       )}
     </div>
