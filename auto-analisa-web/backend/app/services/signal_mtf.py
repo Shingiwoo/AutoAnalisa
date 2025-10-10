@@ -179,6 +179,19 @@ async def _load_tf(symbol: str, tf: str, market_type: str = "futures", limit: in
     df = df.copy()
     df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
     df.set_index("ts", inplace=True)
+    # Fallback: when 1D candles are too few or flat, use 4h for trend context
+    try:
+        tfn = str(tf).lower()
+        if tfn in {"1d", "1day", "1D".lower()}:
+            if len(df) < 20 or float(df["close"].std(skipna=True) or 0.0) == 0.0:
+                alt = await market.fetch_klines(symbol, "4h", limit=min(600, limit*4), market=market_type)
+                adf = alt.copy()
+                adf["ts"] = pd.to_datetime(adf["ts"], unit="ms", utc=True)
+                adf.set_index("ts", inplace=True)
+                if not adf.empty:
+                    return adf
+    except Exception:
+        pass
     return df
 
 

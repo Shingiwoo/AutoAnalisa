@@ -28,6 +28,7 @@ export default function SignalBetaPage(){
   const [useContext, setUseContext] = useState<boolean>(true)
   const [contextCap, setContextCap] = useState<number>(0.20)
   const [qaResult, setQaResult] = useState<any|null>(null)
+  const [qaSource, setQaSource] = useState<'watchlist'|'outperformers'>('watchlist')
 
   function fmt(n: any){
     const v = Number(n)
@@ -114,6 +115,11 @@ export default function SignalBetaPage(){
                 <input type="checkbox" checked={autoRefresh} onChange={e=>setAutoRefresh(e.target.checked)} />
                 Auto refresh
               </label>
+              <div className="inline-flex items-center gap-2">
+                <span>Sumber</span>
+                <label className="inline-flex items-center gap-1"><input type="radio" name="qa_src" checked={qaSource==='watchlist'} onChange={()=>setQaSource('watchlist')} /> Watchlist</label>
+                <label className="inline-flex items-center gap-1"><input type="radio" name="qa_src" checked={qaSource==='outperformers'} onChange={()=>setQaSource('outperformers')} /> Outperformers</label>
+              </div>
               <label className="inline-flex items-center gap-2">
                 <input type="checkbox" checked={useContext} onChange={e=>setUseContext(e.target.checked)} />
                 Use context
@@ -179,7 +185,9 @@ export default function SignalBetaPage(){
             </tbody>
           </table>
         </div>
-        <OutperformersTable symbols={symbols} mode={mode} />
+        {qaSource==='outperformers' && (
+          <OutperformersTable symbols={symbols} mode={mode} />
+        )}
         <div className="mt-6 space-y-2 text-sm leading-6 text-zinc-300">
             <h3 className="font-semibold text-zinc-100">Cara menggunakan Signal (Beta)</h3>
             <ul className="list-disc ml-5">
@@ -251,7 +259,8 @@ export default function SignalBetaPage(){
                     <span>Quick Analyze</span>
                     <button className="rounded px-2 py-1 bg-zinc-800 text-white text-xs hover:bg-zinc-700" onClick={()=>{
                       const tf = (mode==='fast'?'15m': mode==='medium'?'1h':'1d')
-                      router.push(`/v2-analyze?symbol=${encodeURIComponent(modalRow?.symbol||'')}&timeframe=${tf}`)
+                      const prof = (mode==='swing' ? 'swing' : 'scalp')
+                      router.push(`/v2-analyze?symbol=${encodeURIComponent(modalRow?.symbol||'')}&timeframe=${tf}&profile=${prof}`)
                     }}>Open in Analyze v2</button>
                   </div>
                   {qaResult?.btc_alignment === 'conflict' && (

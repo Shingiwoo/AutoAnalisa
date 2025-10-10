@@ -2,10 +2,22 @@ import ccxt
 import os
 import pandas as pd
 from typing import Dict
+from .cache import MarketCache
 
 
 ex = ccxt.binance()
 ex_usdm = ccxt.binanceusdm()
+_MC = MarketCache()
+
+_TTL = {
+    "1m": 30,
+    "5m": 60,
+    "15m": 120,
+    "1h": 300,
+    "4h": 600,
+    "1d": 900,
+    "1D": 900,
+}
 
 def _normalize_symbol(sym: str) -> str:
     s = sym.replace(':USDT', '/USDT') if ':USDT' in sym else sym
@@ -22,6 +34,12 @@ def _normalize_symbol(sym: str) -> str:
 async def fetch_klines(symbol: str, timeframe: str, limit: int = 500, market: str = "spot") -> pd.DataFrame:
     # catatan: ccxt sync; untuk lokal ok dipanggil di fungsi async
     symbol = _normalize_symbol(symbol)
+    # In-memory cache to accelerate repeated calls
+    ttl = _TTL.get(str(timeframe), 120)
+    key = (symbol, str(timeframe), int(limit or 0), str(market).lower())
+    cached = _MC.get(key, ttl)
+    if cached is not None:
+        return cached
     # Force offline synthetic data if env set (e.g., ISP blocks Binance DNS)
     if os.getenv("MARKET_OFFLINE", "").strip().lower() in {"1", "true", "yes", "on"}:
         try:
@@ -58,12 +76,14 @@ async def fetch_klines(symbol: str, timeframe: str, limit: int = 500, market: st
         client = ex if str(market).lower() != "futures" else ex_usdm
         ohlcv = client.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
         df = pd.DataFrame(ohlcv, columns=["ts", "open", "high", "low", "close", "volume"])
+        _MC.set(key, df)
         return df
     except Exception:
         # If futures failed, try spot OHLCV as a close visual proxy
         try:
             alt = ex.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
             df = pd.DataFrame(alt, columns=["ts", "open", "high", "low", "close", "volume"])
+            _MC.set(key, df)
             return df
         except Exception:
             # OFFLINE fallback: synth data anchored near spot ticker when available
@@ -92,6 +112,7 @@ async def fetch_klines(symbol: str, timeframe: str, limit: int = 500, market: st
             low = close - 0.1
             vol = np.linspace(100, 100 + n, n)
             df = pd.DataFrame({"ts": ts, "open": open_, "high": high, "low": low, "close": close, "volume": vol})
+            _MC.set(key, df)
             return df
 
 

@@ -20,9 +20,12 @@ class TradePlan(BaseModel):
 class LlmOutput(BaseModel):
     symbol: str
     timeframe: str
+    profile: Optional[Literal["scalp", "swing", "auto"]] = None
     structure: str  # uptrend/downtrend/range
     momentum: str  # strong/weak/neutral
     key_levels: List[Level]
     plan: TradePlan
+    # optional risk summary for profile constraints
+    risk: Optional[dict] = Field(default=None, description="{ rr_min: float, sl_buf_atr: float, tp_atr: List[float], ttl_min: List[int] }")
     btc_bias_used: Optional[str] = None
     btc_alignment: Optional[Literal["aligned", "conflict", "neutral"]] = None

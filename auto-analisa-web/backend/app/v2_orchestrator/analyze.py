@@ -46,7 +46,7 @@ def _reconcile_with_btc_bias(data: dict, btc_bias: Optional[str], follow_btc_bia
     return data
 
 
-async def analyze(snapshot: MarketSnapshot, follow_btc_bias: bool = True) -> LlmOutput:
+async def analyze(snapshot: MarketSnapshot, follow_btc_bias: bool = True, profile: str | None = None) -> LlmOutput:
     # Ensure btc_bias exists: from context if present; else try live inference
     btc_bias = snapshot.btc_bias or _derive_btc_bias_from_context(snapshot)
     if not btc_bias:
@@ -55,7 +55,7 @@ async def analyze(snapshot: MarketSnapshot, follow_btc_bias: bool = True) -> Llm
             # No mutation of snapshot object; just use values for alignment and telemetry
         except Exception:
             btc_bias = None
-    prompt = build(snapshot)
+    prompt = build(snapshot, profile=profile)
     client = LlmClient()
     try:
         raw = await client.structured_response(
@@ -105,5 +105,19 @@ async def analyze(snapshot: MarketSnapshot, follow_btc_bias: bool = True) -> Llm
         }
         llm_obj = validate_output(data_fb)
     data = llm_obj.model_dump()
+    if profile:
+        data['profile'] = profile
+        try:
+            from app.services.strategy_futures import PROFILES
+            p = PROFILES.get(profile)
+            if p:
+                data['risk'] = {
+                    'rr_min': p.get('min_rr'),
+                    'sl_buf_atr': p.get('sl_buf_atr'),
+                    'tp_atr': p.get('tp_atr'),
+                    'ttl_min': p.get('ttl_min'),
+                }
+        except Exception:
+            pass
     data = _reconcile_with_btc_bias(data, btc_bias, follow_btc_bias=follow_btc_bias)
     return LlmOutput.model_validate(data)

@@ -76,6 +76,9 @@ function V2AnalyzeInner() {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<any | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [profile, setProfile] = useState<'auto'|'scalp'|'swing'>(()=>{
+    try{ const q = (search?.get('profile')||'').toLowerCase(); return (q==='scalp'||q==='swing')? q : 'auto' }catch{ return 'auto' }
+  })
 
   useEffect(() => {
     try {
@@ -104,7 +107,7 @@ function V2AnalyzeInner() {
     try {
       const v4 = JSON.parse(text) as V4
       const v2 = convertV4ToV2(v4)
-      const { data } = await api.post("v2/analyze", v2, { params: { follow_btc_bias: followBias } })
+      const { data } = await api.post("v2/analyze", v2, { params: { follow_btc_bias: followBias, profile } })
       setResult(data)
     } catch (e: any) {
       const msg = e?.response?.data?.detail || e?.message || "Gagal menganalisa"
@@ -118,6 +121,8 @@ function V2AnalyzeInner() {
   useEffect(() => {
     const sym = (search?.get('symbol') || '').trim()
     const tf = (search?.get('timeframe') || '1h').trim()
+    const prof = (search?.get('profile') || '').toLowerCase()
+    if (prof==='scalp' || prof==='swing') setProfile(prof as any)
     if (!sym) return
     ;(async ()=>{
       try{
@@ -125,7 +130,7 @@ function V2AnalyzeInner() {
         const snap = await api.get('v2/snapshot', { params: { symbol: sym, timeframe: tf } })
         // optional: show snapshot in editor for transparency
         try{ setText(JSON.stringify({ symbol: sym, timeframe: tf, price: { close: snap?.data?.last_price }, boll: {}, macd: {}, rsi: {}, ema: {} }, null, 2)) }catch{}
-        const { data } = await api.post('v2/analyze', snap.data, { params: { follow_btc_bias: followBias } })
+        const { data } = await api.post('v2/analyze', snap.data, { params: { follow_btc_bias: followBias, profile: (prof||profile) } })
         setResult(data)
       }catch(e:any){ setError(e?.response?.data?.detail || 'Gagal auto-analyze') }
       finally{ setBusy(false) }
@@ -141,6 +146,13 @@ function V2AnalyzeInner() {
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={followBias} onChange={(e) => setFollowBias(e.target.checked)} />
           Ikuti Bias BTC
+        </label>
+        <label className="flex items-center gap-2 text-sm">Profile
+          <select value={profile} onChange={(e)=>setProfile(e.target.value as any)} className="rounded px-2 py-1 bg-white text-zinc-900 ring-1 ring-inset ring-zinc-200 dark:bg-zinc-900 dark:text-white dark:ring-white/10">
+            <option value="auto">Auto</option>
+            <option value="scalp">Scalp</option>
+            <option value="swing">Swing</option>
+          </select>
         </label>
         <button
           className="px-3 py-1.5 rounded bg-zinc-800 text-white text-sm hover:bg-zinc-700"
