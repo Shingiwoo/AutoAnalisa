@@ -59,3 +59,7 @@ context:
     oi_eps: 0.001
     boosts: { up_strong: 0.08, up_weak: 0.03, down_strong: -0.08, down_weak: -0.03 }
   cap_boost: 0.20
+outperformer:
+  windows: { short: "1h", mid: "4h", long: "1D" }
+  weights: { rs: 0.45, alpha: 0.25, ratio_breakout: 0.20, vol_oi: 0.10 }
+  thresholds: { score_min: 0.35, alpha_z_min: 0.5 }

@@ -1003,8 +1003,8 @@ def build_plan_futures(bundle: Dict[str, pd.DataFrame],
                     },
                 ]
                 text_llm, usage = ask_llm_messages(messages)
-                import json
-                data = json.loads(text_llm or "{}") if text_llm else {}
+                from .llm import safe_json_loads
+                data = safe_json_loads(text_llm or "") if text_llm else {}
                 if not isinstance(data, dict) or not data:
                     return p0
                 plan_new = dict(p0)

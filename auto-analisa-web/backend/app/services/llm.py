@@ -1,6 +1,7 @@
 import os
 import json
-from typing import Tuple, Dict, List
+from typing import Tuple, Dict, List, Any
+import re
 
 from openai import OpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,14 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-chat-latest")
 # Inisialisasi klien secara aman: jika tidak ada API key, biarkan None agar tidak error saat import
 _KEY = os.getenv("OPENAI_API_KEY")
 _client = OpenAI(api_key=_KEY) if _KEY else None
+
+
+def _opts() -> Dict[str, Any]:
+    return {
+        "temperature": float(os.getenv("OPENAI_TEMPERATURE", "0.2") or 0.2),
+        "seed": int(os.getenv("OPENAI_SEED", "42") or 42),
+        "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS", "900") or 900),
+    }
 
 
 def ask_llm(prompt: str) -> Tuple[str, Dict[str, int]]:
@@ -33,6 +42,7 @@ def ask_llm(prompt: str) -> Tuple[str, Dict[str, int]]:
             {"role": "system", "content": "Kamu analis kripto. Jawab dalam JSON valid (object) tanpa teks lain."},
             {"role": "user", "content": prompt},
         ],
+        **_opts(),
         **kwargs,
     )
     text = resp.choices[0].message.content or ""
@@ -67,9 +77,41 @@ def ask_llm_messages(messages: List[Dict[str, str]]) -> Tuple[str, Dict[str, int
     kwargs = {}
     if strict:
         kwargs["response_format"] = {"type": "json_object"}
+    # optional tool schema to encourage structured output
+    try:
+        kwargs.setdefault("tools", [
+            {
+                "type": "function",
+                "function": {
+                    "name": "produce_plan",
+                    "description": "Return a structured plan for futures entry.",
+                    "parameters": {
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "type": "object",
+                        "required": ["bias", "entries", "take_profits", "stop_loss"],
+                        "properties": {
+                            "bias": {"type": "string", "enum": ["long", "short", "neutral"]},
+                            "entries": {
+                                "type": "array", "minItems": 2, "maxItems": 2,
+                                "items": {"type": "object", "required": ["label", "price"], "properties": {"label": {"type": "string"}, "price": {"type": "number"}}}
+                            },
+                            "take_profits": {
+                                "type": "array", "minItems": 2, "maxItems": 2,
+                                "items": {"type": "object", "required": ["label", "price", "qty_pct"], "properties": {"label": {"type": "string"}, "price": {"type": "number"}, "qty_pct": {"type": "integer"}}}
+                            },
+                            "stop_loss": {"type": "number"},
+                            "rationale": {"type": "string"}
+                        }
+                    },
+                },
+            }
+        ])
+    except Exception:
+        pass
     resp = _client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=messages,
+        **_opts(),
         **kwargs,
     )
     text = resp.choices[0].message.content or ""
@@ -79,3 +121,31 @@ def ask_llm_messages(messages: List[Dict[str, str]]) -> Tuple[str, Dict[str, int
         "total_tokens": getattr(resp.usage, "total_tokens", 0),
     }
     return text, usage
+
+
+def safe_json_loads(text: str) -> Dict[str, Any]:
+    """Best-effort JSON parser for sometimes-messy LLM output.
+    1) Try json.loads
+    2) Extract first {...} block, normalize NaN/Infinity, remove trailing commas
+    """
+    if not text:
+        return {}
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        pass
+    # Extract first JSON object block
+    m = re.search(r"\{[\s\S]*\}", text)
+    if not m:
+        return {}
+    raw = m.group(0)
+    # Replace invalid tokens
+    raw = re.sub(r"\bNaN\b|\bInfinity\b|\b-Infinity\b", "null", raw)
+    # Remove trailing commas before } or ]
+    raw = re.sub(r",(\s*[}\]])", r"\1", raw)
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}

@@ -1,8 +1,11 @@
 "use client"
 import { useEffect, useMemo, useState } from "react"
 import { api } from "../api"
+import { useRouter } from "next/navigation"
 import Spark from "../(components)/Spark"
 import ContextBadges from "./ContextBadges"
+import OutperformersTable from "./OutperformersTable"
+import QuickAnalyzeButton from "./QuickAnalyzeButton"
 import type { SignalRow } from "../../lib/types/signal"
 
 type Mode = "fast" | "medium" | "swing"
@@ -10,6 +13,7 @@ type Mode = "fast" | "medium" | "swing"
 // using shared type for clarity
 
 export default function SignalBetaPage(){
+  const router = useRouter()
   const [mode, setMode] = useState<Mode>("medium")
   const [symbols, setSymbols] = useState<string>("BTCUSDT,ETHUSDT,BNBUSDT")
   const [loading, setLoading] = useState(false)
@@ -23,6 +27,14 @@ export default function SignalBetaPage(){
   const [modalRow, setModalRow] = useState<SignalRow | null>(null)
   const [useContext, setUseContext] = useState<boolean>(true)
   const [contextCap, setContextCap] = useState<number>(0.20)
+  const [qaResult, setQaResult] = useState<any|null>(null)
+
+  function fmt(n: any){
+    const v = Number(n)
+    if (Number.isNaN(v)) return '-'
+    const d = v>=1000?2 : v>=100?3 : v>=1?4 : 6
+    try{ return v.toFixed(d) }catch{ return String(v) }
+  }
 
   async function fetchSignals(){
     setLoading(true)
@@ -156,14 +168,19 @@ export default function SignalBetaPage(){
                     <td className="px-2 py-2">{sc.pattern}</td>
                     <td className="px-2 py-2">{sc.trigger}</td>
                     <td className="px-2 py-2">
-                      <button className="text-cyan-300 hover:text-cyan-200" onClick={()=>{ setModalRow(r); setModalOpen(true) }}>Lihat</button>
+                      <div className="flex items-center gap-2">
+                        <button className="text-cyan-300 hover:text-cyan-200" onClick={()=>{ setModalRow(r); setQaResult(null); setModalOpen(true) }}>Lihat</button>
+                        <QuickAnalyzeButton symbol={r.symbol} mode={mode} onDone={(res)=>{ setModalRow(r); setModalOpen(true); setQaResult(res) }} />
+                      </div>
                     </td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
-          <div className="mt-6 space-y-2 text-sm leading-6 text-zinc-300">
+        </div>
+        <OutperformersTable symbols={symbols} mode={mode} />
+        <div className="mt-6 space-y-2 text-sm leading-6 text-zinc-300">
             <h3 className="font-semibold text-zinc-100">Cara menggunakan Signal (Beta)</h3>
             <ul className="list-disc ml-5">
               <li><b>Mode Fast/Medium/Swing</b> memakai kombinasi TF: Fast (15m/5m/1m), Medium (1h/15m/5m), Swing (1D/4h/15m) untuk <i>Trend/Pattern/Trigger</i>.</li>
@@ -229,6 +246,56 @@ export default function SignalBetaPage(){
                   )}
                 </div>
               </div>
+              {qaResult && (
+                <div className="mt-6">
+                  <div className="font-semibold text-zinc-200 mb-1 flex items-center justify-between">
+                    <span>Quick Analyze</span>
+                    <button className="rounded px-2 py-1 bg-zinc-800 text-white text-xs hover:bg-zinc-700" onClick={()=>{
+                      const tf = (mode==='fast'?'15m': mode==='medium'?'1h':'1d')
+                      router.push(`/v2-analyze?symbol=${encodeURIComponent(modalRow?.symbol||'')}&timeframe=${tf}`)
+                    }}>Open in Analyze v2</button>
+                  </div>
+                  {qaResult?.btc_alignment === 'conflict' && (
+                    <div className="rounded border border-rose-500/30 bg-rose-500/10 text-rose-200 p-2 text-xs mb-2">Konflik dengan Bias BTC</div>
+                  )}
+                  {/* Summary */}
+                  <div className="rounded-xl ring-1 ring-white/10 bg-black/20 p-3 text-xs mb-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <div>
+                        <div><span className="opacity-70">Timeframe:</span> {String(qaResult?.timeframe||'')}</div>
+                        <div className="flex items-center gap-2"><span className="opacity-70">Bias:</span>
+                          {(() => {
+                            const b = (qaResult?.plan?.bias||'').toString().toLowerCase()
+                            const cls = b==='long'? 'bg-emerald-600' : b==='short'? 'bg-rose-600' : 'bg-zinc-600'
+                            const text = b ? b.toUpperCase() : '-'
+                            return <span className={`px-1.5 py-0.5 rounded text-white ${cls}`}>{text}</span>
+                          })()}
+                        </div>
+                        <div><span className="opacity-70">RR min:</span> {typeof qaResult?.metrics?.rr_min==='number'? qaResult.metrics.rr_min.toFixed(2): '-'}</div>
+                        <div><span className="opacity-70">TTL (min):</span> {qaResult?.plan?.ttl_min ?? qaResult?.ttl_min ?? '-'}</div>
+                      </div>
+                      <div>
+                        <div className="opacity-70">Entries:</div>
+                        <div>
+                          {(qaResult?.plan?.entries||[]).slice(0,2).map((e:any,idx:number)=> (
+                            <span key={idx} className="mr-2">{e?.label||`E${idx+1}`} @ {fmt(e?.price)}</span>
+                          ))}
+                        </div>
+                        <div className="opacity-70">TP:</div>
+                        <div>
+                          {(qaResult?.plan?.take_profits||[]).slice(0,2).map((t:any,idx:number)=> (
+                            <span key={idx} className="mr-2">{t?.label||`TP${idx+1}`} @ {fmt(t?.price)}</span>
+                          ))}
+                        </div>
+                        <div><span className="opacity-70">SL:</span> {fmt(qaResult?.plan?.stop_loss?.price)}</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded bg-zinc-900 text-zinc-100 p-3 text-xs overflow-auto max-h-64">
+                    <pre>{JSON.stringify(qaResult, null, 2)}</pre>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="px-4 py-3 border-t border-white/10 flex items-center justify-end bg-black/30">
               <button onClick={()=>{ setModalOpen(false); setModalRow(null) }} className="rounded px-3 py-1.5 bg-zinc-800 text-white">Tutup</button>

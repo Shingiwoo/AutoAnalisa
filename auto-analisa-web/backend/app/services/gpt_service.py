@@ -3,7 +3,7 @@ from typing import Literal, Dict, Any, Tuple
 import json
 
 from .prompt_templates import prompt_scalping, prompt_swing
-from .llm import ask_llm_messages
+from .llm import ask_llm_messages, safe_json_loads
 
 
 def build_prompt(symbol: str, mode: Literal['scalping','swing'], payload: Dict[str, Any]) -> str:
@@ -23,12 +23,5 @@ def call_gpt(prompt: str) -> Tuple[Dict[str, Any], Dict[str, int]]:
         {"role": "user", "content": prompt},
     ]
     text, usage = ask_llm_messages(messages)
-    data: Dict[str, Any] = {}
-    try:
-        if text:
-            data = json.loads(text)
-            if not isinstance(data, dict):
-                data = {}
-    except Exception:
-        data = {}
+    data: Dict[str, Any] = safe_json_loads(text)
     return data, (usage or {})

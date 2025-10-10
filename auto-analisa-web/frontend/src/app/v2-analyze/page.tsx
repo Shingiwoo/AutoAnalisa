@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import api from "../api"
 
 type V4 = {
@@ -65,6 +66,7 @@ function convertV4ToV2(v4: V4) {
 }
 
 export default function V2AnalyzePage() {
+  const search = useSearchParams()
   const [text, setText] = useState<string>(JSON.stringify(SAMPLE_V4, null, 2))
   const [followBias, setFollowBias] = useState<boolean>(() => {
     if (typeof window === "undefined") return true
@@ -111,6 +113,25 @@ export default function V2AnalyzePage() {
       setBusy(false)
     }
   }
+
+  // Auto-run when query includes symbol/timeframe
+  useEffect(() => {
+    const sym = (search?.get('symbol') || '').trim()
+    const tf = (search?.get('timeframe') || '1h').trim()
+    if (!sym) return
+    ;(async ()=>{
+      try{
+        setBusy(true); setError(null); setResult(null)
+        const snap = await api.get('v2/snapshot', { params: { symbol: sym, timeframe: tf } })
+        // optional: show snapshot in editor for transparency
+        try{ setText(JSON.stringify({ symbol: sym, timeframe: tf, price: { close: snap?.data?.last_price }, boll: {}, macd: {}, rsi: {}, ema: {} }, null, 2)) }catch{}
+        const { data } = await api.post('v2/analyze', snap.data, { params: { follow_btc_bias: followBias } })
+        setResult(data)
+      }catch(e:any){ setError(e?.response?.data?.detail || 'Gagal auto-analyze') }
+      finally{ setBusy(false) }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-4 text-zinc-900 dark:text-zinc-100">
