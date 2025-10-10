@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import api from "../api"
 
@@ -65,7 +65,7 @@ function convertV4ToV2(v4: V4) {
   }
 }
 
-export default function V2AnalyzePage() {
+function V2AnalyzeInner() {
   const search = useSearchParams()
   const [text, setText] = useState<string>(JSON.stringify(SAMPLE_V4, null, 2))
   const [followBias, setFollowBias] = useState<boolean>(() => {
@@ -194,5 +194,13 @@ export default function V2AnalyzePage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function V2AnalyzePage(){
+  return (
+    <Suspense fallback={<div className="max-w-4xl mx-auto p-6">Memuat…</div>}>
+      <V2AnalyzeInner />
+    </Suspense>
   )
 }
