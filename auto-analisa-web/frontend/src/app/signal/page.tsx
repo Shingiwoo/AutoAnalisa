@@ -195,7 +195,6 @@ export default function SignalBetaPage(){
           </div>
         </div>
       </div>
-    </div>
     {modalOpen && modalRow && (
       <div className="fixed inset-0 z-50">
         <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={()=>{ setModalOpen(false); setModalRow(null) }} />
