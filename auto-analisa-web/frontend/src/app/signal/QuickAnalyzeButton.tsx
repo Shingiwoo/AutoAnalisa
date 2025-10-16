@@ -1,24 +1,17 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { api } from "../api"
 
-export default function QuickAnalyzeButton({ symbol, mode, onDone, className }: { symbol: string, mode: 'fast'|'medium'|'swing', onDone?: (result: any)=>void, className?: string }){
+export default function QuickAnalyzeButton({ symbol, mode, tfMap, useContext=true, onDone, className }: { symbol: string, mode: 'fast'|'medium'|'swing', tfMap: {trend:string;pattern:string;trigger:string}, useContext?: boolean, onDone?: (result: any)=>void, className?: string }){
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
   async function run(){
     setBusy(true); setErr('')
     try{
-      let followBias = true
-      try{ if(typeof window!=="undefined"){ const s = localStorage.getItem('follow_btc_bias'); followBias = s===null ? true : s==='1' } }catch{}
-      const profile = (mode==='swing' ? 'swing' : 'scalp')
-      // 1) snapshot batch (single symbol) to lock time and mode
-      const sb = await api.post('v2/snapshot/batch', [symbol], { params: { mode } })
-      const sid = sb?.data?.snapshot_id
-      if(!sid) throw new Error('snapshot gagal')
-      // 2) analyze snapshot (index 0) with profile + rich output
-      const res = await api.post('v2/analyze_snapshot', null, { params: { snapshot_id: sid, index: 0, follow_btc_bias: followBias, profile, format: 'rich' } })
-      onDone && onDone(res.data)
+      // Call new Quick Analyze endpoint with explicit tf_map
+      const { data } = await api.post('/quick-analyze', { symbol, mode, tf_map: tfMap, use_context: useContext })
+      onDone && onDone(data)
     }catch(e:any){ setErr('gagal') }
     finally{ setBusy(false) }
   }

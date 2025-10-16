@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 
 from .indicators import ema, rsi, macd, atr
+import logging
 from .scorer import score_supertrend, score_ema50, score_rsi, score_macd
 from .aggregator import weighted_avg, EmaSmoother, bucket_strength
 
@@ -239,7 +240,8 @@ async def calc_symbol_signal(symbol: str, mode: Mode, market_type: str = "future
                              alpha: Optional[float] = None,
                              strict_bias: Optional[bool] = None,
                              context_on: Optional[bool] = None,
-                             boost_cap: Optional[float] = None) -> Dict:
+                             boost_cap: Optional[float] = None,
+                             tf_override: Optional[Dict[str, str]] = None) -> Dict:
     cfg = load_signal_config()
     P = cfg["presets"].get(mode, cfg["presets"]["medium"])  # base preset
     if preset and preset in cfg.get("presets", {}):
@@ -252,7 +254,9 @@ async def calc_symbol_signal(symbol: str, mode: Mode, market_type: str = "future
     if strict_bias is not None:
         P = {**P, "strict_bias": bool(strict_bias)}
 
-    tf_map = dict(P["tf"])
+    # allow overriding TF map (for Quick Analyze to strictly follow selected row)
+    tf_map = dict(tf_override) if isinstance(tf_override, dict) and set(tf_override.keys()) >= {"trend","pattern","trigger"} else dict(P["tf"])
+    logging.getLogger(__name__).debug({"symbol": symbol.upper(), "mode": mode, "tf_map": tf_map})
 
     # Load data per TF
     df_tr = await _load_tf(symbol, tf_map["trend"], market_type=market_type, limit=600)

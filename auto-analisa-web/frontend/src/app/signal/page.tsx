@@ -179,7 +179,7 @@ export default function SignalBetaPage(){
                     <td className="px-2 py-2">
                       <div className="flex items-center gap-2">
                         <button className="text-cyan-300 hover:text-cyan-200" onClick={()=>{ setModalRow(r); setQaResult(null); setModalOpen(true) }}>Lihat</button>
-                        <QuickAnalyzeButton symbol={r.symbol} mode={mode} onDone={(res)=>{ setModalRow(r); setModalOpen(true); setQaResult(res) }} />
+                        <QuickAnalyzeButton symbol={r.symbol} mode={mode} tfMap={r.tf_map} useContext={useContext} onDone={(res)=>{ setModalRow(r); setModalOpen(true); setQaResult(res) }} />
                       </div>
                     </td>
                   </tr>
@@ -190,12 +190,16 @@ export default function SignalBetaPage(){
         </div>
         {qaSource==='outperformers' && (
           <>
-            <OutperformersTable symbols={symbols} mode={mode} />
+            <OutperformersTable mode={mode} onSymbols={(syms)=>{ /* keep last fetched symbols in state for batch analyze */ setSymbols(syms.join(',')) }} />
             <div className="mt-3 flex items-center gap-2 text-sm">
               <button className="rounded px-3 py-1.5 bg-zinc-800 text-white hover:bg-zinc-700 disabled:opacity-50" disabled={batchBusy} onClick={async()=>{
                 try{
                   setBatchBusy(true); setBatchErr(''); setBatchOut(null)
-                  const symList = (symbols||'').split(',').map(s=>s.trim()).filter(Boolean)
+                  // fetch current outperformers, then analyze top list
+                  const { data } = await api.get('/outperformers', { params: { mode, market: 'binanceusdm', limit: 10 } })
+                  const arr = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : [])
+                  const symList = (arr || []).map((r:any)=>r.symbol).slice(0, 10)
+                  if(symList.length===0) throw new Error('no symbols')
                   const { data: sb } = await api.post('v2/snapshot/batch', symList, { params:{ mode } })
                   const sid = sb?.snapshot_id
                   if(!sid) throw new Error('snapshot gagal')
@@ -234,7 +238,12 @@ export default function SignalBetaPage(){
         <div className="absolute inset-0 flex items-center justify-center p-4">
           <div className="w-full max-w-5xl rounded-2xl bg-slate-950 text-white shadow-2xl ring-1 ring-white/10 overflow-hidden">
             <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
-              <h3 className="font-semibold">{modalRow.symbol} • {modalRow.mode.toUpperCase()}</h3>
+              <h3 className="font-semibold flex items-center gap-2">
+                <span>{modalRow.symbol} • {modalRow.mode.toUpperCase()}</span>
+                <span className="text-xs px-2 py-0.5 rounded bg-zinc-800 text-zinc-200">
+                  {modalRow.mode.toUpperCase()} • {modalRow.tf_map.trend}/{modalRow.tf_map.pattern}/{modalRow.tf_map.trigger}
+                </span>
+              </h3>
               <button onClick={()=>{ setModalOpen(false); setModalRow(null) }} className="text-zinc-300 hover:text-white">✕</button>
             </div>
             <div className="p-4 max-h-[80vh] overflow-auto text-sm text-zinc-300">
@@ -299,7 +308,7 @@ export default function SignalBetaPage(){
                     const entries = isRich ? (qaResult?.strategi?.scalping?.entry_zone||[]) : ((qaResult?.plan?.entries||[]).map((e:any)=>e?.price))
                     const tps = isRich ? (qaResult?.strategi?.scalping?.take_profit||[]) : ((qaResult?.plan?.take_profits||[]).map((t:any)=>t?.price))
                     const sl = isRich ? qaResult?.strategi?.scalping?.stop_loss : qaResult?.plan?.stop_loss?.price
-                    const tfShow = isRich ? (modalRow?.tf_map?.trend||'') : String(qaResult?.timeframe||'')
+                    const tfShow = isRich ? (modalRow?.tf_map?.trend||'') : (qaResult?.tf_map?.trend || modalRow?.tf_map?.trend || String(qaResult?.timeframe||''))
                     return (
                       <div className="rounded-xl ring-1 ring-white/10 bg-black/20 p-3 text-xs mb-2">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
